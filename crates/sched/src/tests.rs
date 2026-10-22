@@ -1,6 +1,6 @@
 //! Networks scheduled by hand, each date and float worked out in the comments.
 
-use mkperth_core::{Activity, Calendar, Date, Project, Relationship, RelationshipType};
+use mkperth_core::{Activity, ActivityKind, Calendar, Date, Project, Relationship, RelationshipType};
 
 use super::*;
 
@@ -14,7 +14,10 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
         // Monday 5 October 2026.
         start: day(2026, 10, 5),
         calendar: Calendar::default(),
-        activities: activities.iter().map(|(id, d)| Activity { id: id.to_string(), name: id.to_string(), duration: *d }).collect(),
+        activities: activities
+            .iter()
+            .map(|(id, d)| Activity { id: id.to_string(), name: id.to_string(), duration: *d, ..Activity::default() })
+            .collect(),
         relationships: ties
             .iter()
             .map(|(p, s, kind, lag)| Relationship { predecessor: p.to_string(), successor: s.to_string(), kind: *kind, lag: *lag })
@@ -80,6 +83,28 @@ fn the_four_kinds_of_relationship_with_lags() {
     // The project finishes the evening of working day 5, the 12th: the same moment as the
     // morning of the 13th, where the milestone (a start milestone, for now) is shown.
     assert_eq!(s.finish, day(2026, 10, 12));
+}
+
+#[test]
+fn start_and_finish_milestones() {
+    // A(5) from Monday the 5th to Friday the 9th; then a finish milestone "done" and a start
+    // milestone "go", both at t = 5. "done" is shown the evening of Friday the 9th, "go" the
+    // morning of Monday the 12th. A milestone takes no time, whatever its duration says.
+    let mut p = project(&[("A", 5), ("done", 3), ("go", 0), ("kick", 7)], &[("A", "done", FS, 0), ("A", "go", FS, 0)]);
+    for (id, kind) in [("done", ActivityKind::FinishMilestone), ("go", ActivityKind::StartMilestone), ("kick", ActivityKind::FinishMilestone)] {
+        p.activities.iter_mut().find(|a| a.id == id).unwrap().kind = kind;
+    }
+    let s = schedule(&p).unwrap();
+    let done = get(&s, "done");
+    assert_eq!((done.early_start, done.early_finish), (day(2026, 10, 9), day(2026, 10, 9)));
+    let go = get(&s, "go");
+    assert_eq!((go.early_start, go.early_finish), (day(2026, 10, 12), day(2026, 10, 12)));
+    assert!(done.critical && go.critical);
+    // A finish milestone at the project's very start has no evening before: its day.
+    let kick = get(&s, "kick");
+    assert_eq!(kick.early_finish, day(2026, 10, 5));
+    assert_eq!((kick.total_float, kick.late_finish), (5, day(2026, 10, 9)));
+    assert_eq!(s.finish, day(2026, 10, 9));
 }
 
 #[test]

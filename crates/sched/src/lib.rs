@@ -23,7 +23,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use mkperth_core::{CalendarError, Date, Project, RelationshipType};
+use mkperth_core::{ActivityKind, CalendarError, Date, Project, RelationshipType};
 use mkperth_i18n::tr;
 use thiserror::Error;
 
@@ -106,7 +106,7 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
         if a.duration < 0 {
             return Err(ScheduleError::NegativeDuration(a.id.clone()));
         }
-        if a.duration > MAX_SPAN {
+        if a.working_days() > MAX_SPAN {
             return Err(ScheduleError::TooLong);
         }
     }
@@ -132,7 +132,7 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
         }
     }
     let order = topological(n, &ties, &outgoing, &incoming, acts.iter().map(|a| a.id.as_str()).collect())?;
-    let dur = |i: usize| acts.get(i).map_or(0, |a| a.duration);
+    let dur = |i: usize| acts.get(i).map_or(0, |a| a.working_days());
 
     // Forward pass.
     let mut es = vec![0i64; n];
@@ -199,15 +199,24 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
             Ok(project.calendar.add_working_days(first, t)?)
         }
     };
-    // A start is the morning of working day `t`; a finish the evening of day `t − 1` (a
-    // milestone's, the moment it starts).
-    let start_date = |t: i64| date_at(t);
-    let finish_date = |t: i64, d: i64| if d == 0 { date_at(t) } else { date_at(t - 1) };
+    // A start is the morning of working day `t`, a finish the evening of day `t − 1`. A start
+    // milestone (or a task of no duration) is the morning of its day; a finish milestone the
+    // evening before, except at the project's very start, where there is no day before.
+    let start_date = |t: i64, kind: ActivityKind| match kind {
+        ActivityKind::FinishMilestone if t > 0 => date_at(t - 1),
+        _ => date_at(t),
+    };
+    let finish_date = |t: i64, kind: ActivityKind, d: i64| match kind {
+        ActivityKind::FinishMilestone if t > 0 => date_at(t - 1),
+        ActivityKind::Task if d > 0 => date_at(t - 1),
+        _ => date_at(t),
+    };
 
     let mut out = Vec::with_capacity(n);
     for (i, a) in acts.iter().enumerate() {
         let (e_s, e_f, l_f) = (es.get(i).copied().unwrap_or(0), ef.get(i).copied().unwrap_or(0), lf.get(i).copied().unwrap_or(finish));
-        let l_s = l_f - a.duration;
+        let d = a.working_days();
+        let l_s = l_f - d;
         let total = l_f - e_f;
         let mut free = finish - e_f;
         for &k in outgoing.get(i).map_or(&[][..], Vec::as_slice) {
@@ -224,10 +233,10 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
         }
         out.push(Scheduled {
             id: a.id.clone(),
-            early_start: start_date(e_s)?,
-            early_finish: finish_date(e_f, a.duration)?,
-            late_start: start_date(l_s)?,
-            late_finish: finish_date(l_f, a.duration)?,
+            early_start: start_date(e_s, a.kind)?,
+            early_finish: finish_date(e_f, a.kind, d)?,
+            late_start: start_date(l_s, a.kind)?,
+            late_finish: finish_date(l_f, a.kind, d)?,
             total_float: total,
             free_float: free.min(total).max(0),
             critical: total <= 0,

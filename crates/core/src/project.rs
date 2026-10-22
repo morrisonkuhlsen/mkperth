@@ -49,13 +49,40 @@ pub struct Relationship {
     pub lag: i64,
 }
 
+/// What an activity is, as far as scheduling cares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ActivityKind {
+    /// Work that takes its duration.
+    #[default]
+    Task,
+    /// A moment that starts something: shown on the morning of its day.
+    StartMilestone,
+    /// A moment that ends something: shown on the evening of the working day before.
+    FinishMilestone,
+}
+
+impl ActivityKind {
+    pub fn is_milestone(self) -> bool {
+        self != ActivityKind::Task
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Activity {
     /// Unique within the project (P6's Activity ID).
     pub id: String,
     pub name: String,
-    /// Working days; 0 is a milestone.
+    pub kind: ActivityKind,
+    /// Working days. A milestone takes none, whatever this says; a task of 0 is shown as a
+    /// start milestone.
     pub duration: i64,
+}
+
+impl Activity {
+    /// The working days it takes: none for a milestone.
+    pub fn working_days(&self) -> i64 {
+        if self.kind.is_milestone() { 0 } else { self.duration }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

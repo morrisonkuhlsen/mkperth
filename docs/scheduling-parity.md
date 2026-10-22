@@ -13,7 +13,7 @@ ideas.
 | Calendars | worked weekdays, holidays, exceptions | done (one per project) |
 | Calendars | a calendar per activity; hours per day; work periods within the day | next |
 | Durations | in hours, shown in days by hours per day | next (days for now) |
-| Milestones | start and finish milestones | next (start milestones for now) |
+| Milestones | start and finish milestones | done |
 | Float | total float as finish float (LF − EF) | done |
 | Float | total float as start float or as the smaller of the two | next |
 | Critical | total float ≤ 0 (or a chosen threshold) | done (≤ 0) |

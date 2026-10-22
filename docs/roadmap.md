@@ -12,8 +12,9 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   total float is 0 or less, the project's finish; loops named, duplicate and unknown IDs,
   negative durations and spans past `MAX_SPAN` as catalogued errors; iterative throughout (a
   chain of 50 000 activities). Messages in English and Brazilian Portuguese.
-- **Next:** start and finish milestones (P6 shows a finish milestone at the end of the day
-  before, a start milestone at the start of its day); constraints (Start On or After, Finish On
+  Start and finish milestones: no duration, a start milestone shown on the morning of its day,
+  a finish milestone on the evening of the working day before.
+- **Next:** constraints (Start On or After, Finish On
   or Before, Mandatory Start/Finish, As Late As Possible…); a calendar per activity and the lag's
   calendar; durations in hours with hours per day.
 
