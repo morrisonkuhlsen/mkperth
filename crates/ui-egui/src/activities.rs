@@ -26,6 +26,30 @@ const COLUMNS: [(&str, f32); 9] = [
     ("col-free-float", 72.0),
 ];
 
+/// A table cell that can be edited in place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Column {
+    Id,
+    Name,
+    Duration,
+}
+
+/// The cell being edited: the activity's index, the column, the text so far.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Editing {
+    pub index: usize,
+    pub column: Column,
+    pub text: String,
+}
+
+/// What happened in the view this frame.
+#[derive(Debug, Default)]
+pub(crate) struct Events {
+    pub clicked: Option<usize>,
+    /// An edit to make: the activity's index, the column, the new text.
+    pub commit: Option<(usize, Column, String)>,
+}
+
 /// What the view shows, from the ribbon and the Filters pane.
 #[derive(Debug, Clone, Default)]
 pub struct Options {
@@ -104,10 +128,12 @@ pub(crate) fn visible(session: &Session, options: &Options) -> Vec<(usize, usize
     all.into_iter().filter(|(i, _)| keep.get(*i) == Some(&true)).collect()
 }
 
-/// Paints the view in the space given; returns the activity clicked, if any.
-pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, selected: Option<usize>) -> Option<usize> {
+/// Paints the view in the space given. A double click on an ID, a name or a duration edits it in
+/// place: Enter or leaving the cell keeps the text, Esc drops it.
+pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, selected: Option<usize>, editing: &mut Option<Editing>) -> Events {
     let t = Tokens::get(ui.ctx());
-    let Ok(schedule) = &session.schedule else { return None };
+    let mut events = Events::default();
+    let Ok(schedule) = &session.schedule else { return events };
     let rows = visible(session, options);
     let acts = &session.project.activities;
     let table_width: f32 = COLUMNS.iter().map(|(_, w)| w).sum();
@@ -169,11 +195,27 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
 
     let calendar = &session.project.calendar;
     let mut clicked = None;
+    let mut double = None;
     egui::ScrollArea::vertical().id_salt("activities").auto_shrink(false).show_rows(ui, ROW, rows.len(), |ui, range| {
         for &(i, depth) in rows.iter().skip(range.start).take(range.len()) {
             let (rect, response) = ui.allocate_exact_size(vec2(full.width(), ROW), Sense::click());
             if response.clicked() {
                 clicked = Some(i);
+            }
+            if response.double_clicked()
+                && let Some(pos) = response.interact_pointer_pos()
+            {
+                let x = pos.x - rect.left();
+                let (id_w, name_w, dur_w) = (COLUMNS[0].1, COLUMNS[1].1, COLUMNS[2].1);
+                double = if x < id_w {
+                    Some((i, Column::Id))
+                } else if x < id_w + name_w {
+                    Some((i, Column::Name))
+                } else if x < id_w + name_w + dur_w {
+                    Some((i, Column::Duration))
+                } else {
+                    None
+                };
             }
             let (Some(a), Some(s)) = (acts.get(i), schedule.activities.get(i)) else { continue };
             let painter = ui.painter_at(rect);
@@ -213,6 +255,30 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
                 x += w;
                 painter.vline(x, rect.y_range(), Stroke::new(1.0, t.gridline));
             }
+            // The cell being edited: a text box over it.
+            if let Some(e) = editing.as_mut().filter(|e| e.index == i) {
+                let left: f32 = match e.column {
+                    Column::Id => 0.0,
+                    Column::Name => COLUMNS[0].1,
+                    Column::Duration => COLUMNS[0].1 + COLUMNS[1].1,
+                };
+                let width = match e.column {
+                    Column::Id => COLUMNS[0].1,
+                    Column::Name => COLUMNS[1].1,
+                    Column::Duration => COLUMNS[2].1,
+                };
+                let cell = Rect::from_min_size(pos2(rect.left() + left, rect.top() + 1.0), vec2(width, ROW - 2.0));
+                let edit = ui.put(cell, egui::TextEdit::singleline(&mut e.text).id_salt(("cell", i)).margin(vec2(4.0, 2.0)));
+                if !edit.has_focus() && !edit.lost_focus() {
+                    edit.request_focus();
+                }
+                if ui.input(|inp| inp.key_pressed(egui::Key::Escape)) {
+                    *editing = None;
+                } else if edit.lost_focus() {
+                    events.commit = Some((e.index, e.column, e.text.clone()));
+                    *editing = None;
+                }
+            }
             let chart = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, rect.top()), rect.max));
             bar(&chart, a.kind, summary, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, options.late_bars, &t);
             painter.hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, t.gridline));
@@ -221,7 +287,19 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
     if rows.is_empty() {
         ui.painter().text(full.center(), Align2::CENTER_CENTER, tr!("activities-none"), FontId::proportional(13.0), t.text_dim);
     }
-    clicked
+    if let Some((i, column)) = double {
+        let summary = acts.get(i).is_some_and(|a| acts.iter().any(|c| c.parent.as_deref() == Some(a.id.as_str())));
+        if let Some(a) = acts.get(i).filter(|_| !(summary && column == Column::Duration)) {
+            let text = match column {
+                Column::Id => a.id.clone(),
+                Column::Name => a.name.clone(),
+                Column::Duration => a.duration.to_string(),
+            };
+            *editing = Some(Editing { index: i, column, text });
+        }
+    }
+    events.clicked = clicked;
+    events
 }
 
 /// An activity's bars: the early one (red on the critical path), the late one thin beneath it;

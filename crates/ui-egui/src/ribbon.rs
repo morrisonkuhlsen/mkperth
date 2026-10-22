@@ -35,6 +35,10 @@ pub(crate) enum Action {
     SaveAs,
     Sample,
     Schedule,
+    Undo,
+    Redo,
+    AddActivity,
+    DeleteActivity,
     CriticalOnly,
     LateBars,
     View(View),
@@ -51,6 +55,10 @@ pub(crate) struct State<'a> {
     pub critical_only: bool,
     pub late_bars: bool,
     pub view: View,
+    pub undo: Option<&'a str>,
+    pub redo: Option<&'a str>,
+    /// An activity is selected (Delete needs one).
+    pub selected: bool,
 }
 
 pub(crate) const TITLE_HEIGHT: f32 = 36.0;
@@ -125,9 +133,14 @@ pub(crate) fn title_bar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     if icon_button(&mut row, Icon::Save, &tr!("save"), true).clicked() {
         action = Some(Action::Save);
     }
-    // Nothing edits the project yet, so there is nothing to undo.
-    icon_button(&mut row, Icon::Undo, &tr!("undo"), false);
-    icon_button(&mut row, Icon::Redo, &tr!("redo"), false);
+    let undo = state.undo.map_or_else(|| tr!("undo"), |l| tr!("undo-named", what = l));
+    if icon_button(&mut row, Icon::Undo, &undo, state.undo.is_some()).clicked() && state.undo.is_some() {
+        action = Some(Action::Undo);
+    }
+    let redo = state.redo.map_or_else(|| tr!("redo"), |l| tr!("redo-named", what = l));
+    if icon_button(&mut row, Icon::Redo, &redo, state.redo.is_some()).clicked() && state.redo.is_some() {
+        action = Some(Action::Redo);
+    }
     row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         if icon_button(ui, Icon::Search, &tr!("search-tip"), true).clicked() {
@@ -233,8 +246,11 @@ fn buttons(ui: &mut egui::Ui, tab: Tab, state: &State) -> Option<Action> {
             go(ui, Icon::Open, &tr!("open"), &tr!("open-tip"), true, false, Action::Open);
             go(ui, Icon::Save, &tr!("save"), &tr!("save-tip"), true, false, Action::Save);
             divider(ui);
-            go(ui, Icon::Undo, &tr!("undo"), &tr!("nothing-to-undo"), false, false, Action::Open);
-            go(ui, Icon::Redo, &tr!("redo"), &tr!("nothing-to-redo"), false, false, Action::Open);
+            go(ui, Icon::Undo, &tr!("undo"), state.undo.unwrap_or(&tr!("nothing-to-undo")), state.undo.is_some(), false, Action::Undo);
+            go(ui, Icon::Redo, &tr!("redo"), state.redo.unwrap_or(&tr!("nothing-to-redo")), state.redo.is_some(), false, Action::Redo);
+            divider(ui);
+            go(ui, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
+            go(ui, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
             divider(ui);
             go(ui, Icon::Run, &tr!("schedule"), &tr!("schedule-tip"), true, false, Action::Schedule);
             divider(ui);
@@ -242,6 +258,9 @@ fn buttons(ui: &mut egui::Ui, tab: Tab, state: &State) -> Option<Action> {
         }
         Tab::Project => {
             go(ui, Icon::Run, &tr!("schedule"), &tr!("schedule-tip"), true, false, Action::Schedule);
+            divider(ui);
+            go(ui, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
+            go(ui, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
             divider(ui);
             go(ui, Icon::Critical, &tr!("critical-only"), &tr!("critical-only-tip"), true, state.critical_only, Action::CriticalOnly);
             go(ui, Icon::Gantt, &tr!("late-bars"), &tr!("late-bars-tip"), true, state.late_bars, Action::LateBars);

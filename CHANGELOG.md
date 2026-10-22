@@ -31,6 +31,10 @@ Read it before re-scheduling a plan with a new version.
 - The window, in the house's layout: title row, ribbon, the activity table beside the Gantt
   chart, the selected activity's calculation step by step, its details, filters (find, critical
   only), the status bar with the zoom; Open, Save, Save As, Sample, Schedule (F9).
+- Editing: add, edit (ID, name, duration, type, calendar, constraint) and delete activities, add
+  and remove relationships, each change scheduled at once, with undo and redo; in the window,
+  edit a cell in place (double click), New activity (Insert), Delete, relationships in Details,
+  Ctrl+Z and Ctrl+Y. Changes that would make a loop or repeat an ID are refused.
 - Every date with its calculation: the bounds of each pass, the winner, the calendar's placing,
   the floats.
 - Messages in English and Brazilian Portuguese.

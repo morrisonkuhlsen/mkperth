@@ -3,6 +3,7 @@
 //! parameters, so they all behave the same.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod edit;
 mod sample;
 mod write;
 
@@ -30,6 +31,21 @@ pub enum EngineError {
     /// The path and what the system said.
     #[error("{}", tr!("err-file", path = .0.as_str(), detail = .1.as_str()))]
     File(String, String),
+    /// The command and the parameter it can't read.
+    #[error("{}", tr!("err-command-value", command = .0.as_str(), param = .1.as_str()))]
+    Value(String, String),
+    #[error("{}", tr!("err-no-activity", id = .0.as_str()))]
+    UnknownActivity(String),
+    #[error("{}", tr!("err-id-taken", id = .0.as_str()))]
+    DuplicateId(String),
+    #[error("{}", tr!("err-relationship-exists", predecessor = .0.as_str(), successor = .1.as_str()))]
+    DuplicateRelationship(String, String),
+    #[error("{}", tr!("err-no-relationship", predecessor = .0.as_str(), successor = .1.as_str()))]
+    UnknownRelationship(String, String),
+    #[error("{}", tr!("err-nothing-to-undo"))]
+    NothingToUndo,
+    #[error("{}", tr!("err-nothing-to-redo"))]
+    NothingToRedo,
     #[error(transparent)]
     Perth(#[from] PerthError),
     #[error(transparent)]
@@ -37,7 +53,19 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 4] = ["project.open", "project.save", "project.sample", "project.schedule"];
+pub const COMMANDS: [&str; 11] = [
+    "project.open",
+    "project.save",
+    "project.sample",
+    "project.schedule",
+    "activity.add",
+    "activity.edit",
+    "activity.delete",
+    "relationship.add",
+    "relationship.delete",
+    "edit.undo",
+    "edit.redo",
+];
 
 #[derive(Debug, Clone)]
 pub struct Session {
@@ -50,6 +78,9 @@ pub struct Session {
     pub warnings: Vec<String>,
     /// Changes not saved yet.
     pub modified: bool,
+    /// Each change's label and the project before it, oldest first.
+    undo: Vec<(String, Project)>,
+    redo: Vec<(String, Project)>,
 }
 
 impl Default for Session {
@@ -57,7 +88,7 @@ impl Default for Session {
     fn default() -> Self {
         let project = sample::project();
         let schedule = mkperth_sched::schedule(&project);
-        Session { project, path: None, schedule, warnings: Vec::new(), modified: false }
+        Session { project, path: None, schedule, warnings: Vec::new(), modified: false, undo: Vec::new(), redo: Vec::new() }
     }
 }
 
@@ -65,6 +96,9 @@ impl Session {
     /// Runs a command by id with its parameters (a JSON object; `null` for none).
     pub fn run(&mut self, id: &str, params: &Value) -> Result<(), EngineError> {
         let param = |name: &str| params.get(name).and_then(Value::as_str).ok_or_else(|| EngineError::Param(id.to_string(), name.to_string()));
+        if let Some(result) = self.run_edit(id, params) {
+            return result;
+        }
         match id {
             "project.open" => self.open(Path::new(param("path")?)),
             // Without a path, where it was opened from.
@@ -94,6 +128,9 @@ impl Session {
         self.project = read.project;
         self.warnings = read.warnings;
         self.path = Some(path.to_path_buf());
+        self.modified = false;
+        self.undo.clear();
+        self.redo.clear();
         self.reschedule();
         Ok(())
     }
@@ -123,6 +160,95 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn edits_undo_and_redo() {
+        let mut s = Session::default();
+        let original = s.project.clone();
+        // A new activity after A10, in its summary, then tied to A20.
+        s.run("activity.add", &json!({"after": "A10", "name": "Soil test", "duration": 3})).unwrap();
+        let added = s.project.activities.iter().position(|a| a.name == "Soil test").unwrap();
+        let id = s.project.activities[added].id.clone();
+        assert_eq!(s.project.activities[added - 1].id, "A10");
+        assert_eq!(s.project.activities[added].parent.as_deref(), Some("W1"));
+        s.run("relationship.add", &json!({"predecessor": id, "successor": "A20", "kind": "SS", "lag": 1})).unwrap();
+        s.run(
+            "activity.edit",
+            &json!({"id": id, "duration": 7, "name": "Soil tests", "constraint": {"type": "start-on-or-after", "date": "2026-11-09"}}),
+        )
+        .unwrap();
+        assert!(s.modified);
+        assert_eq!(s.undo_label(), Some(format!("edit activity {id}").as_str()));
+        // Renaming the ID renames it in relationships too.
+        s.run("activity.edit", &json!({"id": id, "new_id": "A15"})).unwrap();
+        assert!(s.project.relationships.iter().any(|r| r.predecessor == "A15" && r.successor == "A20"));
+        // Deleting takes its relationships along.
+        s.run("activity.delete", &json!({"id": "A15"})).unwrap();
+        assert!(!s.project.relationships.iter().any(|r| r.predecessor == "A15"));
+        // Undo all the way back restores the project exactly; redo all the way forward again.
+        let end = s.project.clone();
+        for _ in 0..5 {
+            s.run("edit.undo", &Value::Null).unwrap();
+        }
+        assert_eq!(s.project, original);
+        assert_eq!(s.run("edit.undo", &Value::Null), Err(EngineError::NothingToUndo));
+        for _ in 0..5 {
+            s.run("edit.redo", &Value::Null).unwrap();
+        }
+        assert_eq!(s.project, end);
+        assert_eq!(s.run("edit.redo", &Value::Null), Err(EngineError::NothingToRedo));
+    }
+
+    #[test]
+    fn edits_that_would_break_the_project_are_refused() {
+        let mut s = Session::default();
+        let before = s.project.clone();
+        // A loop: C50 already follows A10 through the network.
+        let looped = s.run("relationship.add", &json!({"predecessor": "C50", "successor": "A10"}));
+        assert!(matches!(looped, Err(EngineError::Schedule(ScheduleError::Loop(_)))), "{looped:?}");
+        assert_eq!(s.run("activity.add", &json!({"id": "A10"})), Err(EngineError::DuplicateId("A10".into())));
+        assert_eq!(s.run("activity.edit", &json!({"id": "A10", "new_id": "A20"})), Err(EngineError::DuplicateId("A20".into())));
+        assert!(matches!(s.run("relationship.add", &json!({"predecessor": "A10", "successor": "A20"})), Err(EngineError::DuplicateRelationship(..))));
+        assert!(matches!(
+            s.run("relationship.delete", &json!({"predecessor": "A20", "successor": "A10"})),
+            Err(EngineError::UnknownRelationship(..))
+        ));
+        assert!(matches!(s.run("activity.edit", &json!({"id": "nope", "name": "x"})), Err(EngineError::UnknownActivity(_))));
+        assert!(matches!(s.run("activity.edit", &json!({"id": "A10", "duration": -1})), Err(EngineError::Value(..))));
+        assert!(matches!(s.run("activity.edit", &json!({"id": "A10", "calendar": "Moon"})), Err(EngineError::Value(..))));
+        assert!(matches!(
+            s.run("activity.edit", &json!({"id": "A10", "constraint": {"type": "start-on", "date": "2026-02-30"}})),
+            Err(EngineError::Value(..))
+        ));
+        assert_eq!(s.project, before, "nothing refused changed anything");
+        assert!(!s.modified && s.undo_label().is_none());
+    }
+
+    /// Every command survives empty and hostile parameters: an error or a change, never a panic,
+    /// and an error leaves the project as it was.
+    #[test]
+    fn every_command_survives_empty_and_hostile_params() {
+        let hostile = [
+            Value::Null,
+            json!({}),
+            json!([1, 2]),
+            json!("text"),
+            json!({"id": 7, "path": 3, "predecessor": null, "successor": [], "kind": "XX", "lag": 1e300, "duration": -5, "after": {}}),
+            json!({"id": "A10", "duration": i64::MAX, "lag": i64::MIN, "constraint": {"type": "nope"}}),
+            json!({"id": "x".repeat(5000), "name": "y".repeat(5000)}),
+            json!({"predecessor": "A10", "successor": "A10"}),
+        ];
+        for command in COMMANDS {
+            for params in &hostile {
+                let mut s = Session::default();
+                let before = s.project.clone();
+                if s.run(command, params).is_err() {
+                    assert_eq!(s.project, before, "{command} {params}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn the_sample_schedules_and_has_a_critical_path() {

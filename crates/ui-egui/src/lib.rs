@@ -18,7 +18,7 @@ use mkperth_engine::i18n::{Lang, current, tr};
 use mkperth_engine::sched::constraint_name;
 use serde_json::json;
 
-pub use activities::Options;
+pub use activities::{Column, Editing, Options};
 pub use mkperth_engine::i18n;
 pub use ribbon::Tab;
 pub use theme::Tokens;
@@ -81,6 +81,10 @@ pub struct PerthApp {
     pub autosave: bool,
     /// The interface's zoom, in percent.
     pub zoom: u32,
+    /// The table cell being edited in place.
+    pub editing: Option<Editing>,
+    /// The Details pane's new predecessor: its ID, the kind (FS, SS, FF, SF) and the lag.
+    link: (String, RelationshipType, i64),
     /// The selected activity's calculation, in words: (its index, the lines).
     calculation: Option<(usize, Vec<String>)>,
     themed: bool,
@@ -116,6 +120,8 @@ impl PerthApp {
             side: None,
             autosave: false,
             zoom: 100,
+            editing: None,
+            link: (String::new(), RelationshipType::FinishToStart, 0),
             calculation: None,
             themed: false,
             title: String::new(),
@@ -135,11 +141,19 @@ impl PerthApp {
                 "project.save" => {
                     Status::Info(tr!("status-saved", path = self.session.path.as_deref().map(|p| p.display().to_string()).unwrap_or_default()))
                 }
-                _ => Status::Info(tr!("status-scheduled")),
+                "edit.undo" => Status::Info(tr!("status-undone")),
+                "edit.redo" => Status::Info(tr!("status-redone")),
+                "project.schedule" => Status::Info(tr!("status-scheduled")),
+                _ if self.session.schedule.is_err() => Status::Warning(tr!("status-not-scheduled")),
+                _ => Status::Info(tr!("status-changed")),
             },
             Err(e) => Status::Error(e.to_string()),
         });
         if matches!(id, "project.open" | "project.sample") {
+            self.selected = None;
+        }
+        // A selection past the end (an activity deleted, an undo) goes.
+        if self.selected.is_some_and(|i| i >= self.session.project.activities.len()) {
             self.selected = None;
         }
         self.calculation = None;
@@ -178,6 +192,10 @@ impl PerthApp {
             Action::SaveAs => self.save_as(),
             Action::Sample => self.run("project.sample", json!(null)),
             Action::Schedule => self.run("project.schedule", json!(null)),
+            Action::Undo => self.run("edit.undo", json!(null)),
+            Action::Redo => self.run("edit.redo", json!(null)),
+            Action::AddActivity => self.add_activity(),
+            Action::DeleteActivity => self.delete_activity(),
             Action::CriticalOnly => self.options.critical_only = !self.options.critical_only,
             Action::LateBars => self.options.late_bars = !self.options.late_bars,
             Action::View(view) => self.view = view,
@@ -191,7 +209,64 @@ impl PerthApp {
         }
     }
 
+    /// A new activity after the selected one (or at the end), selected and its name being
+    /// edited.
+    pub fn add_activity(&mut self) {
+        let after = self.selected.and_then(|i| self.session.project.activities.get(i)).map(|a| a.id.clone());
+        let count = self.session.project.activities.len();
+        self.run("activity.add", json!({ "after": after }));
+        if self.session.project.activities.len() > count {
+            let index = after.and_then(|a| self.session.project.activities.iter().position(|x| x.id == a)).map_or(count, |k| k + 1);
+            self.selected = Some(index);
+            let name = self.session.project.activities.get(index).map(|a| a.name.clone()).unwrap_or_default();
+            self.editing = Some(Editing { index, column: Column::Name, text: name });
+        }
+    }
+
+    pub fn delete_activity(&mut self) {
+        if let Some(id) = self.selected.and_then(|i| self.session.project.activities.get(i)).map(|a| a.id.clone()) {
+            self.run("activity.delete", json!({ "id": id }));
+            self.selected = None;
+        }
+    }
+
+    /// An edit made in a table cell.
+    fn commit(&mut self, index: usize, column: Column, text: String) {
+        let Some(a) = self.session.project.activities.get(index) else { return };
+        let id = a.id.clone();
+        let params = match column {
+            Column::Id if text.trim() != id => json!({"id": id, "new_id": text.trim()}),
+            Column::Name if a.name != text => json!({"id": id, "name": text}),
+            Column::Duration => match text.trim().parse::<i64>() {
+                Ok(d) if a.duration != d => json!({"id": id, "duration": d}),
+                Ok(_) => return,
+                Err(_) => {
+                    self.status = Some(Status::Error(tr!("err-not-a-duration", text = text.as_str())));
+                    return;
+                }
+            },
+            _ => return,
+        };
+        self.run("activity.edit", params);
+    }
+
     fn handle_input(&mut self, ctx: &egui::Context) {
+        // Undo, redo and the keys that act on the selection only when no text box has the
+        // keyboard: there they edit the text.
+        if ctx.memory(|m| m.focused().is_none()) {
+            let shortcut = |modifiers, key| ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(modifiers, key)));
+            if shortcut(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Z) || shortcut(egui::Modifiers::COMMAND, egui::Key::Y) {
+                self.run("edit.redo", json!(null));
+            } else if shortcut(egui::Modifiers::COMMAND, egui::Key::Z) {
+                self.run("edit.undo", json!(null));
+            }
+            if shortcut(egui::Modifiers::NONE, egui::Key::Insert) {
+                self.add_activity();
+            }
+            if shortcut(egui::Modifiers::NONE, egui::Key::Delete) {
+                self.delete_activity();
+            }
+        }
         let shortcut = |modifiers, key| ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(modifiers, key)));
         if shortcut(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S) {
             self.save_as();
@@ -240,6 +315,9 @@ impl PerthApp {
             critical_only: self.options.critical_only,
             late_bars: self.options.late_bars,
             view: self.view,
+            undo: self.session.undo_label(),
+            redo: self.session.redo_label(),
+            selected: self.selected.is_some(),
         };
         let mut actions = Vec::new();
         actions.extend(ribbon::title_bar(ui, &state));
@@ -327,13 +405,13 @@ impl PerthApp {
         let t = Tokens::get(ui.ctx());
         let table_height = (height - CALCULATION_HEIGHT - 6.0).max(140.0);
         let grid = egui::Frame::new().fill(t.grid_bg).stroke(egui::Stroke::new(1.0, t.border)).inner_margin(egui::Margin::same(1));
-        let mut clicked = None;
+        let mut events = activities::Events::default();
         grid.show(ui, |ui| {
             let size = egui::vec2(ui.available_width(), table_height - 2.0);
             ui.allocate_ui(size, |ui| {
                 ui.set_min_size(size);
                 match &self.session.schedule {
-                    Ok(_) => clicked = activities::show(ui, &self.session, &self.options, self.selected),
+                    Ok(_) => events = activities::show(ui, &self.session, &self.options, self.selected, &mut self.editing),
                     Err(e) => {
                         ui.add_space(20.0);
                         ui.colored_label(t.danger, format!("  {e}"));
@@ -341,9 +419,12 @@ impl PerthApp {
                 }
             });
         });
-        if clicked.is_some() && clicked != self.selected {
-            self.selected = clicked;
+        if events.clicked.is_some() && events.clicked != self.selected {
+            self.selected = events.clicked;
             self.calculation = None;
+        }
+        if let Some((index, column, text)) = events.commit {
+            self.commit(index, column, text);
         }
         ui.add_space(6.0);
         let mut schedule = false;
@@ -418,6 +499,7 @@ impl PerthApp {
             });
             ui.add_space(3.0);
         };
+        let mut pending: Option<(&str, serde_json::Value)> = None;
         egui::ScrollArea::vertical().id_salt("details").auto_shrink(false).show(ui, |ui| {
             ui.label(egui::RichText::new(&a.name).size(15.0).color(t.text).strong());
             ui.add_space(6.0);
@@ -445,31 +527,60 @@ impl PerthApp {
                     ui.label(egui::RichText::new(tr!("detail-critical")).size(12.5).color(t.red));
                 }
             }
-            let kind_code = |k: RelationshipType| k.code();
             let lag = |l: i64| if l == 0 { String::new() } else { format!(" {l:+}") };
-            let predecessors: Vec<String> = project
-                .relationships
-                .iter()
-                .filter(|r| r.successor == a.id)
-                .map(|r| format!("{} {}{}", r.predecessor, kind_code(r.kind), lag(r.lag)))
-                .collect();
-            let successors: Vec<String> = project
-                .relationships
-                .iter()
-                .filter(|r| r.predecessor == a.id)
-                .map(|r| format!("{} {}{}", r.successor, kind_code(r.kind), lag(r.lag)))
-                .collect();
-            for (title, list) in [(tr!("detail-predecessors"), predecessors), (tr!("detail-successors"), successors)] {
+            let mut remove = None;
+            for (title, predecessors) in [(tr!("detail-predecessors"), true), (tr!("detail-successors"), false)] {
                 ui.add_space(8.0);
                 ui.label(egui::RichText::new(title).size(12.5).color(t.text).strong());
+                let list: Vec<&mkperth_engine::core::Relationship> =
+                    project.relationships.iter().filter(|r| if predecessors { r.successor == a.id } else { r.predecessor == a.id }).collect();
                 if list.is_empty() {
                     ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
                 }
-                for item in list {
-                    ui.label(egui::RichText::new(item).size(12.5).color(t.text));
+                for r in list {
+                    let other = if predecessors { &r.predecessor } else { &r.successor };
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(format!("{other}  {}{}", r.kind.code(), lag(r.lag))).size(12.5).color(t.text));
+                        if icon_button(ui, Icon::Close, &tr!("relationship-remove")) {
+                            remove = Some((r.predecessor.clone(), r.successor.clone()));
+                        }
+                    });
                 }
             }
+            // A new predecessor: its ID, the kind and the lag.
+            ui.add_space(10.0);
+            ui.label(egui::RichText::new(tr!("relationship-add-title")).size(12.0).color(t.text_dim));
+            let mut add = false;
+            ui.horizontal(|ui| {
+                ui.add(egui::TextEdit::singleline(&mut self.link.0).hint_text(tr!("relationship-id-hint")).desired_width(90.0));
+                egui::ComboBox::from_id_salt("link-kind").selected_text(self.link.1.code()).width(48.0).show_ui(ui, |ui| {
+                    for k in [
+                        RelationshipType::FinishToStart,
+                        RelationshipType::StartToStart,
+                        RelationshipType::FinishToFinish,
+                        RelationshipType::StartToFinish,
+                    ] {
+                        ui.selectable_value(&mut self.link.1, k, k.code());
+                    }
+                });
+                ui.add(egui::DragValue::new(&mut self.link.2).range(-999..=999)).on_hover_text(tr!("relationship-lag-tip"));
+                add = ui.button(tr!("relationship-add")).clicked();
+            });
+            if add && !self.link.0.trim().is_empty() {
+                let params = json!({"predecessor": self.link.0.trim(), "successor": a.id, "kind": self.link.1.code(), "lag": self.link.2});
+                pending = Some(("relationship.add", params));
+            }
+            if let Some((p, s)) = remove {
+                pending = Some(("relationship.delete", json!({"predecessor": p, "successor": s})));
+            }
         });
+        if let Some((command, params)) = pending {
+            let added = command == "relationship.add";
+            self.run(command, params);
+            if added && matches!(self.status, Some(Status::Info(_))) {
+                self.link = (String::new(), RelationshipType::FinishToStart, 0);
+            }
+        }
     }
 
     /// The strip at the right edge: Details and Filters, their names turned down the strip. A

@@ -60,3 +60,37 @@ fn f9_schedules_and_open_uses_the_dialog() {
     assert_eq!(h.state().session.project.name, "Tiny");
     assert_eq!(h.state().session.schedule.as_ref().map(|s| s.activities.len()), Ok(1));
 }
+
+#[test]
+fn add_edit_in_place_undo_and_delete() {
+    let mut h = harness(PerthApp::default());
+    let count = h.state().session.project.activities.len();
+    // A10 selected; a new activity goes after it, its name open for editing.
+    h.state_mut().selected = Some(2);
+    h.state_mut().add_activity();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project.activities.len(), count + 1);
+    let editing = h.state().editing.clone().expect("the new name is being edited");
+    assert_eq!(editing.index, 3);
+    // Typed and confirmed with Enter.
+    if let Some(e) = h.state_mut().editing.as_mut() {
+        e.text = "Soil tests".into();
+    }
+    h.run_steps(1);
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(h.state().session.project.activities[3].name, "Soil tests");
+    // Its ID follows the highest (A40): A50.
+    assert_eq!(h.state().session.project.activities[3].id, "A50");
+    assert_eq!(h.state().session.undo_label(), Some("edit activity A50"));
+    // Ctrl+Z undoes the rename; the activity stays.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project.activities[3].name, "New activity");
+    // Delete removes the selected activity.
+    h.state_mut().selected = Some(3);
+    h.key_press(egui::Key::Delete);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project.activities.len(), count);
+    assert!(h.state().selected.is_none());
+}

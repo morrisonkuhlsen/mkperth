@@ -48,7 +48,10 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
 ## M2 — the engine and the command line
 - *Started:* `mkperth-engine`: the session (the project, its schedule, what opening it said) and
   `Session::run` with the first commands, `project.open`, `project.sample` and
-  `project.schedule`; the sample project built in code (a small building on Brazil's calendar,
+  `project.schedule`; editing (`activity.add`, `activity.edit`, `activity.delete`,
+  `relationship.add`, `relationship.delete`) with undo and redo (`edit.undo`, `edit.redo`, two
+  hundred deep), each change made on a copy and refused if it makes a loop or repeats an ID;
+  every command fuzzed with empty and hostile parameters; `project.save`; the sample project built in code (a small building on Brazil's calendar,
   with a WBS, every kind of relationship, a lag and a lead, milestones, a constraint and a
   seven-day cure).
 - **Next:** `mkperth-engine`: the project as the session's state, every change a command (ids
