@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use mkperth_i18n::tr;
 use thiserror::Error;
 
-use crate::Date;
+use crate::{Date, Region};
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum CalendarError {
@@ -31,6 +31,8 @@ pub struct Calendar {
     pub holidays: BTreeSet<Date>,
     /// Days worked although the week doesn't.
     pub extra_days: BTreeSet<Date>,
+    /// A region whose holidays are off too, computed from their rules for any year.
+    pub region: Option<Region>,
 }
 
 impl Default for Calendar {
@@ -41,6 +43,7 @@ impl Default for Calendar {
             week: [true, true, true, true, true, false, false],
             holidays: BTreeSet::new(),
             extra_days: BTreeSet::new(),
+            region: None,
         }
     }
 }
@@ -60,7 +63,7 @@ impl Calendar {
         if self.extra_days.contains(&date) {
             return true;
         }
-        if self.holidays.contains(&date) {
+        if self.holidays.contains(&date) || self.region.is_some_and(|r| r.is_holiday(date)) {
             return false;
         }
         self.week.get(date.weekday().index()).copied().unwrap_or(false)

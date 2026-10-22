@@ -24,6 +24,8 @@ Read it before re-scheduling a plan with a new version.
   are left out and listed.
 - Perth.jl's project JSON, read and written back byte for byte, every field Perth keeps carried
   along.
-- Perth.jl as the parity oracle: 35 networks scheduled by Perth.jl 0.16.1 agree with MK Perth on
+- Perth.jl as the parity oracle: 43 networks scheduled by Perth.jl 0.16.1 agree with MK Perth on
   every date and total float.
+- Brazil's national holidays, computed from their rules (Easter by the Gregorian computus), for
+  Perth projects on the `Brazil` calendar and any calendar that names the region.
 - Messages in English and Brazilian Portuguese.

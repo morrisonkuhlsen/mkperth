@@ -4,8 +4,10 @@
 
 mod calendar;
 mod date;
+mod holidays;
 mod project;
 
 pub use calendar::{Calendar, CalendarError};
 pub use date::{Date, Weekday};
+pub use holidays::{Region, easter};
 pub use project::{Activity, ActivityKind, Constraint, Extra, LagCalendar, Project, Relationship, RelationshipType};

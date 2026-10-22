@@ -24,3 +24,4 @@ warn-perth-duration = A tarefa { $task } tinha duração menor que um dia; o Per
 warn-perth-dangling = A tarefa { $task } depende de { $dependency }, que não está no projeto; ficou de fora, como o Perth faz.
 warn-perth-constraint = A tarefa { $task } tem uma restrição que o Perth não tem como guardar; ela não é gravada.
 warn-perth-sf = A tarefa { $task } segue { $predecessor } de início a fim, vínculo que o Perth não tem; ele não é gravado.
+warn-perth-calendar = O MK Perth não conhece os feriados do calendário { $name }: segunda a sexta, sem feriados.

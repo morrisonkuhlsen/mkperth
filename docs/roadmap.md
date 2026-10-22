@@ -37,7 +37,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   them, holds no constraint or duration of its own, and relationships that reach it are left
   out and listed; unknown parents, loops of parents and milestones with children are errors.
   Ten more oracle networks with summaries agree with Perth.jl's leaf view.
-- **Next:** a business-day calendar's holidays (#29); P6 XML from
+  Holidays by region, computed from their rules: Brazil's national holidays (the federal laws'
+  fixed dates; Carnival, Good Friday and Corpus Christi from Easter by the Gregorian computus),
+  the same weekdays as BusinessDays.jl's `Brazil` for 2020–2030; Perth projects on `Brazil` read
+  with them, and eight oracle networks across those holidays agree with Perth.jl.
+- **Next:** P6 XML from
   Oracle's published schema; Microsoft Project XML. XER is the user's decision (no specification
   from Oracle).
 

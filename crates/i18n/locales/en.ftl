@@ -24,3 +24,4 @@ warn-perth-duration = Task { $task } had a duration under a day; Perth counts it
 warn-perth-dangling = Task { $task } depends on { $dependency }, which isn't in the project; left out, as Perth does.
 warn-perth-constraint = Task { $task } has a constraint Perth has no field for; it isn't written.
 warn-perth-sf = Task { $task } follows { $predecessor } start-to-finish, which Perth doesn't have; that relationship isn't written.
+warn-perth-calendar = The calendar { $name } isn't one MK Perth knows the holidays of: Monday to Friday, with no holidays.

@@ -12,7 +12,7 @@
 //! (the user's own package, MIT).
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
-use mkperth_core::{Activity, ActivityKind, Calendar, Constraint, Date, Extra, Project, Relationship, RelationshipType};
+use mkperth_core::{Activity, ActivityKind, Calendar, Constraint, Date, Extra, Project, Region, Relationship, RelationshipType};
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -159,11 +159,16 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         }
         Some(_) => return Err(PerthError::Field(String::new(), "calendar".into())),
     };
-    // Empty: calendar days. A name: business days (holidays aren't known here yet).
+    // Empty: calendar days. A name: business days, with the region's holidays when MK Perth
+    // knows them (Perth.jl takes the name to BusinessDays.jl).
     let calendar = if calendar_name.is_empty() {
         Calendar { name: String::new(), ..Calendar::every_day() }
     } else {
-        Calendar { name: calendar_name, ..Calendar::default() }
+        let region = Region::named(&calendar_name);
+        if region.is_none() {
+            warnings.push(tr!("warn-perth-calendar", name = calendar_name.as_str()));
+        }
+        Calendar { name: calendar_name, region, ..Calendar::default() }
     };
 
     let mut activities = Vec::with_capacity(tasks.len());

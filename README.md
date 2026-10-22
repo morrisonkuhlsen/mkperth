@@ -93,8 +93,8 @@ The wasm gate needs the target once: `rustup target add wasm32-unknown-unknown`.
 
 [Perth.jl](https://github.com/dantebertuzzi/Perth.jl) is the Julia package MK Perth grew from. It
 is a sibling, never a dependency: MK Perth reads and writes its project JSON without loss, and its
-scheduler is the oracle for the networks both express — 35 of them, ten drawn by hand and the
-rest random, agree on every date and float (`crates/perth/tests/oracle.rs`).
+scheduler is the oracle for the networks both express — 43 of them, ten drawn by hand and the
+rest random, eight on the Brazil calendar, agree on every date and float (`crates/perth/tests/oracle.rs`).
 
 ## Architecture
 
