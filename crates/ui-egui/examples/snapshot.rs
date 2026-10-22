@@ -2,7 +2,7 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang CODE]
-//!  [--select N] [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1)
+//!  [--select N] [--side details|filters] [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1)
 
 use mkperth_ui_egui::PerthApp;
 
@@ -20,6 +20,14 @@ fn main() -> Result<(), String> {
                 app.open(std::path::Path::new(args.get(i).ok_or("--in needs a path")?));
             }
             "--dark" => dark = true,
+            "--side" => {
+                i += 1;
+                app.side = match args.get(i).map(String::as_str) {
+                    Some("details") => Some(mkperth_ui_egui::Side::Details),
+                    Some("filters") => Some(mkperth_ui_egui::Side::Filters),
+                    _ => return Err("--side details|filters".into()),
+                };
+            }
             "--lang" => {
                 i += 1;
                 let code = args.get(i).ok_or("--lang needs a code")?;

@@ -75,10 +75,10 @@ pub enum Icon {
     Latex,
 }
 
-/// Draws `icon` in `rect` (square) in one colour, the theme's accent; tints of it fill shapes.
+/// Draws `icon` in `rect` (square) in its own colours: the theme's text for outlines and the
+/// accent, blue, green, orange and red where the drawing calls for them (MK Sigma draws the same
+/// set in the accent alone; MK Perth keeps the colours).
 pub fn paint(painter: &Painter, rect: Rect, icon: Icon, t: &Tokens) {
-    let ink = t.accent;
-    let t = &Tokens { text: ink, text_dim: ink, blue: ink, green: ink, orange: ink, red: ink, header_line: t.accent_soft, ..*t };
     let s = rect.width().min(rect.height()) / 16.0;
     let o = rect.center() - vec2(8.0 * s, 8.0 * s);
     let p = |x: f32, y: f32| -> Pos2 { o + vec2(x * s, y * s) };

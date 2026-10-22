@@ -15,11 +15,23 @@ fn harness(app: PerthApp) -> Harness<'static, PerthApp> {
 
 #[test]
 fn opens_on_the_sample_scheduled() {
-    let h = harness(PerthApp::default());
+    let mut h = harness(PerthApp::default());
     let s = h.state().session.schedule.as_ref().unwrap();
     assert!(s.activities.iter().any(|a| a.critical));
     assert!(h.query_all_by_label("Schedule").next().is_some() && h.query_by_label("Open").is_some());
+    // Details and Filters wait folded in the strip; a click opens one beside it, another closes it.
+    assert!(h.state().side.is_none());
+    h.get_by_label("Details").click();
+    h.run_steps(2);
+    assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::Details));
     assert!(h.query_by_label("No activity selected").is_some(), "the Details pane waits for a selection");
+    h.get_by_label("Filters").click();
+    h.run_steps(2);
+    assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::Filters));
+    // The pane's header says Filters too; the strip's button is drawn after it.
+    h.query_all_by_label("Filters").last().unwrap().click();
+    h.run_steps(2);
+    assert!(h.state().side.is_none());
 }
 
 #[test]

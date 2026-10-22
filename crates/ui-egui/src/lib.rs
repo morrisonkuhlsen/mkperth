@@ -44,6 +44,13 @@ pub enum View {
     Activities,
 }
 
+/// The panes the strip at the right edge opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Details,
+    Filters,
+}
+
 /// What the last action said, for the status bar.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Status {
@@ -54,8 +61,8 @@ pub enum Status {
 
 const STATUS_HEIGHT: f32 = 24.0;
 const RAIL_WIDTH: f32 = 44.0;
-const FILTERS_WIDTH: f32 = 240.0;
-const FILTERS_STRIP: f32 = 30.0;
+const SIDE_WIDTH: f32 = 320.0;
+const SIDE_STRIP: f32 = 30.0;
 const CALCULATION_HEIGHT: f32 = 230.0;
 
 pub struct PerthApp {
@@ -68,7 +75,8 @@ pub struct PerthApp {
     pub ribbon_collapsed: bool,
     pub view: View,
     pub options: Options,
-    pub filters_open: bool,
+    /// The pane open beside the strip at the right edge, if any.
+    pub side: Option<Side>,
     /// Save after every change (only when the project has a file).
     pub autosave: bool,
     /// The interface's zoom, in percent.
@@ -105,7 +113,7 @@ impl PerthApp {
             ribbon_collapsed: false,
             view: View::default(),
             options: Options { late_bars: true, ..Options::default() },
-            filters_open: false,
+            side: None,
             autosave: false,
             zoom: 100,
             calculation: None,
@@ -175,7 +183,7 @@ impl PerthApp {
             Action::View(view) => self.view = view,
             Action::Theme(preference) => ctx.set_theme(preference),
             Action::ToggleAutoSave => self.autosave = !self.autosave,
-            Action::Search => self.filters_open = true,
+            Action::Search => self.side = Some(Side::Filters),
             Action::Language(lang) => {
                 i18n::set(lang);
                 self.calculation = None;
@@ -246,10 +254,9 @@ impl PerthApp {
         let body = (ui.available_height() - STATUS_HEIGHT - 8.0).max(100.0);
         ui.add_space(6.0);
         let gap = 6.0;
-        let filters_width = if self.filters_open { FILTERS_WIDTH } else { FILTERS_STRIP };
-        let room = ui.available_width() - RAIL_WIDTH - filters_width - 2.0 * gap;
-        let left_width = ((room - gap) * 0.72).floor();
-        let right_width = room - gap - left_width;
+        // The activities take the width; a side pane, when open, sits beside the strip.
+        let side_width = if self.side.is_some() { SIDE_WIDTH + gap } else { 0.0 };
+        let left_width = (ui.available_width() - RAIL_WIDTH - SIDE_STRIP - side_width - 2.0 * gap).floor();
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(gap, 0.0);
             let top_down = egui::Layout::top_down(egui::Align::Min);
@@ -259,18 +266,23 @@ impl PerthApp {
                 ui.set_height(body);
                 self.left_pane(ui, body);
             });
-            ui.allocate_ui_with_layout(egui::vec2(right_width, body), top_down, |ui| {
-                ui.set_width(right_width);
-                ui.set_height(body);
-                theme::card(&t).fill(t.paper).show(ui, |ui| {
-                    ui.set_min_size(ui.available_size());
-                    self.details(ui);
+            if let Some(side) = self.side {
+                ui.allocate_ui_with_layout(egui::vec2(SIDE_WIDTH, body), top_down, |ui| {
+                    ui.set_width(SIDE_WIDTH);
+                    ui.set_height(body);
+                    theme::card(&t).fill(t.paper).show(ui, |ui| {
+                        ui.set_min_size(ui.available_size());
+                        match side {
+                            Side::Details => self.details(ui),
+                            Side::Filters => self.filters(ui),
+                        }
+                    });
                 });
-            });
-            ui.allocate_ui_with_layout(egui::vec2(filters_width, body), top_down, |ui| {
-                ui.set_width(filters_width);
+            }
+            ui.allocate_ui_with_layout(egui::vec2(SIDE_STRIP, body), top_down, |ui| {
+                ui.set_width(SIDE_STRIP);
                 ui.set_height(body);
-                self.filters_pane(ui);
+                self.side_strip(ui);
             });
         });
         ui.add_space(2.0);
@@ -376,7 +388,9 @@ impl PerthApp {
     /// The selected activity's facts, relationships and dates.
     fn details(&mut self, ui: &mut egui::Ui) {
         let t = Tokens::get(ui.ctx());
-        theme::pane_header(ui, Icon::Info, &tr!("pane-details"), "", |_| {});
+        if theme::pane_header(ui, Icon::Info, &tr!("pane-details"), "", |ui| icon_button(ui, Icon::ChevronRight, &tr!("pane-close"))) {
+            self.side = None;
+        }
         let project = &self.session.project;
         let Some((i, a)) = self.selected.and_then(|i| project.activities.get(i).map(|a| (i, a))) else {
             ui.add_space(30.0);
@@ -458,44 +472,65 @@ impl PerthApp {
         });
     }
 
-    /// The Filters pane at the right edge, folded into a strip when closed.
-    fn filters_pane(&mut self, ui: &mut egui::Ui) {
+    /// The strip at the right edge: Details and Filters, their names turned down the strip. A
+    /// click opens one beside it; a click on the open one closes it.
+    fn side_strip(&mut self, ui: &mut egui::Ui) {
         let t = Tokens::get(ui.ctx());
         let rect = ui.max_rect();
         ui.painter().rect_filled(rect, 0.0, t.ribbon);
         ui.painter().vline(rect.left(), rect.y_range(), egui::Stroke::new(1.0, t.border));
         let count = usize::from(self.options.critical_only) + usize::from(!self.options.search.trim().is_empty());
-        if !self.filters_open {
-            let name = tr!("filters-show");
-            let response = ui.interact(rect, ui.id().with("filters-strip"), egui::Sense::click());
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+        let mut top = rect.top() + 4.0;
+        for (k, (side, icon, name, badge)) in
+            [(Side::Details, Icon::Info, tr!("pane-details"), 0), (Side::Filters, Icon::Filter, tr!("filters"), count)].into_iter().enumerate()
+        {
             let painter = ui.painter();
-            if response.hovered() {
-                painter.rect_filled(rect.shrink2(egui::vec2(1.0, 0.0)), 0.0, t.hover);
+            let galley = painter.layout_no_wrap(name.clone(), egui::FontId::proportional(13.0), t.text);
+            let height = 28.0 + galley.size().x + if badge > 0 { 18.0 } else { 6.0 };
+            let slot = egui::Rect::from_min_size(egui::pos2(rect.left() + 1.0, top), egui::vec2(rect.width() - 1.0, height));
+            top += height + 6.0;
+            let response = ui.interact(slot, ui.id().with(("side", k)), egui::Sense::click());
+            let on = self.side == Some(side);
+            response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, &name));
+            let painter = ui.painter();
+            if on {
+                painter.rect_filled(slot, 0.0, t.accent_soft);
+                painter.rect_filled(
+                    egui::Rect::from_min_size(egui::pos2(slot.right() - 3.0, slot.top()), egui::vec2(3.0, slot.height())),
+                    0.0,
+                    t.accent,
+                );
+            } else if response.hovered() {
+                painter.rect_filled(slot, 0.0, t.hover);
             }
-            let x = rect.center().x;
-            icons::paint(painter, egui::Rect::from_center_size(egui::pos2(x, rect.top() + 16.0), egui::vec2(14.0, 14.0)), Icon::ChevronLeft, &t);
-            let galley = painter.layout_no_wrap(tr!("filters"), egui::FontId::proportional(13.0), t.text);
-            let length = galley.size().x;
-            let at = egui::pos2(x + galley.size().y / 2.0, rect.top() + 34.0);
-            painter.add(egui::epaint::TextShape::new(at, galley, t.text).with_angle(std::f32::consts::FRAC_PI_2));
-            let below = rect.top() + 34.0 + length + 16.0;
-            icons::paint(painter, egui::Rect::from_center_size(egui::pos2(x, below), egui::vec2(12.0, 12.0)), Icon::Filter, &t);
-            if count > 0 {
-                painter.text(egui::pos2(x, below + 16.0), egui::Align2::CENTER_CENTER, count.to_string(), egui::FontId::proportional(12.0), t.accent);
+            let x = slot.center().x;
+            icons::paint(painter, egui::Rect::from_center_size(egui::pos2(x, slot.top() + 13.0), egui::vec2(14.0, 14.0)), icon, &t);
+            // Turned a quarter clockwise, it reads downwards and its height lies to the left of `at`.
+            let at = egui::pos2(x + galley.size().y / 2.0, slot.top() + 26.0);
+            painter.add(egui::epaint::TextShape::new(at, galley, if on { t.accent } else { t.text }).with_angle(std::f32::consts::FRAC_PI_2));
+            if badge > 0 {
+                painter.text(
+                    egui::pos2(x, slot.bottom() - 9.0),
+                    egui::Align2::CENTER_CENTER,
+                    badge.to_string(),
+                    egui::FontId::proportional(12.0),
+                    t.accent,
+                );
             }
             if response.on_hover_text(name).clicked() {
-                self.filters_open = true;
+                self.side = if on { None } else { Some(side) };
             }
-            return;
         }
-        let mut pane =
-            ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(egui::vec2(10.0, 8.0))).layout(egui::Layout::top_down(egui::Align::Min)));
-        let ui = &mut pane;
+    }
+
+    /// The Filters pane: find by ID or name, critical only, late bars.
+    fn filters(&mut self, ui: &mut egui::Ui) {
+        let t = Tokens::get(ui.ctx());
+        if theme::pane_header(ui, Icon::Filter, &tr!("filters"), "", |ui| icon_button(ui, Icon::ChevronRight, &tr!("pane-close"))) {
+            self.side = None;
+        }
         ui.spacing_mut().item_spacing.y = 6.0;
-        if theme::pane_header(ui, Icon::Filter, &tr!("filters"), "", |ui| icon_button(ui, Icon::ChevronRight, &tr!("filters-hide"))) {
-            self.filters_open = false;
-        }
+        let count = usize::from(self.options.critical_only) + usize::from(!self.options.search.trim().is_empty());
         ui.label(egui::RichText::new(tr!("filter-search")).size(12.0).color(t.text_dim));
         ui.add(egui::TextEdit::singleline(&mut self.options.search).hint_text(tr!("filter-search-hint")).desired_width(f32::INFINITY));
         ui.add_space(4.0);
