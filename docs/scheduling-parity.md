@@ -21,8 +21,22 @@ ideas.
 | Critical | the longest path | next |
 | Open ends | activities with no successor finish by the project's finish | done |
 | Constraints | start/finish on, on or after, on or before; mandatory start/finish; as late as possible | done |
-| Constraints | expected finish; a secondary constraint | next |
+| Constraints | a secondary constraint beside the primary | done (both hold; the allowed pairs are #4) |
+| Constraints | expected finish | next (#4) |
 | Project | must finish by date | done |
 | Progress | data date; actual start and finish; remaining duration | later |
 | Progress | retained logic, progress override, actual dates | later |
 | Resources | levelling with priorities | later |
+
+## Perth.jl's conventions
+
+Where Perth.jl (the parity oracle for what it covers, #7) and P6 differ, MK Perth follows P6 and
+the difference is noted here.
+
+- **Milestones.** Perth.jl's milestone takes its day (a successor starts the day after it); a P6
+  start milestone takes no time (a successor starts the same morning). Perth's milestones read
+  as start milestones.
+- **Calendar days.** A Perth project without a calendar counts every day; MK Perth reads it as a
+  seven-day calendar.
+- **Summaries.** Perth.jl schedules only leaf tasks and derives summaries; MK Perth does too
+  once the WBS lands (#30).

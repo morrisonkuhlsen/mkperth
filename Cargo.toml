@@ -13,9 +13,12 @@ rust-version = "1.90"
 mkperth-i18n = { path = "crates/i18n" }
 mkperth-core = { path = "crates/core" }
 mkperth-sched = { path = "crates/sched" }
+mkperth-perth = { path = "crates/perth" }
 
 # foundation
 thiserror = "2"
+# Perth.jl's project files are JSON; parsed with its recursion limit. MIT/Apache.
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

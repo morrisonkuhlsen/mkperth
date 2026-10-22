@@ -24,8 +24,13 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   date with its calculation (#5).
 
 ## M1 — data in and out
-- **Next:** Perth.jl's project JSON, read and written without loss (`extra` for what Perth
-  lacks), and its scheduler as the parity oracle for the networks both express; P6 XML from
+- *Done:* Perth.jl's project JSON (`mkperth-perth`), read and written back byte for byte: a
+  task's start as a start on or after, its deadline as a secondary finish on or before, its
+  dependency strings as relationships, milestones, the calendar (empty for calendar days, a
+  business-day calendar's name); every other field, the task's and the project's, carried in
+  `extra` and written back in the file's order. Hostile files are catalogued errors.
+- **Next:** Perth.jl's scheduler as the parity oracle (#7); a business-day calendar's holidays
+  (#29); the WBS and summary tasks (#30); P6 XML from
   Oracle's published schema; Microsoft Project XML. XER is the user's decision (no specification
   from Oracle).
 

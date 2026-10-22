@@ -12,3 +12,12 @@ err-too-many = O projeto tem mais { $what } do que os { $max } que o MK Perth ag
 err-too-long = O cronograma passa de { $max } dias úteis, o mais longo que o MK Perth posiciona.
 what-activities = atividades
 what-relationships = vínculos
+
+err-perth-json = Isto não é um JSON que o Perth gravou: { $detail }
+err-perth-not-a-project = Este JSON não é um projeto do Perth: não tem lista de tarefas.
+err-perth-field = Tarefa { $task }: o campo { $field } não é o que o Perth grava ali.
+err-perth-too-many = O arquivo tem mais do que o MK Perth lê (no máximo { $max } tarefas, e outras tantas dependências por tarefa).
+warn-perth-duration = A tarefa { $task } tinha duração menor que um dia; o Perth conta como um.
+warn-perth-dangling = A tarefa { $task } depende de { $dependency }, que não está no projeto; ficou de fora, como o Perth faz.
+warn-perth-constraint = A tarefa { $task } tem uma restrição que o Perth não tem como guardar; ela não é gravada.
+warn-perth-sf = A tarefa { $task } segue { $predecessor } de início a fim, vínculo que o Perth não tem; ele não é gravado.

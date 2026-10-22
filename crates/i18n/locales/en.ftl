@@ -12,3 +12,12 @@ err-too-many = The project has more { $what } than the { $max } MK Perth schedul
 err-too-long = The schedule runs past { $max } working days, the longest MK Perth places.
 what-activities = activities
 what-relationships = relationships
+
+err-perth-json = This isn't JSON Perth wrote: { $detail }
+err-perth-not-a-project = This JSON isn't a Perth project: it has no list of tasks.
+err-perth-field = Task { $task }: the field { $field } isn't what Perth writes there.
+err-perth-too-many = The file holds more than MK Perth reads (at most { $max } tasks, and as many dependencies per task).
+warn-perth-duration = Task { $task } had a duration under a day; Perth counts it as one.
+warn-perth-dangling = Task { $task } depends on { $dependency }, which isn't in the project; left out, as Perth does.
+warn-perth-constraint = Task { $task } has a constraint Perth has no field for; it isn't written.
+warn-perth-sf = Task { $task } follows { $predecessor } start-to-finish, which Perth doesn't have; that relationship isn't written.
