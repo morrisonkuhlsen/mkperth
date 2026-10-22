@@ -63,8 +63,8 @@
   date; summaries that roll up their children.
 - **Perth.jl's project files**, read and written back byte for byte.
 
-There is no interface yet: the scheduler and the formats come first, then the engine, the
-command line and the Activities window.
+- **A first window:** the activity table beside the Gantt chart, early and late dates, floats and
+  the critical path, for the sample project or any Perth.jl project.
 
 ## Roadmap
 
@@ -83,8 +83,15 @@ The plan and the progress log: [`docs/roadmap.md`](docs/roadmap.md).
 ## Quick start
 
 ```sh
-cargo xtask ci        # fmt, clippy, tests, assets, layers, panics, wasm
-cargo test            # the tests alone
+cargo run --release -p mkperth                         # the window, with the sample project
+cargo run --release -p mkperth -- project.json         # a Perth.jl project
+cargo xtask ci                                         # fmt, clippy, tests, assets, layers, panics, wasm
+```
+
+Offscreen screenshots, with no window and nothing captured from the desktop:
+
+```sh
+cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang pt-BR] out.png
 ```
 
 The wasm gate needs the target once: `rustup target add wasm32-unknown-unknown`.
@@ -104,9 +111,9 @@ An engine-first Cargo workspace with enforced layering (`cargo xtask layers`):
 |-------|--------|
 | L0    | `i18n` (message catalogs) · `core` (dates, calendars, the project) |
 | L1    | `sched` (the critical path method) · `perth` (Perth.jl's JSON) |
-| L2    | `engine` *(next)* |
-| L3    | `ui-egui` · `mcp` *(next)* |
-| L4    | `apps/*` *(next)* |
+| L2    | `engine` (the session and its commands) |
+| L3    | `ui-egui` (the Activities window) · `mcp` *(next)* |
+| L4    | `apps/mkperth` |
 
 More in [`docs/architecture.md`](docs/architecture.md).
 

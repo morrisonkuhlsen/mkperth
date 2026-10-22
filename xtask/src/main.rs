@@ -15,7 +15,15 @@ use std::process::{Command, ExitCode};
 
 /// Each internal crate's layer: L0 `i18n`/`core` → L1 `sched`/`perth` → L2 `engine` → L3 `ui-egui`/`mcp`
 /// → L4 `apps/*`. A crate added without a row here fails the gate.
-const LAYERS: [(&str, u8); 4] = [("mkperth-i18n", 0), ("mkperth-core", 0), ("mkperth-sched", 1), ("mkperth-perth", 1)];
+const LAYERS: [(&str, u8); 7] = [
+    ("mkperth-i18n", 0),
+    ("mkperth-core", 0),
+    ("mkperth-sched", 1),
+    ("mkperth-perth", 1),
+    ("mkperth-engine", 2),
+    ("mkperth-ui-egui", 3),
+    ("mkperth", 4),
+];
 
 /// Crates only the UI layer and above may use.
 const UI_ONLY: [&str; 4] = ["egui", "eframe", "winit", "rfd"];
@@ -128,7 +136,19 @@ fn cargo(args: &[&str]) -> Result<(), String> {
 }
 
 fn wasm() -> Result<(), String> {
-    cargo(&["build", "--quiet", "--package", "mkperth-sched", "--package", "mkperth-perth", "--target", "wasm32-unknown-unknown", "--release"])
+    cargo(&[
+        "build",
+        "--quiet",
+        "--package",
+        "mkperth-sched",
+        "--package",
+        "mkperth-perth",
+        "--package",
+        "mkperth-engine",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--release",
+    ])
 }
 
 fn ci() -> Result<(), String> {

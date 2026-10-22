@@ -33,6 +33,9 @@ impl Weekday {
 const YEARS: std::ops::RangeInclusive<i32> = -9999..=9999;
 
 impl Date {
+    /// 1 January 1970, day 0.
+    pub const EPOCH: Date = Date(0);
+
     /// The date of `year`, `month` (1–12) and `day`; `None` if there is no such day.
     pub fn from_ymd(year: i32, month: u32, day: u32) -> Option<Date> {
         if !YEARS.contains(&year) || !(1..=12).contains(&month) || day < 1 || day > days_in_month(year, month) {

@@ -8,9 +8,10 @@ A Cargo workspace; `cargo xtask layers` holds each crate to its layer.
 | L0 | `mkperth-core` | `Date` (days from 1970, civil arithmetic), `Calendar`, `Project`, `Activity`, `Relationship` |
 | L1 | `mkperth-sched` | `schedule(&Project) -> Result<Schedule, ScheduleError>`: the critical path method |
 | L1 | `mkperth-perth` | Perth.jl's project JSON: `read` and `write`, lossless through `extra` |
-| L2 | `mkperth-engine` | *(next)* the session: the project, commands, undo |
-| L3 | `mkperth-ui-egui`, `mkperth-mcp` | *(next)* the Activities window; the MCP server |
-| L4 | `apps/*` | *(next)* the desktop app and the command line |
+| L2 | `mkperth-engine` | the session: the project, its schedule, `run(command, params)`; the sample project |
+| L3 | `mkperth-ui-egui` | the Activities window: the table beside the Gantt chart |
+| L3 | `mkperth-mcp` | *(next)* the MCP server |
+| L4 | `apps/mkperth` | the desktop app; the command line next |
 
 ## The scheduler's time
 Time runs in calendar days from 1 January 1970 (`crates/sched/src/clock.rs`): a time `t` is the

@@ -1,0 +1,16 @@
+[package]
+name = "mkperth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "MK Perth desktop app"
+
+[lints]
+workspace = true
+
+[dependencies]
+mkperth-ui-egui = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "wayland", "x11"] }
+rfd = { workspace = true }

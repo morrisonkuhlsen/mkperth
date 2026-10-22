@@ -26,6 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Install Linux build dependencies (winit, wgpu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev \
+            libxi-dev libfontconfig1-dev libfreetype-dev
+
       - name: Install Rust (stable + clippy, rustfmt, the wasm target)
         run: |
           rustup toolchain install stable --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown

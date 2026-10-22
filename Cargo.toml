@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "xtask"]
+members = ["crates/*", "apps/*", "xtask"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,11 +14,19 @@ mkperth-i18n = { path = "crates/i18n" }
 mkperth-core = { path = "crates/core" }
 mkperth-sched = { path = "crates/sched" }
 mkperth-perth = { path = "crates/perth" }
+mkperth-engine = { path = "crates/engine" }
+mkperth-ui-egui = { path = "crates/ui-egui" }
 
 # foundation
 thiserror = "2"
 # Perth.jl's project files are JSON; parsed with its recursion limit. MIT/Apache.
 serde_json = { version = "1", features = ["preserve_order"] }
+
+# ui
+egui = "0.36"
+eframe = { version = "0.36", default-features = false }
+rfd = "0.17"
+egui_kittest = "0.36"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

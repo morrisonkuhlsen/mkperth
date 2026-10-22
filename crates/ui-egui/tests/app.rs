@@ -1,0 +1,48 @@
+//! The window driven headless through its accessibility tree: no window, no file dialog.
+
+use std::cell::Cell;
+use std::rc::Rc;
+
+use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable as _;
+use mkperth_ui_egui::{PerthApp, Services};
+
+fn harness(app: PerthApp) -> Harness<'static, PerthApp> {
+    let mut h = Harness::builder().with_size(egui::vec2(1360.0, 820.0)).build_ui_state(|ui, app: &mut PerthApp| app.ui(ui), app);
+    h.run_steps(3);
+    h
+}
+
+#[test]
+fn opens_on_the_sample_scheduled() {
+    let h = harness(PerthApp::default());
+    let s = h.state().session.schedule.as_ref().unwrap();
+    assert!(s.activities.iter().any(|a| a.critical));
+    assert!(h.query_by_label("Schedule").is_some() && h.query_by_label("Open…").is_some());
+}
+
+#[test]
+fn f9_schedules_and_open_uses_the_dialog() {
+    let dir = std::env::temp_dir().join(format!("mkperth-ui-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("p.json");
+    std::fs::write(&path, r#"{"name": "Tiny", "tasks": [{"id": "a", "name": "A", "start": "2026-09-01", "duration": 3}], "calendar": ""}"#).unwrap();
+    let asked = Rc::new(Cell::new(0));
+    let (count, picked) = (asked.clone(), path.clone());
+    let services = Services {
+        pick_open: Some(Box::new(move || {
+            count.set(count.get() + 1);
+            Some(picked.clone())
+        })),
+    };
+    let mut h = harness(PerthApp::new(services));
+    h.key_press(egui::Key::F9);
+    h.run_steps(2);
+    assert!(matches!(&h.state().status, Some(Ok(s)) if s == "Scheduled"));
+    h.get_by_label("Open…").click();
+    h.run_steps(3);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(asked.get(), 1);
+    assert_eq!(h.state().session.project.name, "Tiny");
+    assert_eq!(h.state().session.schedule.as_ref().map(|s| s.activities.len()), Ok(1));
+}

@@ -28,4 +28,6 @@ Read it before re-scheduling a plan with a new version.
   every date and total float.
 - Brazil's national holidays, computed from their rules (Easter by the Gregorian computus), for
   Perth projects on the `Brazil` calendar and any calendar that names the region.
+- A first window: the activity table beside the Gantt chart, with early and late dates, floats
+  and the critical path, for the sample project or a Perth.jl project; Open, Sample, Schedule (F9).
 - Messages in English and Brazilian Portuguese.

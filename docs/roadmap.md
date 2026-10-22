@@ -46,11 +46,22 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   from Oracle).
 
 ## M2 — the engine and the command line
+- *Started:* `mkperth-engine`: the session (the project, its schedule, what opening it said) and
+  `Session::run` with the first commands, `project.open`, `project.sample` and
+  `project.schedule`; the sample project built in code (a small building on Brazil's calendar,
+  with a WBS, every kind of relationship, a lag and a lead, milestones, a constraint and a
+  seven-day cure).
 - **Next:** `mkperth-engine`: the project as the session's state, every change a command (ids
   after P6's menus: `project.schedule`, `activity.add`, `relationship.add`, `baseline.assign`),
   undo; `mkperth-cli` (schedule a file, print or write the result); `mkperth-mcp`.
 
 ## M3 — the Activities window
+- *Started:* a first window (`mkperth-ui-egui`, `apps/mkperth`): the activity table (ID, name,
+  duration, early and late start and finish, total and free float) beside the Gantt chart
+  (months and weeks, non-working days shaded, early bars red on the critical path, late bars
+  beneath, the float as a line, summaries as brackets, milestones as diamonds), in WBS order,
+  scrolling together; Open (Ctrl+O), Sample, Schedule (F9); a status line; English and
+  Brazilian Portuguese, light and dark; an offscreen snapshot example and kittest tests.
 - **Next:** the activity table beside the Gantt chart in egui, grouped by WBS; the details
   below (General, Status, Relationships); F9 schedules; every date's calculation by hand beside
   it; English and Brazilian Portuguese.
