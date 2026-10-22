@@ -105,6 +105,15 @@ pub fn constraint_name(c: Constraint, date: &dyn Fn(Date) -> String) -> String {
     }
 }
 
+/// The text with its first letter in upper case.
+fn capitalized(text: String) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => text,
+    }
+}
+
 impl Explanation {
     /// The calculation in words, line by line, dates written by `date`.
     pub fn lines(&self, date: &dyn Fn(Date) -> String) -> Vec<String> {
@@ -133,13 +142,17 @@ impl Explanation {
             out.push(tr!("ex-total-float", calendar = self.calendar.as_str(), n = self.scheduled.total_float));
             return out;
         }
+        // Each bound under its pass, indented by two spaces (the catalogs keep no leading space).
         out.push(tr!("ex-forward"));
         for b in &self.early {
-            out.push(match (b.via, b.overrides) {
-                (_, true) => tr!("ex-early-mandatory", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
-                (Some(v), _) => tr!("ex-early-via", source = source(&b.source).as_str(), via = at(v).as_str(), at = at(b.moment).as_str()),
-                (None, _) => tr!("ex-early-bound", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
-            });
+            out.push(
+                "  ".to_string()
+                    + &capitalized(match (b.via, b.overrides) {
+                        (_, true) => tr!("ex-early-mandatory", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
+                        (Some(v), _) => tr!("ex-early-via", source = source(&b.source).as_str(), via = at(v).as_str(), at = at(b.moment).as_str()),
+                        (None, _) => tr!("ex-early-bound", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
+                    }),
+            );
         }
         out.push(tr!("ex-earliest", at = at(self.earliest).as_str()));
         if self.early_start != self.earliest {
@@ -150,11 +163,14 @@ impl Explanation {
         }
         out.push(tr!("ex-backward"));
         for b in &self.late {
-            out.push(match (b.via, b.overrides) {
-                (_, true) => tr!("ex-late-mandatory", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
-                (Some(v), _) => tr!("ex-late-via", source = source(&b.source).as_str(), via = at(v).as_str(), at = at(b.moment).as_str()),
-                (None, _) => tr!("ex-late-bound", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
-            });
+            out.push(
+                "  ".to_string()
+                    + &capitalized(match (b.via, b.overrides) {
+                        (_, true) => tr!("ex-late-mandatory", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
+                        (Some(v), _) => tr!("ex-late-via", source = source(&b.source).as_str(), via = at(v).as_str(), at = at(b.moment).as_str()),
+                        (None, _) => tr!("ex-late-bound", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
+                    }),
+            );
         }
         out.push(tr!("ex-latest", at = at(self.latest).as_str()));
         if self.late_finish != self.latest {

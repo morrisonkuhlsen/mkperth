@@ -56,7 +56,13 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   undo; `mkperth-cli` (schedule a file, print or write the result); `mkperth-mcp`.
 
 ## M3 — the Activities window
-- *Started:* a first window (`mkperth-ui-egui`, `apps/mkperth`): the activity table (ID, name,
+- *Started:* the house's layout (MK Sigma's): a title row (the mark, AutoSave, Save, Undo and
+  Redo, the project's name, theme and search), File and the Home, Project and View tabs with the
+  ribbon's large buttons, the rail of views, the Calculation pane under the activities (the
+  selected activity's dates step by step, #5) with a Schedule button, the Details pane on the
+  right (facts, constraints, dates and floats, predecessors and successors), the Filters strip
+  (find by ID or name, critical only, late bars) and the status bar with the zoom; Save and Save
+  As write Perth JSON atomically. The first window: the activity table (ID, name,
   duration, early and late start and finish, total and free float) beside the Gantt chart
   (months and weeks, non-working days shaded, early bars red on the critical path, late bars
   beneath, the float as a line, summaries as brackets, milestones as diamonds), in WBS order,

@@ -401,7 +401,7 @@ fn every_date_with_its_calculation() {
     assert_eq!(g.earliest, g.early_start);
     assert_eq!(g.early_start.date, g.scheduled.early_start);
     let lines = g.lines(&|d: Date| d.to_string());
-    assert!(lines.iter().any(|l| l.contains("finish-to-finish with E, lag +1") && l.contains("the evening of 2026-10-12")), "{lines:#?}");
+    assert!(lines.iter().any(|l| l.contains("Finish-to-finish with E, lag +1") && l.contains("the evening of 2026-10-12")), "{lines:#?}");
     // A start that falls on a weekend is placed on the next working morning, and says so.
     let mut q = a_then_b();
     q.activities[1].constraint = Some(Constraint::StartOnOrAfter(day(2026, 10, 10)));

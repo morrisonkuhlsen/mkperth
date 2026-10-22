@@ -18,7 +18,8 @@ fn opens_on_the_sample_scheduled() {
     let h = harness(PerthApp::default());
     let s = h.state().session.schedule.as_ref().unwrap();
     assert!(s.activities.iter().any(|a| a.critical));
-    assert!(h.query_by_label("Schedule").is_some() && h.query_by_label("Open…").is_some());
+    assert!(h.query_all_by_label("Schedule").next().is_some() && h.query_by_label("Open").is_some());
+    assert!(h.query_by_label("No activity selected").is_some(), "the Details pane waits for a selection");
 }
 
 #[test]
@@ -34,12 +35,13 @@ fn f9_schedules_and_open_uses_the_dialog() {
             count.set(count.get() + 1);
             Some(picked.clone())
         })),
+        ..Services::default()
     };
     let mut h = harness(PerthApp::new(services));
     h.key_press(egui::Key::F9);
     h.run_steps(2);
-    assert!(matches!(&h.state().status, Some(Ok(s)) if s == "Scheduled"));
-    h.get_by_label("Open…").click();
+    assert_eq!(h.state().status, Some(mkperth_ui_egui::Status::Info("Scheduled".into())));
+    h.get_by_label("Open").click();
     h.run_steps(3);
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(asked.get(), 1);

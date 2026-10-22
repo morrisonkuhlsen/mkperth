@@ -28,6 +28,9 @@ fn main() -> eframe::Result {
         pick_open: Some(Box::new(|| {
             rfd::FileDialog::new().add_filter("Perth.jl project (.json)", &["json"]).add_filter("All files", &["*"]).pick_file()
         })),
+        pick_save: Some(Box::new(|suggested: &str| {
+            rfd::FileDialog::new().add_filter("Perth.jl project (.json)", &["json"]).set_file_name(suggested).save_file()
+        })),
     };
     let mut app = PerthApp::new(services);
     if let Some(path) = std::env::args().nth(1) {

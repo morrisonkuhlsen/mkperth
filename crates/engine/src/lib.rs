@@ -4,6 +4,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod sample;
+mod write;
 
 use std::path::{Path, PathBuf};
 
@@ -17,6 +18,7 @@ use thiserror::Error;
 pub use mkperth_core as core;
 pub use mkperth_i18n as i18n;
 pub use mkperth_sched as sched;
+pub use write::write_atomic;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EngineError {
@@ -35,7 +37,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 3] = ["project.open", "project.sample", "project.schedule"];
+pub const COMMANDS: [&str; 4] = ["project.open", "project.save", "project.sample", "project.schedule"];
 
 #[derive(Debug, Clone)]
 pub struct Session {
@@ -46,6 +48,8 @@ pub struct Session {
     pub schedule: Result<Schedule, ScheduleError>,
     /// What opening the project had to say.
     pub warnings: Vec<String>,
+    /// Changes not saved yet.
+    pub modified: bool,
 }
 
 impl Default for Session {
@@ -53,7 +57,7 @@ impl Default for Session {
     fn default() -> Self {
         let project = sample::project();
         let schedule = mkperth_sched::schedule(&project);
-        Session { project, path: None, schedule, warnings: Vec::new() }
+        Session { project, path: None, schedule, warnings: Vec::new(), modified: false }
     }
 }
 
@@ -63,6 +67,14 @@ impl Session {
         let param = |name: &str| params.get(name).and_then(Value::as_str).ok_or_else(|| EngineError::Param(id.to_string(), name.to_string()));
         match id {
             "project.open" => self.open(Path::new(param("path")?)),
+            // Without a path, where it was opened from.
+            "project.save" => {
+                let path = match params.get("path").and_then(Value::as_str) {
+                    Some(p) => PathBuf::from(p),
+                    None => self.path.clone().ok_or_else(|| EngineError::Param(id.to_string(), "path".to_string()))?,
+                };
+                self.save(&path)
+            }
             "project.sample" => {
                 *self = Session::default();
                 Ok(())
@@ -84,6 +96,22 @@ impl Session {
         self.path = Some(path.to_path_buf());
         self.reschedule();
         Ok(())
+    }
+
+    /// Writes the project as Perth.jl's JSON, all or nothing; it becomes the project's path.
+    /// Returns what Perth's format couldn't hold.
+    pub fn save(&mut self, path: &Path) -> Result<(), EngineError> {
+        let (text, warnings) = mkperth_perth::write(&self.project);
+        write_atomic(path, text.as_bytes()).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
+        self.path = Some(path.to_path_buf());
+        self.modified = false;
+        self.warnings = warnings;
+        Ok(())
+    }
+
+    /// How the scheduler reached the dates of the activity `id`.
+    pub fn explain(&self, id: &str) -> Result<mkperth_sched::Explanation, EngineError> {
+        Ok(mkperth_sched::explain(&self.project, id)?)
     }
 
     /// Schedules the project again.
@@ -125,6 +153,18 @@ mod tests {
         std::fs::write(&good, r#"{"name": "p", "tasks": [{"id": "a", "start": "2026-09-01", "duration": 3}], "calendar": ""}"#).unwrap();
         s.run("project.open", &serde_json::json!({"path": good.display().to_string()})).unwrap();
         assert_eq!((s.project.name.as_str(), s.schedule.as_ref().map(|x| x.activities.len())), ("p", Ok(1)));
+        // Saved where it came from, and read back the same.
+        s.run("project.save", &Value::Null).unwrap();
+        let mut again = Session::default();
+        again.open(&good).unwrap();
+        assert_eq!(again.project.activities, s.project.activities);
+        // The sample has no path: saving it needs one.
+        let mut sample = Session::default();
+        assert!(matches!(sample.run("project.save", &Value::Null), Err(EngineError::Param(..))));
+        let to = dir.join("sample.json");
+        sample.run("project.save", &serde_json::json!({"path": to.display().to_string()})).unwrap();
+        assert_eq!(sample.path.as_deref(), Some(to.as_path()));
+        assert!(Session::default().open(&to).is_ok());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
