@@ -385,3 +385,63 @@ fn a_broken_wbs_is_an_error() {
     p.activities[0].parent = Some(String::new());
     assert!(schedule(&p).is_ok());
 }
+
+#[test]
+fn every_date_with_its_calculation() {
+    // The four-kinds network: G(2) finishes on or after E's finish + 1 (FF+1): its finish bound is
+    // the evening of Monday the 12th, so it starts no earlier than Friday the 9th.
+    let p = project(
+        &[("E", 5), ("F", 3), ("G", 2), ("H", 4), ("M", 0)],
+        &[("E", "F", SS, 2), ("E", "G", FF, 1), ("E", "H", SF, 1), ("F", "M", FS, 0), ("G", "M", FS, 0)],
+    );
+    let g = explain(&p, "G").unwrap();
+    assert_eq!(g.early.len(), 2, "the project's start and the FF tie");
+    assert_eq!(g.early[1].via, Some(Moment { date: day(2026, 10, 12), evening: true }));
+    assert_eq!(g.early[1].moment, Moment { date: day(2026, 10, 9), evening: false });
+    assert_eq!(g.earliest, g.early_start);
+    assert_eq!(g.early_start.date, g.scheduled.early_start);
+    let lines = g.lines(&|d: Date| d.to_string());
+    assert!(lines.iter().any(|l| l.contains("finish-to-finish with E, lag +1") && l.contains("the evening of 2026-10-12")), "{lines:#?}");
+    // A start that falls on a weekend is placed on the next working morning, and says so.
+    let mut q = a_then_b();
+    q.activities[1].constraint = Some(Constraint::StartOnOrAfter(day(2026, 10, 10)));
+    let b = explain(&q, "B").unwrap();
+    assert_eq!((b.earliest.date, b.early_start.date), (day(2026, 10, 10), day(2026, 10, 12)));
+    assert!(b.lines(&|d: Date| d.to_string()).iter().any(|l| l.contains("next working morning")));
+    assert!(matches!(explain(&q, "nope"), Err(ScheduleError::UnknownActivity(_))));
+}
+
+/// For every activity of every network here, the explanation's dates are the schedule's, the
+/// winning bound is the latest (forward) or the earliest (backward), and the free float is the
+/// least slack it lists.
+#[test]
+fn the_explanation_is_the_calculation() {
+    let mut nets = vec![
+        project(&[("A", 3), ("B", 2), ("C", 4), ("D", 1)], &[("A", "B", FS, 0), ("A", "C", FS, 0), ("B", "D", FS, 0), ("C", "D", FS, 0)]),
+        project(
+            &[("E", 5), ("F", 3), ("G", 2), ("H", 4), ("M", 0)],
+            &[("E", "G", FF, 1), ("E", "F", SS, 2), ("E", "H", SF, 1), ("F", "M", FS, 0), ("G", "M", FS, 0)],
+        ),
+        project(&[("P", 5), ("Q", 3)], &[("P", "Q", FS, -2)]),
+    ];
+    let mut c = a_then_b();
+    c.activities[1].constraint = Some(Constraint::MandatoryStart(day(2026, 10, 7)));
+    nets.push(c);
+    for p in &nets {
+        let s = schedule(p).unwrap();
+        for a in &s.activities {
+            let e = explain(p, &a.id).unwrap();
+            assert_eq!(&e.scheduled, a);
+            let t = |m: Moment| (m.date, m.evening);
+            let mandatory = e.early.iter().find(|b| b.overrides);
+            let won = mandatory.map(|b| b.moment).or_else(|| e.early.iter().map(|b| b.moment).max_by_key(|m| t(*m)));
+            assert_eq!(won, Some(e.earliest), "{}: forward", a.id);
+            let mandatory = e.late.iter().find(|b| b.overrides);
+            let won = mandatory.map(|b| b.moment).or_else(|| e.late.iter().map(|b| b.moment).min_by_key(|m| t(*m)));
+            assert_eq!(won, Some(e.latest), "{}: backward", a.id);
+            let least = e.free.iter().map(|s| s.days).min().unwrap_or(0).min(a.total_float).max(0);
+            assert_eq!(least, a.free_float, "{}: free float", a.id);
+            assert!(!e.lines(&|d: Date| d.to_string()).is_empty());
+        }
+    }
+}

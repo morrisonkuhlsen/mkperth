@@ -27,6 +27,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod clock;
+mod explain;
 
 use std::collections::{HashMap, VecDeque};
 
@@ -35,6 +36,7 @@ use mkperth_i18n::tr;
 use thiserror::Error;
 
 use clock::Clock;
+pub use explain::{Bound, Explanation, Moment, Slack, Source, constraint_name};
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ScheduleError {
@@ -124,6 +126,17 @@ fn constraint_time(c: Constraint) -> Option<i64> {
 
 /// Schedules `project` by the critical path method.
 pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
+    Ok(run(project, None)?.0)
+}
+
+/// Schedules `project` and explains the dates of the activity `id`: every bound on it in each
+/// pass, which one won, where its calendar placed it, and its floats.
+pub fn explain(project: &Project, id: &str) -> Result<Explanation, ScheduleError> {
+    run(project, Some(id))?.1.ok_or_else(|| ScheduleError::UnknownActivity(id.to_string()))
+}
+
+/// The scheduler, recording the bounds on `trace` as it goes.
+fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Explanation>), ScheduleError> {
     let acts = &project.activities;
     if acts.len() > MAX_ACTIVITIES {
         return Err(ScheduleError::TooMany(tr!("what-activities"), MAX_ACTIVITIES));
@@ -206,6 +219,12 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
     let cal_of = |i: usize| on.get(i).copied().unwrap_or(0);
     let clock = |k: usize| Clock { calendar: calendars.get(k).copied().unwrap_or(&project.calendar) };
     let find = |id: &str| index.get(id).copied().ok_or_else(|| ScheduleError::UnknownActivity(id.to_string()));
+    let target = trace.map(find).transpose()?;
+    let traced = |i: usize| target == Some(i);
+    let id_of = |i: usize| acts.get(i).map_or_else(String::new, |a| a.id.clone());
+    let at = |t: i64, evening: bool| explain::moment(t, evening).ok_or(ScheduleError::TooLong);
+    let (mut early_bounds, mut late_bounds, mut slacks) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut earliest, mut latest_seen, mut held_late) = (None, None, 0);
     let mut ties = Vec::with_capacity(project.relationships.len());
     let mut ignored = Vec::new();
     for (k, r) in project.relationships.iter().enumerate() {
@@ -292,25 +311,46 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
     let mut ef = vec![origin; n];
     for &i in &order {
         let mut start = origin;
+        if traced(i) {
+            early_bounds.push(Bound { source: Source::ProjectStart, moment: at(origin, false)?, via: None, overrides: false });
+        }
         for &k in incoming.get(i).map_or(&[][..], Vec::as_slice) {
             let Some(t) = ties.get(k) else { continue };
             let bound = forward_bound(t, es.get(t.from).copied().unwrap_or(origin), ef.get(t.from).copied().unwrap_or(origin))?;
-            let s = match t.kind {
-                RelationshipType::FinishToStart | RelationshipType::StartToStart => bound,
-                RelationshipType::FinishToFinish | RelationshipType::StartToFinish => start_for_finish(i, bound)?,
+            let (s, via) = match t.kind {
+                RelationshipType::FinishToStart | RelationshipType::StartToStart => (bound, None),
+                RelationshipType::FinishToFinish | RelationshipType::StartToFinish => (start_for_finish(i, bound)?, Some(bound)),
             };
+            if traced(i) {
+                let source = Source::Relationship { other: id_of(t.from), kind: t.kind, lag: t.lag };
+                early_bounds.push(Bound { source, moment: at(s, false)?, via: via.map(|v| at(v, true)).transpose()?, overrides: false });
+            }
             start = start.max(s);
         }
         // Early-date constraints: no earlier than their date; a mandatory one, on it.
         for c in constraints(i) {
-            let at = constraint_time(c).map(bounded).transpose()?;
-            start = match (c, at) {
-                (Constraint::StartOnOrAfter(_) | Constraint::StartOn(_), Some(t)) => start.max(t),
-                (Constraint::FinishOnOrAfter(_) | Constraint::FinishOn(_), Some(t)) => start.max(start_for_finish(i, t)?),
-                (Constraint::MandatoryStart(_), Some(t)) => t.max(origin),
-                (Constraint::MandatoryFinish(_), Some(t)) => start_for_finish(i, t)?.max(origin),
-                _ => start,
+            let when = constraint_time(c).map(bounded).transpose()?;
+            let (candidate, via, overrides) = match (c, when) {
+                (Constraint::StartOnOrAfter(_) | Constraint::StartOn(_), Some(t)) => (Some(t), None, false),
+                (Constraint::FinishOnOrAfter(_) | Constraint::FinishOn(_), Some(t)) => (Some(start_for_finish(i, t)?), Some(t), false),
+                (Constraint::MandatoryStart(_), Some(t)) => (Some(t.max(origin)), None, true),
+                (Constraint::MandatoryFinish(_), Some(t)) => (Some(start_for_finish(i, t)?.max(origin)), Some(t), true),
+                _ => (None, None, false),
             };
+            if let Some(x) = candidate {
+                start = if overrides { x } else { start.max(x) };
+                if traced(i) {
+                    early_bounds.push(Bound {
+                        source: Source::Constraint(c),
+                        moment: at(x, false)?,
+                        via: via.map(|v| at(v, true)).transpose()?,
+                        overrides,
+                    });
+                }
+            }
+        }
+        if traced(i) {
+            earliest = Some(start);
         }
         let s = bounded(place_start(i, start)?)?;
         let f = bounded(finish_of(i, s)?)?;
@@ -330,28 +370,56 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
     let mut lf = vec![end; n];
     for &i in order.iter().rev() {
         let mut latest = end;
+        if traced(i) {
+            let source = if project.must_finish_by.is_some() { Source::MustFinishBy } else { Source::ProjectFinish };
+            late_bounds.push(Bound { source, moment: at(end, true)?, via: None, overrides: false });
+        }
         for &k in outgoing.get(i).map_or(&[][..], Vec::as_slice) {
             let Some(t) = ties.get(k) else { continue };
             let lag = clock(t.lag_calendar);
             let (s_ls, s_lf) = (ls.get(t.to).copied().unwrap_or(end), lf.get(t.to).copied().unwrap_or(end));
-            let f = match t.kind {
-                RelationshipType::FinishToStart => lag.shift(s_ls, -t.lag)?,
-                RelationshipType::StartToStart => finish_for_start(i, lag.shift(s_ls, -t.lag)?)?,
-                RelationshipType::FinishToFinish => lag.shift(s_lf, -t.lag)?,
-                RelationshipType::StartToFinish => finish_for_start(i, lag.shift(s_lf, -t.lag)?)?,
+            let (f, via) = match t.kind {
+                RelationshipType::FinishToStart => (lag.shift(s_ls, -t.lag)?, None),
+                RelationshipType::StartToStart => {
+                    let v = lag.shift(s_ls, -t.lag)?;
+                    (finish_for_start(i, v)?, Some(v))
+                }
+                RelationshipType::FinishToFinish => (lag.shift(s_lf, -t.lag)?, None),
+                RelationshipType::StartToFinish => {
+                    let v = lag.shift(s_lf, -t.lag)?;
+                    (finish_for_start(i, v)?, Some(v))
+                }
             };
+            if traced(i) {
+                let source = Source::Relationship { other: id_of(t.to), kind: t.kind, lag: t.lag };
+                late_bounds.push(Bound { source, moment: at(f, true)?, via: via.map(|v| at(v, false)).transpose()?, overrides: false });
+            }
             latest = latest.min(bounded(f)?);
         }
         // Late-date constraints: no later than their date; a mandatory one, on it.
         for c in constraints(i) {
-            let at = constraint_time(c).map(bounded).transpose()?;
-            latest = match (c, at) {
-                (Constraint::StartOnOrBefore(_) | Constraint::StartOn(_), Some(t)) => latest.min(finish_for_start(i, t)?),
-                (Constraint::FinishOnOrBefore(_) | Constraint::FinishOn(_), Some(t)) => latest.min(t),
-                (Constraint::MandatoryStart(_), Some(t)) => finish_for_start(i, t)?,
-                (Constraint::MandatoryFinish(_), Some(t)) => t,
-                _ => latest,
+            let when = constraint_time(c).map(bounded).transpose()?;
+            let (candidate, via, overrides) = match (c, when) {
+                (Constraint::StartOnOrBefore(_) | Constraint::StartOn(_), Some(t)) => (Some(finish_for_start(i, t)?), Some(t), false),
+                (Constraint::FinishOnOrBefore(_) | Constraint::FinishOn(_), Some(t)) => (Some(t), None, false),
+                (Constraint::MandatoryStart(_), Some(t)) => (Some(finish_for_start(i, t)?), Some(t), true),
+                (Constraint::MandatoryFinish(_), Some(t)) => (Some(t), None, true),
+                _ => (None, None, false),
             };
+            if let Some(x) = candidate {
+                latest = if overrides { x } else { latest.min(x) };
+                if traced(i) {
+                    late_bounds.push(Bound {
+                        source: Source::Constraint(c),
+                        moment: at(x, true)?,
+                        via: via.map(|v| at(v, false)).transpose()?,
+                        overrides,
+                    });
+                }
+            }
+        }
+        if traced(i) {
+            latest_seen = Some(latest);
         }
         let f = bounded(place_finish(i, latest)?)?;
         let s = bounded(start_of(i, f)?)?;
@@ -393,6 +461,9 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
         let c = clock(cal_of(i));
         let (e_s, e_f) = (es.get(i).copied().unwrap_or(origin), ef.get(i).copied().unwrap_or(origin));
         let mut slack = between(cal_of(i), e_f, finish)?;
+        if traced(i) {
+            slacks.push(Slack { source: Source::ProjectFinish, days: slack });
+        }
         for &k in outgoing.get(i).map_or(&[][..], Vec::as_slice) {
             let Some(t) = ties.get(k) else { continue };
             let bound = forward_bound(t, e_s, e_f)?;
@@ -400,7 +471,11 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
                 RelationshipType::FinishToStart | RelationshipType::StartToStart => es.get(t.to).copied().unwrap_or(origin),
                 RelationshipType::FinishToFinish | RelationshipType::StartToFinish => ef.get(t.to).copied().unwrap_or(origin),
             };
-            slack = slack.min(between(cal_of(i), bound, actual)?);
+            let days = between(cal_of(i), bound, actual)?;
+            if traced(i) {
+                slacks.push(Slack { source: Source::Relationship { other: id_of(t.to), kind: t.kind, lag: t.lag }, days });
+            }
+            slack = slack.min(days);
         }
         let total = between(cal_of(i), e_f, lf.get(i).copied().unwrap_or(end))?;
         let mut own = slack.min(total).max(0);
@@ -411,6 +486,9 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
             if let (Some(a), Some(b)) = (es.get_mut(i), ef.get_mut(i)) {
                 *a = s;
                 *b = f;
+            }
+            if traced(i) {
+                held_late = own;
             }
             own = 0;
         }
@@ -491,7 +569,33 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
         }
     }
     let last = out.iter().map(|a| a.early_finish).max().unwrap_or(project.start).max(project.start);
-    Ok(Schedule { activities: out, finish: last, ignored })
+    let explanation = match target {
+        None => None,
+        Some(i) => {
+            let kind = kind(i);
+            let start_evening = kind == ActivityKind::FinishMilestone;
+            let finish_evening = kind == ActivityKind::FinishMilestone || (kind == ActivityKind::Task && dur(i) > 0) || is_summary(i);
+            let get = |v: &[i64], d: i64| v.get(i).copied().unwrap_or(d);
+            Some(Explanation {
+                id: id_of(i),
+                calendar: calendars.get(cal_of(i)).map_or_else(String::new, |c| c.name.clone()),
+                duration: dur(i),
+                children: (0..n).filter(|&c| parent.get(c).copied().flatten() == Some(i)).map(id_of).collect(),
+                early: early_bounds,
+                earliest: at(earliest.unwrap_or(origin), false)?,
+                early_start: at(get(&es, origin), start_evening)?,
+                early_finish: at(get(&ef, origin), finish_evening)?,
+                late: late_bounds,
+                latest: at(latest_seen.unwrap_or(end), true)?,
+                late_start: at(get(&ls, end), start_evening)?,
+                late_finish: at(get(&lf, end), finish_evening)?,
+                free: slacks,
+                held_late,
+                scheduled: out.get(i).cloned().ok_or(ScheduleError::UnknownActivity(id_of(i)))?,
+            })
+        }
+    };
+    Ok((Schedule { activities: out, finish: last, ignored }, explanation))
 }
 
 /// Kahn's algorithm: the activities in an order where every predecessor comes first, or the
