@@ -116,7 +116,7 @@ impl PerthApp {
             tab: Tab::default(),
             ribbon_collapsed: false,
             view: View::default(),
-            options: Options { late_bars: true, ..Options::default() },
+            options: Options { late_bars: true, links: true, ..Options::default() },
             side: None,
             autosave: false,
             zoom: 100,
@@ -198,6 +198,7 @@ impl PerthApp {
             Action::DeleteActivity => self.delete_activity(),
             Action::CriticalOnly => self.options.critical_only = !self.options.critical_only,
             Action::LateBars => self.options.late_bars = !self.options.late_bars,
+            Action::Links => self.options.links = !self.options.links,
             Action::View(view) => self.view = view,
             Action::Theme(preference) => ctx.set_theme(preference),
             Action::ToggleAutoSave => self.autosave = !self.autosave,
@@ -314,6 +315,7 @@ impl PerthApp {
             autosave: self.autosave,
             critical_only: self.options.critical_only,
             late_bars: self.options.late_bars,
+            links: self.options.links,
             view: self.view,
             undo: self.session.undo_label(),
             redo: self.session.redo_label(),
@@ -647,6 +649,7 @@ impl PerthApp {
         ui.add_space(4.0);
         ui.checkbox(&mut self.options.critical_only, tr!("critical-only"));
         ui.checkbox(&mut self.options.late_bars, tr!("late-bars"));
+        ui.checkbox(&mut self.options.links, tr!("links"));
         if count > 0 && ui.button(tr!("filters-clear")).clicked() {
             self.options.critical_only = false;
             self.options.search.clear();

@@ -41,6 +41,7 @@ pub(crate) enum Action {
     DeleteActivity,
     CriticalOnly,
     LateBars,
+    Links,
     View(View),
     Theme(egui::ThemePreference),
     ToggleAutoSave,
@@ -54,6 +55,7 @@ pub(crate) struct State<'a> {
     pub autosave: bool,
     pub critical_only: bool,
     pub late_bars: bool,
+    pub links: bool,
     pub view: View,
     pub undo: Option<&'a str>,
     pub redo: Option<&'a str>,
@@ -264,6 +266,7 @@ fn buttons(ui: &mut egui::Ui, tab: Tab, state: &State) -> Option<Action> {
             divider(ui);
             go(ui, Icon::Critical, &tr!("critical-only"), &tr!("critical-only-tip"), true, state.critical_only, Action::CriticalOnly);
             go(ui, Icon::Gantt, &tr!("late-bars"), &tr!("late-bars-tip"), true, state.late_bars, Action::LateBars);
+            go(ui, Icon::Network, &tr!("links"), &tr!("links-tip"), true, state.links, Action::Links);
         }
         Tab::View => {
             go(

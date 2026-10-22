@@ -1,9 +1,9 @@
 //! The Activities view: the activity table beside the Gantt chart, one row per activity in WBS
 //! order, only the visible rows painted, the table and the chart scrolling together.
 
-use egui::{Align2, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
+use egui::{Align2, FontId, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use mkperth_engine::Session;
-use mkperth_engine::core::{ActivityKind, Date};
+use mkperth_engine::core::{ActivityKind, Date, RelationshipType};
 use mkperth_engine::i18n::tr;
 use mkperth_engine::sched::Scheduled;
 
@@ -55,6 +55,8 @@ pub(crate) struct Events {
 pub struct Options {
     pub critical_only: bool,
     pub late_bars: bool,
+    /// Relationship lines between the bars.
+    pub links: bool,
     /// Rows whose ID or name holds this text (any case), with their summaries.
     pub search: String,
 }
@@ -194,11 +196,19 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
     }
 
     let calendar = &session.project.calendar;
+    let row_of: std::collections::HashMap<usize, usize> = rows.iter().enumerate().map(|(n, &(i, _))| (i, n)).collect();
+    let index_of: std::collections::HashMap<&str, usize> = acts.iter().enumerate().map(|(i, a)| (a.id.as_str(), i)).collect();
+    let is_summary = |i: usize| acts.get(i).is_some_and(|a| acts.iter().any(|c| c.parent.as_deref() == Some(a.id.as_str())));
     let mut clicked = None;
     let mut double = None;
     egui::ScrollArea::vertical().id_salt("activities").auto_shrink(false).show_rows(ui, ROW, rows.len(), |ui, range| {
+        // In layers: the rows' backgrounds, then the relationship lines, then the cells, bars and
+        // names over them.
+        let mut first_top = None;
+        let mut placed = Vec::with_capacity(range.len());
         for &(i, depth) in rows.iter().skip(range.start).take(range.len()) {
             let (rect, response) = ui.allocate_exact_size(vec2(full.width(), ROW), Sense::click());
+            first_top.get_or_insert(rect.top());
             if response.clicked() {
                 clicked = Some(i);
             }
@@ -217,11 +227,13 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
                     None
                 };
             }
-            let (Some(a), Some(s)) = (acts.get(i), schedule.activities.get(i)) else { continue };
+            if acts.get(i).is_none() || schedule.activities.get(i).is_none() {
+                continue;
+            }
             let painter = ui.painter_at(rect);
             painter.rect_filled(rect, 0.0, if selected == Some(i) { t.accent_soft } else { t.grid_bg });
             // Non-working days of the project's calendar, shaded, when they're wide enough.
-            if scale >= 3.0 {
+            if scale >= 8.0 {
                 for k in 0..days {
                     if let Some(d) = Date::from_days(from + k).filter(|d| !calendar.is_working(*d)) {
                         let xd = x_of(d.days(), chart_left);
@@ -229,6 +241,53 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
                     }
                 }
             }
+            placed.push((i, depth, rect));
+        }
+        // The relationship lines, under the bars, from the predecessor's start or finish to the
+        // successor's; rows scrolled out of view still anchor them, clipped to the chart.
+        if options.links
+            && let Some(top) = first_top
+        {
+            let clip = Rect::from_min_max(pos2(chart_left, ui.clip_rect().top()), pos2(full.right(), ui.clip_rect().bottom()));
+            let painter = ui.painter().with_clip_rect(clip);
+            let y_of = |n: usize| top + (n as f32 - range.start as f32) * ROW + ROW / 2.0 - 2.0;
+            // Where an activity's work begins and ends on the chart.
+            let ends = |i: usize| -> Option<(f32, f32)> {
+                let (a, s) = (acts.get(i)?, schedule.activities.get(i)?);
+                let start = x_of(s.early_start.days(), chart_left);
+                let finish = x_of(s.early_finish.days(), chart_left) + scale;
+                Some(match a.kind {
+                    ActivityKind::StartMilestone => (start, start),
+                    ActivityKind::FinishMilestone => (finish, finish),
+                    ActivityKind::Task if a.working_days() == 0 => (start, start),
+                    ActivityKind::Task => (start, finish),
+                })
+            };
+            for r in &session.project.relationships {
+                let (Some(&p), Some(&q)) = (index_of.get(r.predecessor.as_str()), index_of.get(r.successor.as_str())) else { continue };
+                if is_summary(p) || is_summary(q) {
+                    continue;
+                }
+                let (Some(&np), Some(&nq)) = (row_of.get(&p), row_of.get(&q)) else { continue };
+                // Only the lines that touch the rows in view.
+                let (lo, hi) = (np.min(nq), np.max(nq));
+                if hi < range.start || lo > range.end {
+                    continue;
+                }
+                let (Some(pe), Some(qe)) = (ends(p), ends(q)) else { continue };
+                let from_finish = matches!(r.kind, RelationshipType::FinishToStart | RelationshipType::FinishToFinish);
+                let to_start = matches!(r.kind, RelationshipType::FinishToStart | RelationshipType::StartToStart);
+                let x0 = if from_finish { pe.1 } else { pe.0 };
+                let x1 = if to_start { qe.0 } else { qe.1 };
+                let (y0, y1) = (y_of(np), y_of(nq));
+                let critical = schedule.activities.get(p).is_some_and(|s| s.critical) && schedule.activities.get(q).is_some_and(|s| s.critical);
+                let color = if critical { t.red.gamma_multiply(0.85) } else { t.text_dim.gamma_multiply(0.75) };
+                link(&painter, (x0, y0), (x1, y1), from_finish, to_start, color);
+            }
+        }
+        for (i, depth, rect) in placed {
+            let (Some(a), Some(s)) = (acts.get(i), schedule.activities.get(i)) else { continue };
+            let painter = ui.painter_at(rect);
             let summary = acts.iter().any(|c| c.parent.as_deref() == Some(a.id.as_str()));
             let duration = if summary { String::new() } else { a.working_days().to_string() };
             let float_color = if s.critical && !summary { t.red } else { t.cell_text };
@@ -280,8 +339,10 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
                 }
             }
             let chart = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, rect.top()), rect.max));
-            bar(&chart, a.kind, summary, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, options.late_bars, &t);
             painter.hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, t.gridline));
+            let background = if selected == Some(i) { t.accent_soft } else { t.grid_bg };
+            let look = Look { summary, selected: selected == Some(i), float: options.late_bars, background };
+            bar(&chart, a.kind, &a.name, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, look, &t);
         }
     });
     if rows.is_empty() {
@@ -302,47 +363,118 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
     events
 }
 
-/// An activity's bars: the early one (red on the critical path), the late one thin beneath it;
-/// a summary as a bracket; a milestone as a diamond.
+/// How a bar is drawn beyond its dates.
+#[derive(Clone, Copy)]
+struct Look {
+    summary: bool,
+    selected: bool,
+    /// The total float as a light bar to the late finish.
+    float: bool,
+    /// The row's background, behind the name so lines passing under it don't cross the text.
+    background: egui::Color32,
+}
+
+/// A colour a little darker, for a bar's edge.
+fn darker(c: egui::Color32) -> egui::Color32 {
+    let f = |v: u8| (f32::from(v) * 0.78) as u8;
+    egui::Color32::from_rgb(f(c.r()), f(c.g()), f(c.b()))
+}
+
+/// An activity's bar: rounded, red on the critical path, its float a light bar to the late
+/// finish, its name beside it; a summary as a thin bracket over its span; a milestone as a
+/// diamond.
 #[allow(clippy::too_many_arguments)]
 fn bar(
     painter: &egui::Painter,
     kind: ActivityKind,
-    summary: bool,
+    name: &str,
     s: &Scheduled,
     row: Rect,
     x_of: &dyn Fn(Date) -> f32,
     scale: f32,
-    late: bool,
+    look: Look,
     t: &Tokens,
 ) {
-    let mid = row.center().y;
+    let mid = row.center().y - 2.0;
     let span = |a: Date, b: Date| (x_of(a), x_of(b) + scale);
-    if summary {
+    let label = |x: f32| {
+        let galley = painter.layout_no_wrap(name.to_string(), FontId::proportional(11.0), t.text_dim);
+        let at = pos2(x + 6.0, mid - galley.size().y / 2.0);
+        painter.rect_filled(Rect::from_min_size(at - vec2(2.0, 0.0), galley.size() + vec2(4.0, 0.0)), 2.0, look.background);
+        painter.galley(at, galley, t.text_dim);
+    };
+    if look.summary {
         let (l, r) = span(s.early_start, s.early_finish);
-        let top = mid - 5.0;
-        painter.rect_filled(Rect::from_min_max(pos2(l, top), pos2(r, top + 4.0)), 0.0, t.text);
+        let color = t.text.gamma_multiply(0.8);
+        painter.rect_filled(Rect::from_min_max(pos2(l, mid - 3.0), pos2(r, mid + 1.0)), 1.0, color);
         for x in [l, r] {
-            painter.add(egui::Shape::convex_polygon(vec![pos2(x - 4.0, top), pos2(x + 4.0, top), pos2(x, top + 9.0)], t.text, Stroke::NONE));
+            painter.add(egui::Shape::convex_polygon(
+                vec![pos2(x - 3.5, mid + 1.0), pos2(x + 3.5, mid + 1.0), pos2(x, mid + 6.0)],
+                color,
+                Stroke::NONE,
+            ));
         }
         return;
     }
     let color = if s.critical { t.red } else { t.blue };
-    if kind.is_milestone() {
+    if kind.is_milestone() || s.early_start > s.early_finish {
         // A start milestone at the morning of its day, a finish milestone at the evening.
         let x = if kind == ActivityKind::FinishMilestone { x_of(s.early_finish) + scale } else { x_of(s.early_start) };
-        let r = 6.0;
-        painter.add(egui::Shape::convex_polygon(vec![pos2(x, mid - r), pos2(x + r, mid), pos2(x, mid + r), pos2(x - r, mid)], color, Stroke::NONE));
+        let r = 6.5;
+        let diamond = vec![pos2(x, mid - r), pos2(x + r, mid), pos2(x, mid + r), pos2(x - r, mid)];
+        let edge = if look.selected { Stroke::new(2.0, t.accent) } else { Stroke::new(1.0, darker(color)) };
+        painter.add(egui::Shape::convex_polygon(diamond, color, edge));
+        label(x + r);
         return;
     }
     let (l, r) = span(s.early_start, s.early_finish);
-    painter.rect(Rect::from_min_max(pos2(l, mid - 7.0), pos2(r.max(l + 2.0), mid + 3.0)), 0.0, color, Stroke::NONE, StrokeKind::Inside);
-    if late {
-        let (ll, lr) = span(s.late_start, s.late_finish);
-        painter.rect_filled(Rect::from_min_max(pos2(ll, mid + 5.0), pos2(lr.max(ll + 2.0), mid + 8.0)), 0.0, t.text_dim.gamma_multiply(0.6));
-        // The total float, from the early finish to the late finish.
-        if s.total_float > 0 {
-            painter.line_segment([Pos2::new(r, mid - 2.0), Pos2::new(lr, mid - 2.0)], Stroke::new(1.0, t.text_dim));
-        }
+    let r = r.max(l + 3.0);
+    // The float first, under the bar's end: a light band to the late finish, with a tick there.
+    if look.float && s.total_float > 0 {
+        let (_, lr) = span(s.late_start, s.late_finish);
+        let band = Rect::from_min_max(pos2(r - 2.0, mid - 2.0), pos2(lr, mid + 2.0));
+        painter.rect_filled(band, 2.0, color.gamma_multiply(0.28));
+        painter.vline(lr, (mid - 4.0)..=(mid + 4.0), Stroke::new(1.0, color.gamma_multiply(0.6)));
     }
+    let body = Rect::from_min_max(pos2(l, mid - 6.0), pos2(r, mid + 6.0));
+    let edge = if look.selected { Stroke::new(2.0, t.accent) } else { Stroke::new(1.0, darker(color)) };
+    painter.rect(body, 3.0, color, edge, StrokeKind::Inside);
+    // A highlight along the top, for a little depth.
+    painter.rect_filled(
+        Rect::from_min_max(pos2(l + 2.0, mid - 5.0), pos2((r - 2.0).max(l + 2.0), mid - 3.5)),
+        1.0,
+        egui::Color32::from_white_alpha(46),
+    );
+    let end = if look.float && s.total_float > 0 { span(s.late_start, s.late_finish).1 } else { r };
+    label(end);
+}
+
+/// A relationship line: out of the predecessor (rightwards from a finish, leftwards from a
+/// start), down or up to the successor's row, into it (from the left to a start, from the right
+/// to a finish), an arrowhead at the end.
+fn link(painter: &egui::Painter, from: (f32, f32), to: (f32, f32), from_finish: bool, to_start: bool, color: egui::Color32) {
+    let (x0, y0) = from;
+    let (x1, y1) = to;
+    let stub = 6.0;
+    let out = if from_finish { x0 + stub } else { x0 - stub };
+    let into = if to_start { x1 - stub } else { x1 + stub };
+    let down = if y1 >= y0 { 1.0 } else { -1.0 };
+    let mut points = vec![pos2(x0, y0)];
+    let direct = if to_start { into >= out } else { into <= out };
+    if direct {
+        // Straight down beside the target, then in.
+        let x = if to_start { out.max(into) } else { out.min(into) };
+        points.extend([pos2(x, y0), pos2(x, y1), pos2(x1, y1)]);
+    } else {
+        // Around: out, half a row towards the target, across, then down and in.
+        let mid = y0 + down * (ROW / 2.0);
+        points.extend([pos2(out, y0), pos2(out, mid), pos2(into, mid), pos2(into, y1), pos2(x1, y1)]);
+    }
+    painter.add(egui::Shape::line(points, Stroke::new(1.2, color)));
+    let head = if to_start { -1.0 } else { 1.0 };
+    painter.add(egui::Shape::convex_polygon(
+        vec![pos2(x1, y1), pos2(x1 + head * 5.0, y1 - 3.5), pos2(x1 + head * 5.0, y1 + 3.5)],
+        color,
+        Stroke::NONE,
+    ));
 }

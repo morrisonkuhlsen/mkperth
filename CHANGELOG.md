@@ -35,6 +35,10 @@ Read it before re-scheduling a plan with a new version.
   and remove relationships, each change scheduled at once, with undo and redo; in the window,
   edit a cell in place (double click), New activity (Insert), Delete, relationships in Details,
   Ctrl+Z and Ctrl+Y. Changes that would make a loop or repeat an ID are refused.
+- The Gantt chart: rounded bars with an edge, red on the critical path; the total float as a light
+  band to the late finish; each activity's name beside its bar; relationship lines with arrows,
+  by kind (FS, SS, FF, SF), red between critical activities; thinner summary brackets; diamond
+  milestones; weekends shaded only when a day is wide enough.
 - Every date with its calculation: the bounds of each pass, the winner, the calendar's placing,
   the floats.
 - Messages in English and Brazilian Portuguese.
