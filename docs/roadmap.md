@@ -36,6 +36,25 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   below (General, Status, Relationships); F9 schedules; every date's calculation by hand beside
   it; English and Brazilian Portuguese.
 
+## M4 — resources
+- **Next:** resources and roles with units per time and prices that change over time; assignments
+  to activities; resource-dependent activities; levelling with priorities; histograms.
+
+## M5 — costs and earned value
+- **Next:** each activity's budgeted, actual, remaining and at-completion costs, from its
+  resources' prices and from expenses (accrued at the start, the end or over the activity); cost
+  accounts as a hierarchy; the project's and the WBS's budget (original and current, the log of
+  its changes, the spending plan per period, funding sources); earned value (planned value,
+  earned value, actual cost; CPI, SPI, EAC, ETC) with the usual percent-complete methods;
+  financial periods that store each period's actuals; currencies. Perth.jl's task costs and
+  S-curve are the oracle for what it covers.
+
+## Beyond P6 — billing (the user's to schedule)
+P6 has no billing: measurements and invoices are left to other products. MK Perth could close
+the loop: progress measurements per activity from percent complete and budgeted cost, the
+measurement statement per period, retention and price adjustment, as construction contracts
+measure work. A module of its own, after costs reach parity.
+
 ## Later
 - Progress: data date, actuals, retained logic and progress override, out-of-sequence progress.
 - Resources and roles, resource levelling, histograms.
