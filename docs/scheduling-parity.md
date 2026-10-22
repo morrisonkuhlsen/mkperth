@@ -39,5 +39,6 @@ the difference is noted here.
   as start milestones.
 - **Calendar days.** A Perth project without a calendar counts every day; MK Perth reads it as a
   seven-day calendar.
-- **Summaries.** Perth.jl schedules only leaf tasks and derives summaries; MK Perth does too
-  once the WBS lands (#30).
+- **Summaries.** Perth.jl schedules only leaf tasks, ignores ties that reach a summary and derives
+  summaries from their children; MK Perth does the same. In P6 relationships don't reach WBS
+  nodes at all.

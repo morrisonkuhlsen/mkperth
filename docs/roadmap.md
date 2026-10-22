@@ -33,7 +33,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   seed) with finish-to-start, start-to-start and finish-to-finish ties, lags and leads, own
   starts and deadlines, scheduled by Perth.jl 0.16.1 and re-typed as constants; MK Perth gives
   every early and late date and every total float the same (`crates/perth/tests/oracle.rs`).
-- **Next:** a business-day calendar's holidays (#29); the WBS and summary tasks (#30); P6 XML from
+  The WBS: each activity's parent; a summary (an activity with children) takes its dates from
+  them, holds no constraint or duration of its own, and relationships that reach it are left
+  out and listed; unknown parents, loops of parents and milestones with children are errors.
+  Ten more oracle networks with summaries agree with Perth.jl's leaf view.
+- **Next:** a business-day calendar's holidays (#29); P6 XML from
   Oracle's published schema; Microsoft Project XML. XER is the user's decision (no specification
   from Oracle).
 

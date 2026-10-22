@@ -339,3 +339,49 @@ fn a_start_and_a_deadline_together() {
     let s = schedule(&p).unwrap();
     assert_eq!((get(&s, "B").total_float, get(&s, "A").total_float), (-1, 1), "A still has the days before the 12th");
 }
+
+#[test]
+fn summaries_roll_up_their_children() {
+    // H holds G and C; G holds A(3) → B(2); D(1) follows B. A tie from G to C reaches a summary
+    // and is left out (a summary is its children, not work), so C(4) starts with the project.
+    // Leaves: A 5th–7th, B 8th–9th, C 5th–8th, D Monday the 12th. C's late finish is the
+    // project's, Monday the 12th's evening: 2 days of float (Friday and Monday).
+    let mut p = project(&[("H", 0), ("G", 9), ("A", 3), ("B", 2), ("C", 4), ("D", 1)], &[("A", "B", FS, 0), ("G", "C", FS, 0), ("B", "D", FS, 0)]);
+    for (id, parent) in [("G", "H"), ("A", "G"), ("B", "G"), ("C", "H")] {
+        p.activities.iter_mut().find(|a| a.id == id).unwrap().parent = Some(parent.into());
+    }
+    let s = schedule(&p).unwrap();
+    assert_eq!(s.ignored, [1], "the tie from the summary G");
+    assert_eq!((get(&s, "C").early_start, get(&s, "C").total_float), (day(2026, 10, 5), 2));
+    // G spans A and B: the 5th to the 9th, late the same, float 0 (its own duration of 9 counts
+    // for nothing).
+    let g = get(&s, "G");
+    assert_eq!(
+        (g.early_start, g.early_finish, g.late_finish, g.total_float, g.critical),
+        (day(2026, 10, 5), day(2026, 10, 9), day(2026, 10, 9), 0, true)
+    );
+    // H spans G and C: early to Friday the 9th, late to C's Monday the 12th: one day.
+    let h = get(&s, "H");
+    assert_eq!(
+        (h.early_start, h.early_finish, h.late_start, h.late_finish, h.total_float),
+        (day(2026, 10, 5), day(2026, 10, 9), day(2026, 10, 5), day(2026, 10, 12), 1)
+    );
+    assert_eq!(s.finish, day(2026, 10, 12));
+}
+
+#[test]
+fn a_broken_wbs_is_an_error() {
+    let mut p = project(&[("A", 1), ("B", 1)], &[]);
+    p.activities[0].parent = Some("Z".into());
+    assert_eq!(schedule(&p), Err(ScheduleError::UnknownParent("A".into(), "Z".into())));
+    p.activities[0].parent = Some("B".into());
+    p.activities[1].parent = Some("A".into());
+    let Err(ScheduleError::ParentLoop(ids)) = schedule(&p) else { panic!("a loop of parents") };
+    assert_eq!(ids.first(), ids.last());
+    p.activities[1].parent = None;
+    p.activities[1].kind = ActivityKind::FinishMilestone;
+    assert_eq!(schedule(&p), Err(ScheduleError::MilestoneParent("B".into())));
+    // An empty parent is no parent.
+    p.activities[0].parent = Some(String::new());
+    assert!(schedule(&p).is_ok());
+}

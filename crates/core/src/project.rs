@@ -112,6 +112,9 @@ pub struct Activity {
     pub secondary_constraint: Option<Constraint>,
     /// The name of the calendar it works on; the project's when `None`.
     pub calendar: Option<String>,
+    /// The activity it sits under in the WBS. An activity with children is a summary: its dates
+    /// come from theirs, and it takes no part in the network itself.
+    pub parent: Option<String>,
     pub extra: Extra,
 }
 

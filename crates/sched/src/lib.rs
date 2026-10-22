@@ -49,6 +49,14 @@ pub enum ScheduleError {
     /// The activity, and the calendar it names that the project doesn't have.
     #[error("{}", tr!("err-unknown-calendar", id = .0.as_str(), name = .1.as_str()))]
     UnknownCalendar(String, String),
+    /// The activity, and the parent it names that the project doesn't have.
+    #[error("{}", tr!("err-unknown-parent", id = .0.as_str(), parent = .1.as_str()))]
+    UnknownParent(String, String),
+    /// The activities of a loop of parents, each under the next.
+    #[error("{}", tr!("err-parent-loop", ids = .0.join(" → ")))]
+    ParentLoop(Vec<String>),
+    #[error("{}", tr!("err-milestone-parent", id = .0.as_str()))]
+    MilestoneParent(String),
     /// The activities of a loop of relationships, in order.
     #[error("{}", tr!("err-loop", ids = .0.join(" → ")))]
     Loop(Vec<String>),
@@ -87,6 +95,9 @@ pub struct Schedule {
     pub activities: Vec<Scheduled>,
     /// The latest early finish among the activities (the project's start when it has none).
     pub finish: Date,
+    /// The relationships left out because they reach a summary (by index in the project's
+    /// list): a summary is the sum of its children, not work of its own.
+    pub ignored: Vec<usize>,
 }
 
 /// A relationship by activity indexes, with the calendar its lag counts on.
@@ -150,14 +161,61 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
             Some(name) => named(name).ok_or_else(|| ScheduleError::UnknownCalendar(a.id.clone(), name.clone()))?,
         });
     }
+    // The WBS: each activity's parent, which activities are summaries, and no loops.
+    let mut parent: Vec<Option<usize>> = Vec::with_capacity(acts.len());
+    for a in acts {
+        parent.push(match a.parent.as_deref() {
+            None | Some("") => None,
+            Some(p) => Some(index.get(p).copied().ok_or_else(|| ScheduleError::UnknownParent(a.id.clone(), p.to_string()))?),
+        });
+    }
+    let mut summary = vec![false; acts.len()];
+    for p in parent.iter().flatten() {
+        if let Some(s) = summary.get_mut(*p) {
+            *s = true;
+        }
+    }
+    for (i, a) in acts.iter().enumerate() {
+        if summary.get(i) == Some(&true) && a.kind.is_milestone() {
+            return Err(ScheduleError::MilestoneParent(a.id.clone()));
+        }
+        // Climbing from any activity reaches the top within as many steps as there are
+        // activities, or the parents go round.
+        let mut at = i;
+        for _ in 0..=acts.len() {
+            match parent.get(at).copied().flatten() {
+                None => break,
+                Some(p) if p == i => {
+                    let mut ids = vec![a.id.clone()];
+                    let mut k = parent.get(i).copied().flatten();
+                    while let Some(j) = k.filter(|j| *j != i) {
+                        ids.push(acts.get(j).map_or_else(String::new, |x| x.id.clone()));
+                        k = parent.get(j).copied().flatten();
+                        if ids.len() > acts.len() {
+                            break;
+                        }
+                    }
+                    ids.push(a.id.clone());
+                    return Err(ScheduleError::ParentLoop(ids));
+                }
+                Some(p) => at = p,
+            }
+        }
+    }
+    let is_summary = |i: usize| summary.get(i) == Some(&true);
     let cal_of = |i: usize| on.get(i).copied().unwrap_or(0);
     let clock = |k: usize| Clock { calendar: calendars.get(k).copied().unwrap_or(&project.calendar) };
     let find = |id: &str| index.get(id).copied().ok_or_else(|| ScheduleError::UnknownActivity(id.to_string()));
     let mut ties = Vec::with_capacity(project.relationships.len());
-    for r in &project.relationships {
+    let mut ignored = Vec::new();
+    for (k, r) in project.relationships.iter().enumerate() {
         let (from, to) = (find(&r.predecessor)?, find(&r.successor)?);
         if from == to {
             return Err(ScheduleError::SelfRelationship(r.predecessor.clone()));
+        }
+        if is_summary(from) || is_summary(to) {
+            ignored.push(k);
+            continue;
         }
         if r.lag.abs() > MAX_SPAN {
             return Err(ScheduleError::TooLong);
@@ -180,10 +238,12 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
         }
     }
     let order = topological(n, &ties, &outgoing, &incoming, acts.iter().map(|a| a.id.as_str()).collect())?;
-    let dur = |i: usize| acts.get(i).map_or(0, |a| a.working_days());
+    // A summary takes no time and holds no constraint of its own: its dates are its children's.
+    let dur = |i: usize| if is_summary(i) { 0 } else { acts.get(i).map_or(0, |a| a.working_days()) };
     let kind = |i: usize| acts.get(i).map_or(ActivityKind::Task, |a| a.kind);
     // Both constraints of an activity hold; the primary first.
-    let constraints = |i: usize| acts.get(i).map_or([None, None], |a| [a.constraint, a.secondary_constraint]).into_iter().flatten();
+    let constraints =
+        |i: usize| acts.get(i).filter(|_| !is_summary(i)).map_or([None, None], |a| [a.constraint, a.secondary_constraint]).into_iter().flatten();
     let origin = i64::from(project.start.days());
     // Every time stays within the span of the project's start: far from overflow and from the
     // ends of the calendar.
@@ -259,7 +319,7 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
             *b = f;
         }
     }
-    let finish = ef.iter().copied().max().unwrap_or(origin);
+    let finish = (0..n).filter(|&i| !is_summary(i)).filter_map(|i| ef.get(i).copied()).max().unwrap_or(origin);
 
     // Backward pass, from the evening the project must finish by, or from its early finish.
     let end = match project.must_finish_by {
@@ -370,13 +430,11 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
         _ => date(t),
     };
     let mut out = Vec::with_capacity(n);
-    let mut last = project.start;
     for (i, a) in acts.iter().enumerate() {
         let (e_s, e_f) = (es.get(i).copied().unwrap_or(origin), ef.get(i).copied().unwrap_or(origin));
         let (l_s, l_f) = (ls.get(i).copied().unwrap_or(end), lf.get(i).copied().unwrap_or(end));
         let total = between(cal_of(i), e_f, l_f)?;
         let early_finish = finish_date(i, e_f)?;
-        last = last.max(early_finish);
         out.push(Scheduled {
             id: a.id.clone(),
             early_start: start_date(i, e_s)?,
@@ -388,7 +446,52 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
             critical: total <= 0,
         });
     }
-    Ok(Schedule { activities: out, finish: last })
+    // Summaries: from their children's dates, deepest first so a summary under a summary is
+    // ready when its parent reads it.
+    let depth = |i: usize| {
+        let (mut d, mut at) = (0usize, i);
+        while let Some(p) = parent.get(at).copied().flatten() {
+            d += 1;
+            at = p;
+            if d > n {
+                break;
+            }
+        }
+        d
+    };
+    let mut summaries: Vec<usize> = (0..n).filter(|&i| is_summary(i)).collect();
+    summaries.sort_by_key(|&i| std::cmp::Reverse(depth(i)));
+    let mut bounds: Vec<Option<(i64, i64)>> =
+        (0..n).map(|i| (!is_summary(i)).then(|| (ef.get(i).copied().unwrap_or(origin), lf.get(i).copied().unwrap_or(end)))).collect();
+    for &s in &summaries {
+        let children: Vec<usize> = (0..n).filter(|&c| parent.get(c).copied().flatten() == Some(s)).collect();
+        let pick = |f: fn(&Scheduled) -> Date, max: bool| {
+            let dates = children.iter().filter_map(|&c| out.get(c)).map(f);
+            if max { dates.max() } else { dates.min() }
+        };
+        let (Some(es_d), Some(ef_d), Some(ls_d), Some(lf_d)) =
+            (pick(|a| a.early_start, false), pick(|a| a.early_finish, true), pick(|a| a.late_start, false), pick(|a| a.late_finish, true))
+        else {
+            continue;
+        };
+        let e = children.iter().filter_map(|&c| bounds.get(c).copied().flatten()).map(|b| b.0).max().unwrap_or(origin);
+        let l = children.iter().filter_map(|&c| bounds.get(c).copied().flatten()).map(|b| b.1).max().unwrap_or(end);
+        let total = between(cal_of(s), e, l)?;
+        if let Some(slot) = bounds.get_mut(s) {
+            *slot = Some((e, l));
+        }
+        if let Some(a) = out.get_mut(s) {
+            a.early_start = es_d;
+            a.early_finish = ef_d;
+            a.late_start = ls_d;
+            a.late_finish = lf_d;
+            a.total_float = total;
+            a.free_float = 0;
+            a.critical = total <= 0;
+        }
+    }
+    let last = out.iter().map(|a| a.early_finish).max().unwrap_or(project.start).max(project.start);
+    Ok(Schedule { activities: out, finish: last, ignored })
 }
 
 /// Kahn's algorithm: the activities in an order where every predecessor comes first, or the
