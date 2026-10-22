@@ -14,9 +14,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   chain of 50 000 activities). Messages in English and Brazilian Portuguese.
   Start and finish milestones: no duration, a start milestone shown on the morning of its day,
   a finish milestone on the evening of the working day before.
-- **Next:** constraints (Start On or After, Finish On
-  or Before, Mandatory Start/Finish, As Late As Possible…); a calendar per activity and the lag's
-  calendar; durations in hours with hours per day.
+  Constraints: start or finish on, on or after, on or before; mandatory start and finish (they
+  override the relationships, so predecessors can get negative float); as late as possible (by
+  the free float); the date a project must finish by.
+- **Next:** a calendar per activity and the lag's calendar; durations in hours with hours per
+  day.
 
 ## M1 — data in and out
 - **Next:** Perth.jl's project JSON, read and written without loss (`extra` for what Perth

@@ -67,6 +67,29 @@ impl ActivityKind {
     }
 }
 
+/// A date an activity is held to, beyond its relationships.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Constraint {
+    /// Starts no earlier than the morning of the date: moves the early dates only.
+    StartOnOrAfter(Date),
+    /// Starts no later than the morning of the date: moves the late dates only.
+    StartOnOrBefore(Date),
+    /// Finishes no earlier than the evening of the date: moves the early dates only.
+    FinishOnOrAfter(Date),
+    /// Finishes no later than the evening of the date: moves the late dates only.
+    FinishOnOrBefore(Date),
+    /// Starts on the date: no earlier for the early dates, no later for the late ones.
+    StartOn(Date),
+    /// Finishes on the date, the same way.
+    FinishOn(Date),
+    /// Starts on the date whatever its predecessors say, early and late.
+    MandatoryStart(Date),
+    /// Finishes on the date whatever its predecessors say, early and late.
+    MandatoryFinish(Date),
+    /// As late as its free float allows, without delaying any successor.
+    AsLateAsPossible,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Activity {
     /// Unique within the project (P6's Activity ID).
@@ -76,6 +99,7 @@ pub struct Activity {
     /// Working days. A milestone takes none, whatever this says; a task of 0 is shown as a
     /// start milestone.
     pub duration: i64,
+    pub constraint: Option<Constraint>,
 }
 
 impl Activity {
@@ -91,6 +115,9 @@ pub struct Project {
     /// The schedule starts here: no activity starts before it.
     pub start: Date,
     pub calendar: Calendar,
+    /// The evening the project must finish by: the late dates count back from it instead of
+    /// from the latest early finish.
+    pub must_finish_by: Option<Date>,
     pub activities: Vec<Activity>,
     pub relationships: Vec<Relationship>,
 }

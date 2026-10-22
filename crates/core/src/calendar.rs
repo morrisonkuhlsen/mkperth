@@ -73,6 +73,19 @@ impl Calendar {
         Err(CalendarError::NoWorkingDays(self.name.clone()))
     }
 
+    /// `date` if it is a working day, else the one before.
+    pub fn previous_working(&self, date: Date) -> Result<Date, CalendarError> {
+        self.check()?;
+        let mut d = date;
+        for _ in 0..SEARCH {
+            if self.is_working(d) {
+                return Ok(d);
+            }
+            d = d.pred().ok_or_else(|| CalendarError::OutOfRange(self.name.clone()))?;
+        }
+        Err(CalendarError::NoWorkingDays(self.name.clone()))
+    }
+
     /// The working day `n` working days after working day `from` (`n` may be negative: before
     /// it). `from` itself is moved to the next working day first.
     pub fn add_working_days(&self, from: Date, n: i64) -> Result<Date, CalendarError> {

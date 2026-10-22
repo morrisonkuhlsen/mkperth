@@ -19,8 +19,9 @@ ideas.
 | Critical | total float ≤ 0 (or a chosen threshold) | done (≤ 0) |
 | Critical | the longest path | next |
 | Open ends | activities with no successor finish by the project's finish | done |
-| Constraints | start/finish on, on or after, on or before; mandatory; as late as possible; expected finish | next |
-| Project | must finish by date | next |
+| Constraints | start/finish on, on or after, on or before; mandatory start/finish; as late as possible | done |
+| Constraints | expected finish; a secondary constraint | next |
+| Project | must finish by date | done |
 | Progress | data date; actual start and finish; remaining duration | later |
 | Progress | retained logic, progress override, actual dates | later |
 | Resources | levelling with priorities | later |

@@ -1,6 +1,6 @@
 //! Networks scheduled by hand, each date and float worked out in the comments.
 
-use mkperth_core::{Activity, ActivityKind, Calendar, Date, Project, Relationship, RelationshipType};
+use mkperth_core::{Activity, ActivityKind, Calendar, Constraint, Date, Project, Relationship, RelationshipType};
 
 use super::*;
 
@@ -14,6 +14,7 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
         // Monday 5 October 2026.
         start: day(2026, 10, 5),
         calendar: Calendar::default(),
+        must_finish_by: None,
         activities: activities
             .iter()
             .map(|(id, d)| Activity { id: id.to_string(), name: id.to_string(), duration: *d, ..Activity::default() })
@@ -171,4 +172,106 @@ fn a_long_chain_schedules_without_recursion() {
     let tie_refs: Vec<(&str, &str, RelationshipType, i64)> = ties.iter().map(|(a, b)| (a.as_str(), b.as_str(), FS, 0)).collect();
     let s = schedule(&project(&refs, &tie_refs)).unwrap();
     assert!(s.activities.iter().all(|a| a.critical));
+}
+
+fn constrained(id: &str, constraint: Constraint, p: &mut Project) {
+    p.activities.iter_mut().find(|a| a.id == id).unwrap().constraint = Some(constraint);
+}
+
+/// A(3) → B(2) from Monday 5 October 2026: A 0–3 (the 5th to the 7th), B 3–5 (the 8th and 9th).
+fn a_then_b() -> Project {
+    project(&[("A", 3), ("B", 2)], &[("A", "B", FS, 0)])
+}
+
+#[test]
+fn early_date_constraints() {
+    // B starts on or after Monday the 12th (t = 5): 5–7, the 12th and 13th; A gets 2 days.
+    let mut p = a_then_b();
+    constrained("B", Constraint::StartOnOrAfter(day(2026, 10, 12)), &mut p);
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "B").early_start, get(&s, "B").early_finish), (day(2026, 10, 12), day(2026, 10, 13)));
+    assert_eq!(get(&s, "A").total_float, 2);
+    // On or after a Saturday: the next working morning, Monday the 12th, the same.
+    constrained("B", Constraint::StartOnOrAfter(day(2026, 10, 10)), &mut p);
+    assert_eq!(get(&schedule(&p).unwrap(), "B").early_start, day(2026, 10, 12));
+    // Finishes on or after the evening of Wednesday the 14th (t = 8): starts at 8 − 2 = 6.
+    constrained("B", Constraint::FinishOnOrAfter(day(2026, 10, 14)), &mut p);
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "B").early_start, get(&s, "B").early_finish), (day(2026, 10, 13), day(2026, 10, 14)));
+    // A date before the project's start holds nothing back.
+    constrained("B", Constraint::StartOnOrAfter(day(2026, 9, 1)), &mut p);
+    assert_eq!(get(&schedule(&p).unwrap(), "B").early_start, day(2026, 10, 8));
+}
+
+#[test]
+fn late_date_constraints_and_negative_float() {
+    // B finishes on or before the evening of Friday the 9th (t = 5): exactly its early finish.
+    let mut p = a_then_b();
+    constrained("B", Constraint::FinishOnOrBefore(day(2026, 10, 9)), &mut p);
+    assert_eq!(get(&schedule(&p).unwrap(), "B").total_float, 0);
+    // By Thursday the 8th's evening (t = 4): late finish 4, a day short. B and A have −1.
+    constrained("B", Constraint::FinishOnOrBefore(day(2026, 10, 8)), &mut p);
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "B").total_float, get(&s, "A").total_float), (-1, -1));
+    assert_eq!(get(&s, "A").late_start, day(2026, 10, 2), "a late start before the project's: Friday the 2nd");
+    assert!(get(&s, "A").critical && get(&s, "B").critical);
+    assert_eq!(get(&s, "B").early_finish, day(2026, 10, 9), "the early dates don't move");
+    // Starts on or before the morning of Wednesday the 7th (t = 2): late finish 2 + 2 = 4, −1.
+    constrained("B", Constraint::StartOnOrBefore(day(2026, 10, 7)), &mut p);
+    assert_eq!(get(&schedule(&p).unwrap(), "B").total_float, -1);
+}
+
+#[test]
+fn on_and_mandatory_constraints() {
+    // Finishes on the evening of Tuesday the 13th (t = 7): early start ≥ 5, late finish ≤ 7.
+    let mut p = a_then_b();
+    constrained("B", Constraint::FinishOn(day(2026, 10, 13)), &mut p);
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "B").early_start, get(&s, "B").total_float, get(&s, "A").total_float), (day(2026, 10, 12), 0, 2));
+    // Starts on Monday the 12th: the same.
+    constrained("B", Constraint::StartOn(day(2026, 10, 12)), &mut p);
+    assert_eq!(get(&schedule(&p).unwrap(), "B").early_start, day(2026, 10, 12));
+    // A mandatory start on Wednesday the 7th (t = 2), before A finishes: B 2–4 regardless,
+    // its late start 2 as well; A must finish by 2, a day short: −1.
+    constrained("B", Constraint::MandatoryStart(day(2026, 10, 7)), &mut p);
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "B").early_start, get(&s, "B").late_start, get(&s, "B").total_float), (day(2026, 10, 7), day(2026, 10, 7), 0));
+    assert_eq!(get(&s, "A").total_float, -1);
+    // A mandatory finish on the evening of Friday the 16th (t = 10): B 8–10 early and late.
+    constrained("B", Constraint::MandatoryFinish(day(2026, 10, 16)), &mut p);
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "B").early_start, get(&s, "B").late_finish), (day(2026, 10, 15), day(2026, 10, 16)));
+    assert_eq!(get(&s, "A").total_float, 5);
+}
+
+#[test]
+fn as_late_as_possible_uses_the_free_float() {
+    // A(3) → B(5) → D(1); A → C(1) → D. C has 4 days of free float (3–4 against D at 8) and,
+    // held as late as possible, takes 7–8: the 14th. A's free float stays 0, set by B.
+    let mut p = project(&[("A", 3), ("B", 5), ("C", 1), ("D", 1)], &[("A", "B", FS, 0), ("A", "C", FS, 0), ("B", "D", FS, 0), ("C", "D", FS, 0)]);
+    assert_eq!(get(&schedule(&p).unwrap(), "C").free_float, 4);
+    constrained("C", Constraint::AsLateAsPossible, &mut p);
+    let s = schedule(&p).unwrap();
+    let c = get(&s, "C");
+    assert_eq!((c.early_start, c.free_float, c.total_float), (day(2026, 10, 14), 0, 0));
+    assert_eq!(get(&s, "D").early_start, day(2026, 10, 15), "the successor doesn't move");
+    assert_eq!(get(&s, "A").free_float, 0);
+}
+
+#[test]
+fn the_project_must_finish_by() {
+    // A then B finish at t = 5. Must finish by Monday the 12th's evening (t = 6): a day of
+    // float each; by Thursday the 8th's (t = 4): −1 each.
+    let mut p = a_then_b();
+    p.must_finish_by = Some(day(2026, 10, 12));
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "A").total_float, get(&s, "B").total_float, get(&s, "B").late_finish), (1, 1, day(2026, 10, 12)));
+    assert!(!get(&s, "B").critical);
+    p.must_finish_by = Some(day(2026, 10, 8));
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "A").total_float, get(&s, "B").total_float), (-1, -1));
+    assert_eq!(s.finish, day(2026, 10, 9), "the finish is still the early one");
+    // A date far beyond any schedule is an error, not a walk across millennia.
+    p.must_finish_by = Some(day(9000, 1, 1));
+    assert_eq!(schedule(&p), Err(ScheduleError::TooLong));
 }
