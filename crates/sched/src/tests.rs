@@ -21,6 +21,7 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
             .iter()
             .map(|(id, d)| Activity { id: id.to_string(), name: id.to_string(), duration: *d, ..Activity::default() })
             .collect(),
+        extra: Default::default(),
         relationships: ties
             .iter()
             .map(|(p, s, kind, lag)| Relationship { predecessor: p.to_string(), successor: s.to_string(), kind: *kind, lag: *lag })
@@ -323,4 +324,18 @@ fn the_calendar_a_lag_counts_on() {
     // On B's seven days, or around the clock: Saturday and Sunday, so Monday the 12th.
     assert_eq!(b_start(LagCalendar::Successor, &mut p), day(2026, 10, 12));
     assert_eq!(b_start(LagCalendar::TwentyFourHour, &mut p), day(2026, 10, 12));
+}
+
+#[test]
+fn a_start_and_a_deadline_together() {
+    // B(2) after A(3) starts on or after Monday the 12th (5–7 on the clock) and must finish by
+    // the evening of Tuesday the 13th: it just makes it, float 0. By Monday the 12th: −1.
+    let mut p = a_then_b();
+    p.activities[1].constraint = Some(Constraint::StartOnOrAfter(day(2026, 10, 12)));
+    p.activities[1].secondary_constraint = Some(Constraint::FinishOnOrBefore(day(2026, 10, 13)));
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "B").early_start, get(&s, "B").total_float), (day(2026, 10, 12), 0));
+    p.activities[1].secondary_constraint = Some(Constraint::FinishOnOrBefore(day(2026, 10, 12)));
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "B").total_float, get(&s, "A").total_float), (-1, 1), "A still has the days before the 12th");
 }

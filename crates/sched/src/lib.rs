@@ -182,7 +182,8 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
     let order = topological(n, &ties, &outgoing, &incoming, acts.iter().map(|a| a.id.as_str()).collect())?;
     let dur = |i: usize| acts.get(i).map_or(0, |a| a.working_days());
     let kind = |i: usize| acts.get(i).map_or(ActivityKind::Task, |a| a.kind);
-    let constraint = |i: usize| acts.get(i).and_then(|a| a.constraint);
+    // Both constraints of an activity hold; the primary first.
+    let constraints = |i: usize| acts.get(i).map_or([None, None], |a| [a.constraint, a.secondary_constraint]).into_iter().flatten();
     let origin = i64::from(project.start.days());
     // Every time stays within the span of the project's start: far from overflow and from the
     // ends of the calendar.
@@ -241,7 +242,7 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
             start = start.max(s);
         }
         // Early-date constraints: no earlier than their date; a mandatory one, on it.
-        if let Some(c) = constraint(i) {
+        for c in constraints(i) {
             let at = constraint_time(c).map(bounded).transpose()?;
             start = match (c, at) {
                 (Constraint::StartOnOrAfter(_) | Constraint::StartOn(_), Some(t)) => start.max(t),
@@ -282,7 +283,7 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
             latest = latest.min(bounded(f)?);
         }
         // Late-date constraints: no later than their date; a mandatory one, on it.
-        if let Some(c) = constraint(i) {
+        for c in constraints(i) {
             let at = constraint_time(c).map(bounded).transpose()?;
             latest = match (c, at) {
                 (Constraint::StartOnOrBefore(_) | Constraint::StartOn(_), Some(t)) => latest.min(finish_for_start(i, t)?),
@@ -343,7 +344,7 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
         }
         let total = between(cal_of(i), e_f, lf.get(i).copied().unwrap_or(end))?;
         let mut own = slack.min(total).max(0);
-        if constraint(i) == Some(Constraint::AsLateAsPossible) && own > 0 {
+        if constraints(i).any(|c| c == Constraint::AsLateAsPossible) && own > 0 {
             let moved = place_start(i, c.advance(e_s, own)?)?;
             let s = if dur(i) == 0 { moved } else { c.retreat(c.advance(e_f, own)?, dur(i))? };
             let f = finish_of(i, s)?;

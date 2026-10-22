@@ -1,7 +1,14 @@
 //! A project: its activities, the relationships between them, its calendar and the date its
 //! schedule starts from.
 
+use std::collections::BTreeMap;
+
 use crate::{Calendar, Date};
+
+/// What a file format holds that the model doesn't: each key namespaced by its format
+/// (`perth.progress`), each value the field as that format wrote it (JSON text for Perth's).
+/// Readers fill it, writers of the same format read it back, everyone else carries it along.
+pub type Extra = BTreeMap<String, String>;
 
 /// How a relationship ties its successor to its predecessor (the four kinds of the
 /// precedence diagramming method).
@@ -100,8 +107,12 @@ pub struct Activity {
     /// start milestone.
     pub duration: i64,
     pub constraint: Option<Constraint>,
+    /// A second constraint beside the first: typically a start on or after with a finish on or
+    /// before. Both hold.
+    pub secondary_constraint: Option<Constraint>,
     /// The name of the calendar it works on; the project's when `None`.
     pub calendar: Option<String>,
+    pub extra: Extra,
 }
 
 impl Activity {
@@ -139,4 +150,5 @@ pub struct Project {
     pub must_finish_by: Option<Date>,
     pub activities: Vec<Activity>,
     pub relationships: Vec<Relationship>,
+    pub extra: Extra,
 }
