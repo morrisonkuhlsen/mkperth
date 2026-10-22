@@ -1,34 +1,40 @@
 //! The critical path method (CPM) over a project network: a forward pass for the early dates,
 //! a backward pass for the late ones, and the floats between them.
 //!
-//! Time runs in working days of the project's calendar, counted from the start of the project's
-//! first working day: an activity of duration `d` that starts at `t` occupies working days
-//! `t … t + d − 1` and finishes at the end of the last, `t + d`. A milestone (duration 0) starts
-//! and finishes at `t`. Each relationship constrains the successor's early start:
+//! Time runs in calendar days (see `clock`): a time `t` is the morning of day `t`, the evening
+//! of day `t − 1`. Each activity works on its own calendar: it starts on the morning of one of
+//! its working days, takes its duration in its working days, and finishes on the evening of the
+//! last. Each relationship bounds the successor `s` by its predecessor `p`, the lag counted in
+//! working days of the lag calendar (the predecessor's by default) and `⊕` moving by them:
 //!
-//! | kind | early start of the successor `s` after predecessor `p` |
+//! | kind | bound |
 //! | --- | --- |
-//! | FS | `ES(s) ≥ EF(p) + lag` |
-//! | SS | `ES(s) ≥ ES(p) + lag` |
-//! | FF | `ES(s) ≥ EF(p) + lag − d(s)` |
-//! | SF | `ES(s) ≥ ES(p) + lag − d(s)` |
+//! | FS | `ES(s) ≥ EF(p) ⊕ lag` |
+//! | SS | `ES(s) ≥ ES(p) ⊕ lag` |
+//! | FF | `EF(s) ≥ EF(p) ⊕ lag` |
+//! | SF | `EF(s) ≥ ES(p) ⊕ lag` |
 //!
 //! and, mirrored, the predecessor's late finish. No activity starts before the project does;
 //! every activity finishes by the project's finish: the latest early finish, or the date it
 //! must finish by. Constraints add their own bounds: an on-or-after date to the early dates, an
 //! on-or-before date to the late ones, an "on" date to both, a mandatory date replaces both;
-//! as late as possible moves an activity's early dates by its free float. Total float is
-//! `LF − EF`; free float is the slack before the tightest successor; an activity is critical
-//! when its total float is 0 or less. Sources: the precedence diagramming method as textbooks
-//! state it (Moder, Phillips and Davis, *Project Management with CPM, PERT and Precedence
-//! Diagramming*; PMI's *Practice Standard for Scheduling*).
+//! as late as possible moves an activity's early dates by its free float. Total float is the
+//! working days from the early finish to the late finish, free float those before the
+//! tightest successor, both on the activity's calendar; an activity is critical when its total
+//! float is 0 or less. Sources: the precedence diagramming method as textbooks state it (Moder,
+//! Phillips and Davis, *Project Management with CPM, PERT and Precedence Diagramming*; PMI's
+//! *Practice Standard for Scheduling*).
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+
+mod clock;
 
 use std::collections::{HashMap, VecDeque};
 
-use mkperth_core::{ActivityKind, Calendar, CalendarError, Constraint, Date, Project, RelationshipType};
+use mkperth_core::{ActivityKind, Calendar, CalendarError, Constraint, Date, LagCalendar, Project, RelationshipType};
 use mkperth_i18n::tr;
 use thiserror::Error;
+
+use clock::Clock;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ScheduleError {
@@ -40,6 +46,9 @@ pub enum ScheduleError {
     SelfRelationship(String),
     #[error("{}", tr!("err-negative-duration", id = .0.as_str()))]
     NegativeDuration(String),
+    /// The activity, and the calendar it names that the project doesn't have.
+    #[error("{}", tr!("err-unknown-calendar", id = .0.as_str(), name = .1.as_str()))]
+    UnknownCalendar(String, String),
     /// The activities of a loop of relationships, in order.
     #[error("{}", tr!("err-loop", ids = .0.join(" → ")))]
     Loop(Vec<String>),
@@ -54,7 +63,8 @@ pub enum ScheduleError {
 /// The most activities and relationships a project may have.
 pub const MAX_ACTIVITIES: usize = 1_000_000;
 pub const MAX_RELATIONSHIPS: usize = 4_000_000;
-/// The longest a schedule may run, in working days (about four centuries).
+/// The longest a duration or a lag may be, in working days, and (times two) the calendar days a
+/// schedule may span either side of its start: about five centuries.
 pub const MAX_SPAN: i64 = 100_000;
 
 /// One activity's dates and floats.
@@ -65,7 +75,7 @@ pub struct Scheduled {
     pub early_finish: Date,
     pub late_start: Date,
     pub late_finish: Date,
-    /// In working days.
+    /// In working days of the activity's calendar.
     pub total_float: i64,
     pub free_float: i64,
     pub critical: bool,
@@ -75,42 +85,30 @@ pub struct Scheduled {
 pub struct Schedule {
     /// In the project's order.
     pub activities: Vec<Scheduled>,
-    /// The latest early finish.
+    /// The latest early finish among the activities (the project's start when it has none).
     pub finish: Date,
 }
 
-/// A relationship by activity indexes.
+/// A relationship by activity indexes, with the calendar its lag counts on.
 struct Tie {
     from: usize,
     to: usize,
     kind: RelationshipType,
     lag: i64,
+    lag_calendar: usize,
 }
 
-/// Bounds a time so arithmetic on it stays far from overflow.
-fn bounded(t: i64) -> Result<i64, ScheduleError> {
-    if t.abs() > MAX_SPAN * 4 { Err(ScheduleError::TooLong) } else { Ok(t) }
-}
-
-/// The time of a date on the schedule's clock: the morning of `date` (the next working day's if
-/// it isn't one) for a start, its evening (the working day before's if it isn't one) for a
-/// finish. Before the project's first working day the count goes negative.
-fn moment(calendar: &Calendar, first: Date, date: Date, finish: bool) -> Result<i64, ScheduleError> {
-    let day = if finish { calendar.previous_working(date)? } else { calendar.next_working(date)? };
-    // Far beyond any schedule: refused before the walk below.
-    if (i64::from(day.days()) - i64::from(first.days())).abs() > MAX_SPAN * 3 {
-        return Err(ScheduleError::TooLong);
-    }
-    let (from, to, sign) = if day >= first { (first, day, 1) } else { (day, first, -1) };
-    let mut count = 0i64;
-    let mut d = from;
-    while d < to {
-        if calendar.is_working(d) {
-            count += 1;
+/// The constraint's date as a time: its morning for a start, its evening for a finish.
+fn constraint_time(c: Constraint) -> Option<i64> {
+    match c {
+        Constraint::StartOnOrAfter(d) | Constraint::StartOnOrBefore(d) | Constraint::StartOn(d) | Constraint::MandatoryStart(d) => {
+            Some(i64::from(d.days()))
         }
-        d = d.succ().ok_or(ScheduleError::TooLong)?;
+        Constraint::FinishOnOrAfter(d) | Constraint::FinishOnOrBefore(d) | Constraint::FinishOn(d) | Constraint::MandatoryFinish(d) => {
+            Some(i64::from(d.days()) + 1)
+        }
+        Constraint::AsLateAsPossible => None,
     }
-    Ok(sign * count + i64::from(finish))
 }
 
 /// Schedules `project` by the critical path method.
@@ -122,7 +120,20 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
     if project.relationships.len() > MAX_RELATIONSHIPS {
         return Err(ScheduleError::TooMany(tr!("what-relationships"), MAX_RELATIONSHIPS));
     }
+    // The calendars: the project's (0), the others it lists, and 24 hours for lags (last).
+    let every_day = Calendar::every_day();
+    let mut calendars: Vec<&Calendar> = vec![&project.calendar];
+    calendars.extend(project.calendars.iter());
+    calendars.push(&every_day);
+    for c in &calendars {
+        if !c.works() {
+            return Err(CalendarError::NoWorkingDays(c.name.clone()).into());
+        }
+    }
+    let twenty_four = calendars.len() - 1;
+    let named = |name: &str| project.calendars.iter().position(|c| c.name == name).map(|k| k + 1);
     let mut index = HashMap::with_capacity(acts.len());
+    let mut on = Vec::with_capacity(acts.len());
     for (i, a) in acts.iter().enumerate() {
         if index.insert(a.id.as_str(), i).is_some() {
             return Err(ScheduleError::DuplicateActivity(a.id.clone()));
@@ -133,7 +144,14 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
         if a.working_days() > MAX_SPAN {
             return Err(ScheduleError::TooLong);
         }
+        on.push(match &a.calendar {
+            None => 0,
+            Some(name) if *name == project.calendar.name => 0,
+            Some(name) => named(name).ok_or_else(|| ScheduleError::UnknownCalendar(a.id.clone(), name.clone()))?,
+        });
     }
+    let cal_of = |i: usize| on.get(i).copied().unwrap_or(0);
+    let clock = |k: usize| Clock { calendar: calendars.get(k).copied().unwrap_or(&project.calendar) };
     let find = |id: &str| index.get(id).copied().ok_or_else(|| ScheduleError::UnknownActivity(id.to_string()));
     let mut ties = Vec::with_capacity(project.relationships.len());
     for r in &project.relationships {
@@ -144,7 +162,13 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
         if r.lag.abs() > MAX_SPAN {
             return Err(ScheduleError::TooLong);
         }
-        ties.push(Tie { from, to, kind: r.kind, lag: r.lag });
+        let lag_calendar = match project.lag_calendar {
+            LagCalendar::Predecessor => cal_of(from),
+            LagCalendar::Successor => cal_of(to),
+            LagCalendar::TwentyFourHour => twenty_four,
+            LagCalendar::Project => 0,
+        };
+        ties.push(Tie { from, to, kind: r.kind, lag: r.lag, lag_calendar });
     }
     let n = acts.len();
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new(); n];
@@ -157,113 +181,175 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
     }
     let order = topological(n, &ties, &outgoing, &incoming, acts.iter().map(|a| a.id.as_str()).collect())?;
     let dur = |i: usize| acts.get(i).map_or(0, |a| a.working_days());
-    let first = project.calendar.next_working(project.start)?;
-    // Each constraint's date on the clock.
-    let mut held: Vec<Option<(Constraint, i64)>> = Vec::with_capacity(n);
-    for a in acts {
-        held.push(match a.constraint {
-            None => None,
-            Some(c @ Constraint::AsLateAsPossible) => Some((c, 0)),
-            Some(c @ (Constraint::StartOnOrAfter(d) | Constraint::StartOnOrBefore(d) | Constraint::StartOn(d) | Constraint::MandatoryStart(d))) => {
-                Some((c, moment(&project.calendar, first, d, false)?))
-            }
-            Some(
-                c @ (Constraint::FinishOnOrAfter(d) | Constraint::FinishOnOrBefore(d) | Constraint::FinishOn(d) | Constraint::MandatoryFinish(d)),
-            ) => Some((c, moment(&project.calendar, first, d, true)?)),
-        });
-    }
-    let constraint = |i: usize| held.get(i).copied().flatten();
+    let kind = |i: usize| acts.get(i).map_or(ActivityKind::Task, |a| a.kind);
+    let constraint = |i: usize| acts.get(i).and_then(|a| a.constraint);
+    let origin = i64::from(project.start.days());
+    // Every time stays within the span of the project's start: far from overflow and from the
+    // ends of the calendar.
+    let bounded = |t: i64| if (t - origin).abs() > MAX_SPAN * 2 { Err(ScheduleError::TooLong) } else { Ok(t) };
+
+    // Where an activity's working time can begin and end, on its calendar.
+    let place_start = |i: usize, t: i64| -> Result<i64, ScheduleError> {
+        let c = clock(cal_of(i));
+        match kind(i) {
+            ActivityKind::FinishMilestone => c.next_finish(t),
+            _ => c.next_start(t),
+        }
+    };
+    let finish_of = |i: usize, es: i64| -> Result<i64, ScheduleError> { clock(cal_of(i)).advance(es, dur(i)) };
+    // The earliest start that finishes no earlier than `t`.
+    let start_for_finish = |i: usize, t: i64| -> Result<i64, ScheduleError> {
+        let c = clock(cal_of(i));
+        if dur(i) == 0 { Ok(t) } else { c.retreat(c.next_finish(t)?, dur(i)) }
+    };
+    let place_finish = |i: usize, t: i64| -> Result<i64, ScheduleError> {
+        let c = clock(cal_of(i));
+        match kind(i) {
+            ActivityKind::Task if dur(i) > 0 => c.previous_finish(t),
+            ActivityKind::FinishMilestone => c.previous_finish(t),
+            _ => c.previous_start(t),
+        }
+    };
+    let start_of = |i: usize, lf: i64| -> Result<i64, ScheduleError> { clock(cal_of(i)).retreat(lf, dur(i)) };
+    // The latest finish that starts no later than `t`.
+    let finish_for_start = |i: usize, t: i64| -> Result<i64, ScheduleError> {
+        let c = clock(cal_of(i));
+        if dur(i) == 0 { Ok(t) } else { c.advance(c.previous_start(t)?, dur(i)) }
+    };
+    // The bound a tie puts on its successor, from the predecessor's early dates: a start for
+    // FS and SS, a finish for FF and SF.
+    let forward_bound = |t: &Tie, p_es: i64, p_ef: i64| -> Result<i64, ScheduleError> {
+        let lag = clock(t.lag_calendar);
+        bounded(match t.kind {
+            RelationshipType::FinishToStart | RelationshipType::FinishToFinish => lag.shift(p_ef, t.lag)?,
+            RelationshipType::StartToStart | RelationshipType::StartToFinish => lag.shift(p_es, t.lag)?,
+        })
+    };
 
     // Forward pass.
-    let mut es = vec![0i64; n];
+    let mut es = vec![origin; n];
+    let mut ef = vec![origin; n];
     for &i in &order {
-        let mut start = 0i64;
+        let mut start = origin;
         for &k in incoming.get(i).map_or(&[][..], Vec::as_slice) {
             let Some(t) = ties.get(k) else { continue };
-            let p_es = es.get(t.from).copied().unwrap_or(0);
-            let p_ef = p_es + dur(t.from);
-            let bound = match t.kind {
-                RelationshipType::FinishToStart => p_ef + t.lag,
-                RelationshipType::StartToStart => p_es + t.lag,
-                RelationshipType::FinishToFinish => p_ef + t.lag - dur(i),
-                RelationshipType::StartToFinish => p_es + t.lag - dur(i),
+            let bound = forward_bound(t, es.get(t.from).copied().unwrap_or(origin), ef.get(t.from).copied().unwrap_or(origin))?;
+            let s = match t.kind {
+                RelationshipType::FinishToStart | RelationshipType::StartToStart => bound,
+                RelationshipType::FinishToFinish | RelationshipType::StartToFinish => start_for_finish(i, bound)?,
             };
-            start = start.max(bounded(bound)?);
+            start = start.max(s);
         }
         // Early-date constraints: no earlier than their date; a mandatory one, on it.
-        start = match constraint(i) {
-            Some((Constraint::StartOnOrAfter(_) | Constraint::StartOn(_), t)) => start.max(t),
-            Some((Constraint::FinishOnOrAfter(_) | Constraint::FinishOn(_), t)) => start.max(t - dur(i)),
-            Some((Constraint::MandatoryStart(_), t)) => t.max(0),
-            Some((Constraint::MandatoryFinish(_), t)) => (t - dur(i)).max(0),
-            _ => start,
-        };
-        if let Some(slot) = es.get_mut(i) {
-            *slot = start;
+        if let Some(c) = constraint(i) {
+            let at = constraint_time(c).map(bounded).transpose()?;
+            start = match (c, at) {
+                (Constraint::StartOnOrAfter(_) | Constraint::StartOn(_), Some(t)) => start.max(t),
+                (Constraint::FinishOnOrAfter(_) | Constraint::FinishOn(_), Some(t)) => start.max(start_for_finish(i, t)?),
+                (Constraint::MandatoryStart(_), Some(t)) => t.max(origin),
+                (Constraint::MandatoryFinish(_), Some(t)) => start_for_finish(i, t)?.max(origin),
+                _ => start,
+            };
+        }
+        let s = bounded(place_start(i, start)?)?;
+        let f = bounded(finish_of(i, s)?)?;
+        if let (Some(a), Some(b)) = (es.get_mut(i), ef.get_mut(i)) {
+            *a = s;
+            *b = f;
         }
     }
-    let mut ef: Vec<i64> = (0..n).map(|i| es.get(i).copied().unwrap_or(0) + dur(i)).collect();
-    let finish = ef.iter().copied().max().unwrap_or(0);
-    if finish > MAX_SPAN {
-        return Err(ScheduleError::TooLong);
-    }
+    let finish = ef.iter().copied().max().unwrap_or(origin);
 
-    // Backward pass, from the date the project must finish by, or from its early finish.
+    // Backward pass, from the evening the project must finish by, or from its early finish.
     let end = match project.must_finish_by {
-        Some(date) => moment(&project.calendar, first, date, true)?,
+        Some(date) => bounded(i64::from(date.days()) + 1)?,
         None => finish,
     };
+    let mut ls = vec![end; n];
     let mut lf = vec![end; n];
     for &i in order.iter().rev() {
         let mut latest = end;
         for &k in outgoing.get(i).map_or(&[][..], Vec::as_slice) {
             let Some(t) = ties.get(k) else { continue };
-            let s_lf = lf.get(t.to).copied().unwrap_or(finish);
-            let s_ls = s_lf - dur(t.to);
-            let bound = match t.kind {
-                RelationshipType::FinishToStart => s_ls - t.lag,
-                RelationshipType::StartToStart => s_ls - t.lag + dur(i),
-                RelationshipType::FinishToFinish => s_lf - t.lag,
-                RelationshipType::StartToFinish => s_lf - t.lag + dur(i),
+            let lag = clock(t.lag_calendar);
+            let (s_ls, s_lf) = (ls.get(t.to).copied().unwrap_or(end), lf.get(t.to).copied().unwrap_or(end));
+            let f = match t.kind {
+                RelationshipType::FinishToStart => lag.shift(s_ls, -t.lag)?,
+                RelationshipType::StartToStart => finish_for_start(i, lag.shift(s_ls, -t.lag)?)?,
+                RelationshipType::FinishToFinish => lag.shift(s_lf, -t.lag)?,
+                RelationshipType::StartToFinish => finish_for_start(i, lag.shift(s_lf, -t.lag)?)?,
             };
-            latest = latest.min(bounded(bound)?);
+            latest = latest.min(bounded(f)?);
         }
         // Late-date constraints: no later than their date; a mandatory one, on it.
-        latest = match constraint(i) {
-            Some((Constraint::StartOnOrBefore(_) | Constraint::StartOn(_), t)) => latest.min(t + dur(i)),
-            Some((Constraint::FinishOnOrBefore(_) | Constraint::FinishOn(_), t)) => latest.min(t),
-            Some((Constraint::MandatoryStart(_), t)) => t + dur(i),
-            Some((Constraint::MandatoryFinish(_), t)) => t,
-            _ => latest,
-        };
-        if let Some(slot) = lf.get_mut(i) {
-            *slot = latest;
+        if let Some(c) = constraint(i) {
+            let at = constraint_time(c).map(bounded).transpose()?;
+            latest = match (c, at) {
+                (Constraint::StartOnOrBefore(_) | Constraint::StartOn(_), Some(t)) => latest.min(finish_for_start(i, t)?),
+                (Constraint::FinishOnOrBefore(_) | Constraint::FinishOn(_), Some(t)) => latest.min(t),
+                (Constraint::MandatoryStart(_), Some(t)) => finish_for_start(i, t)?,
+                (Constraint::MandatoryFinish(_), Some(t)) => t,
+                _ => latest,
+            };
+        }
+        let f = bounded(place_finish(i, latest)?)?;
+        let s = bounded(start_of(i, f)?)?;
+        if let (Some(a), Some(b)) = (ls.get_mut(i), lf.get_mut(i)) {
+            *a = s;
+            *b = f;
         }
     }
+
+    // Working days between two times, by each calendar's running count over the schedule's
+    // span: one pass per calendar, not one per activity.
+    let lo = es.iter().chain(&ls).copied().min().unwrap_or(origin).min(origin) - 1;
+    let hi = ef.iter().chain(&lf).copied().max().unwrap_or(origin).max(end) + 1;
+    let span = usize::try_from(hi - lo).map_err(|_| ScheduleError::TooLong)?;
+    let mut counts: Vec<Vec<i64>> = Vec::with_capacity(calendars.len());
+    for k in 0..calendars.len() {
+        let c = clock(k);
+        let mut running = Vec::with_capacity(span + 1);
+        let mut total = 0i64;
+        running.push(0);
+        for day in lo..hi {
+            total += i64::from(c.working(day)?);
+            running.push(total);
+        }
+        counts.push(running);
+    }
+    let between = |k: usize, a: i64, b: i64| -> Result<i64, ScheduleError> {
+        let at = |t: i64| usize::try_from(t - lo).ok().and_then(|x| counts.get(k).and_then(|r| r.get(x)).copied());
+        match (at(a), at(b)) {
+            (Some(x), Some(y)) => Ok(y - x),
+            _ => clock(k).between(a, b),
+        }
+    };
 
     // Free float, successors first, so an activity held as late as possible moves by its own
     // before its predecessors measure theirs against it.
     let mut free = vec![0i64; n];
     for &i in order.iter().rev() {
-        let (e_s, e_f) = (es.get(i).copied().unwrap_or(0), ef.get(i).copied().unwrap_or(0));
-        let mut slack = finish - e_f;
+        let c = clock(cal_of(i));
+        let (e_s, e_f) = (es.get(i).copied().unwrap_or(origin), ef.get(i).copied().unwrap_or(origin));
+        let mut slack = between(cal_of(i), e_f, finish)?;
         for &k in outgoing.get(i).map_or(&[][..], Vec::as_slice) {
             let Some(t) = ties.get(k) else { continue };
-            let s_es = es.get(t.to).copied().unwrap_or(0);
-            let s_ef = ef.get(t.to).copied().unwrap_or(0);
-            slack = slack.min(match t.kind {
-                RelationshipType::FinishToStart => s_es - t.lag - e_f,
-                RelationshipType::StartToStart => s_es - t.lag - e_s,
-                RelationshipType::FinishToFinish => s_ef - t.lag - e_f,
-                RelationshipType::StartToFinish => s_ef - t.lag - e_s,
-            });
+            let bound = forward_bound(t, e_s, e_f)?;
+            let actual = match t.kind {
+                RelationshipType::FinishToStart | RelationshipType::StartToStart => es.get(t.to).copied().unwrap_or(origin),
+                RelationshipType::FinishToFinish | RelationshipType::StartToFinish => ef.get(t.to).copied().unwrap_or(origin),
+            };
+            slack = slack.min(between(cal_of(i), bound, actual)?);
         }
-        let total = lf.get(i).copied().unwrap_or(end) - e_f;
+        let total = between(cal_of(i), e_f, lf.get(i).copied().unwrap_or(end))?;
         let mut own = slack.min(total).max(0);
-        if matches!(constraint(i), Some((Constraint::AsLateAsPossible, _))) && own > 0 {
-            if let (Some(s), Some(f)) = (es.get_mut(i), ef.get_mut(i)) {
-                *s += own;
-                *f += own;
+        if constraint(i) == Some(Constraint::AsLateAsPossible) && own > 0 {
+            let moved = place_start(i, c.advance(e_s, own)?)?;
+            let s = if dur(i) == 0 { moved } else { c.retreat(c.advance(e_f, own)?, dur(i))? };
+            let f = finish_of(i, s)?;
+            if let (Some(a), Some(b)) = (es.get_mut(i), ef.get_mut(i)) {
+                *a = s;
+                *b = f;
             }
             own = 0;
         }
@@ -272,54 +358,36 @@ pub fn schedule(project: &Project) -> Result<Schedule, ScheduleError> {
         }
     }
 
-    // Dates: the project's working days, once.
-    let mut days = Vec::with_capacity(usize::try_from(finish.max(1)).unwrap_or(0).saturating_add(1));
-    let mut d = first;
-    days.push(d);
-    let highest = finish.max(lf.iter().copied().max().unwrap_or(0));
-    for _ in 0..highest {
-        d = project.calendar.add_working_days(d, 1)?;
-        days.push(d);
-    }
-    // A time before the first working day (a late start pulled back by a lead): count back.
-    let date_at = |t: i64| -> Result<Date, ScheduleError> {
-        if t >= 0 {
-            usize::try_from(t).ok().and_then(|t| days.get(t).copied()).ok_or(ScheduleError::TooLong)
-        } else {
-            Ok(project.calendar.add_working_days(first, t)?)
-        }
+    // A start is the morning of its day; a finish the evening of the day before its time. A
+    // start milestone (or a task of no duration) is shown on its morning's day, a finish
+    // milestone on its evening's.
+    let date = |t: i64| i32::try_from(t).ok().and_then(Date::from_days).ok_or(ScheduleError::TooLong);
+    let start_date = |i: usize, t: i64| if kind(i) == ActivityKind::FinishMilestone { date(t - 1) } else { date(t) };
+    let finish_date = |i: usize, t: i64| match kind(i) {
+        ActivityKind::FinishMilestone => date(t - 1),
+        ActivityKind::Task if dur(i) > 0 => date(t - 1),
+        _ => date(t),
     };
-    // A start is the morning of working day `t`, a finish the evening of day `t − 1`. A start
-    // milestone (or a task of no duration) is the morning of its day; a finish milestone the
-    // evening before, except at the project's very start, where there is no day before.
-    let start_date = |t: i64, kind: ActivityKind| match kind {
-        ActivityKind::FinishMilestone if t > 0 => date_at(t - 1),
-        _ => date_at(t),
-    };
-    let finish_date = |t: i64, kind: ActivityKind, d: i64| match kind {
-        ActivityKind::FinishMilestone if t > 0 => date_at(t - 1),
-        ActivityKind::Task if d > 0 => date_at(t - 1),
-        _ => date_at(t),
-    };
-
     let mut out = Vec::with_capacity(n);
+    let mut last = project.start;
     for (i, a) in acts.iter().enumerate() {
-        let (e_s, e_f, l_f) = (es.get(i).copied().unwrap_or(0), ef.get(i).copied().unwrap_or(0), lf.get(i).copied().unwrap_or(end));
-        let d = a.working_days();
-        let l_s = l_f - d;
-        let total = l_f - e_f;
+        let (e_s, e_f) = (es.get(i).copied().unwrap_or(origin), ef.get(i).copied().unwrap_or(origin));
+        let (l_s, l_f) = (ls.get(i).copied().unwrap_or(end), lf.get(i).copied().unwrap_or(end));
+        let total = between(cal_of(i), e_f, l_f)?;
+        let early_finish = finish_date(i, e_f)?;
+        last = last.max(early_finish);
         out.push(Scheduled {
             id: a.id.clone(),
-            early_start: start_date(e_s, a.kind)?,
-            early_finish: finish_date(e_f, a.kind, d)?,
-            late_start: start_date(l_s, a.kind)?,
-            late_finish: finish_date(l_f, a.kind, d)?,
+            early_start: start_date(i, e_s)?,
+            early_finish,
+            late_start: start_date(i, l_s)?,
+            late_finish: finish_date(i, l_f)?,
             total_float: total,
             free_float: free.get(i).copied().unwrap_or(0),
             critical: total <= 0,
         });
     }
-    Ok(Schedule { activities: out, finish: date_at(finish - i64::from(finish > 0))? })
+    Ok(Schedule { activities: out, finish: last })
 }
 
 /// Kahn's algorithm: the activities in an order where every predecessor comes first, or the

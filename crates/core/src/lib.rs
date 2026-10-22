@@ -8,4 +8,4 @@ mod project;
 
 pub use calendar::{Calendar, CalendarError};
 pub use date::{Date, Weekday};
-pub use project::{Activity, ActivityKind, Constraint, Project, Relationship, RelationshipType};
+pub use project::{Activity, ActivityKind, Constraint, LagCalendar, Project, Relationship, RelationshipType};

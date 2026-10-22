@@ -46,6 +46,16 @@ impl Default for Calendar {
 }
 
 impl Calendar {
+    /// Every day worked: the 24-hour calendar lags can count on.
+    pub fn every_day() -> Calendar {
+        Calendar { name: "24 Hour".into(), week: [true; 7], ..Calendar::default() }
+    }
+
+    /// Whether it has any working day at all.
+    pub fn works(&self) -> bool {
+        self.week.iter().any(|w| *w) || !self.extra_days.is_empty()
+    }
+
     pub fn is_working(&self, date: Date) -> bool {
         if self.extra_days.contains(&date) {
             return true;

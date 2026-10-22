@@ -100,6 +100,8 @@ pub struct Activity {
     /// start milestone.
     pub duration: i64,
     pub constraint: Option<Constraint>,
+    /// The name of the calendar it works on; the project's when `None`.
+    pub calendar: Option<String>,
 }
 
 impl Activity {
@@ -109,12 +111,29 @@ impl Activity {
     }
 }
 
+/// Which calendar a relationship's lag counts its working days on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum LagCalendar {
+    /// The predecessor's.
+    #[default]
+    Predecessor,
+    /// The successor's.
+    Successor,
+    /// Every day, around the clock.
+    TwentyFourHour,
+    /// The project's.
+    Project,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
     pub name: String,
     /// The schedule starts here: no activity starts before it.
     pub start: Date,
     pub calendar: Calendar,
+    /// Other calendars activities may name.
+    pub calendars: Vec<Calendar>,
+    pub lag_calendar: LagCalendar,
     /// The evening the project must finish by: the late dates count back from it instead of
     /// from the latest early finish.
     pub must_finish_by: Option<Date>,

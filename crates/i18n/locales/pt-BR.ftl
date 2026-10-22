@@ -6,6 +6,7 @@ err-duplicate-activity = Duas atividades têm o ID { $id }; cada ID precisa ser 
 err-unknown-activity = Um vínculo cita a atividade { $id }, que não está no projeto.
 err-self-relationship = A atividade { $id } está vinculada a si mesma.
 err-negative-duration = A atividade { $id } tem duração negativa.
+err-unknown-calendar = A atividade { $id } trabalha no calendário { $name }, que o projeto não tem.
 err-loop = Estes vínculos formam um ciclo, então nenhuma ordem os satisfaz: { $ids }
 err-too-many = O projeto tem mais { $what } do que os { $max } que o MK Perth agenda.
 err-too-long = O cronograma passa de { $max } dias úteis, o mais longo que o MK Perth posiciona.

@@ -12,7 +12,10 @@ A Cargo workspace; `cargo xtask layers` holds each crate to its layer.
 | L4 | `apps/*` | *(next)* the desktop app and the command line |
 
 ## The scheduler's time
-Time runs in working days of the project's calendar from the morning of its first working day:
-an activity of duration `d` starting at `t` works days `t … t + d − 1` and finishes the evening
-of the last, at `t + d`. Dates are read off the calendar's working days once per schedule.
-The relationships' bounds are in `crates/sched/src/lib.rs`'s header.
+Time runs in calendar days from 1 January 1970 (`crates/sched/src/clock.rs`): a time `t` is the
+morning of day `t` and the evening of day `t − 1`. Each activity works on its own calendar: it
+starts on the morning of one of its working days, takes its duration in them, and finishes on
+the evening of the last; its floats count them. Lags count working days of the lag calendar the
+project chooses. Floats are read off a running count of each calendar's working days over the
+schedule's span, built once per schedule. The relationships' bounds are in
+`crates/sched/src/lib.rs`'s header.

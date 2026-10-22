@@ -1,6 +1,6 @@
 //! Networks scheduled by hand, each date and float worked out in the comments.
 
-use mkperth_core::{Activity, ActivityKind, Calendar, Constraint, Date, Project, Relationship, RelationshipType};
+use mkperth_core::{Activity, ActivityKind, Calendar, Constraint, Date, LagCalendar, Project, Relationship, RelationshipType};
 
 use super::*;
 
@@ -14,6 +14,8 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
         // Monday 5 October 2026.
         start: day(2026, 10, 5),
         calendar: Calendar::default(),
+        calendars: Vec::new(),
+        lag_calendar: LagCalendar::default(),
         must_finish_by: None,
         activities: activities
             .iter()
@@ -81,9 +83,9 @@ fn the_four_kinds_of_relationship_with_lags() {
     assert_eq!(t("H"), (2, 2, false));
     assert_eq!(t("E"), (0, 0, true));
     assert_eq!(t("M"), (0, 0, true));
-    // The project finishes the evening of working day 5, the 12th: the same moment as the
-    // morning of the 13th, where the milestone (a start milestone, for now) is shown.
-    assert_eq!(s.finish, day(2026, 10, 12));
+    // The project's finish is its latest early finish: the milestone's, the 13th (a start
+    // milestone shows its morning).
+    assert_eq!(s.finish, day(2026, 10, 13));
 }
 
 #[test]
@@ -101,11 +103,13 @@ fn start_and_finish_milestones() {
     let go = get(&s, "go");
     assert_eq!((go.early_start, go.early_finish), (day(2026, 10, 12), day(2026, 10, 12)));
     assert!(done.critical && go.critical);
-    // A finish milestone at the project's very start has no evening before: its day.
+    // A finish milestone at the project's start falls on the evening of its first working day,
+    // Monday the 5th; it can wait until Friday the 9th's: 4 days.
     let kick = get(&s, "kick");
     assert_eq!(kick.early_finish, day(2026, 10, 5));
-    assert_eq!((kick.total_float, kick.late_finish), (5, day(2026, 10, 9)));
-    assert_eq!(s.finish, day(2026, 10, 9));
+    assert_eq!((kick.total_float, kick.late_finish), (4, day(2026, 10, 9)));
+    // The latest early finish is the start milestone's, Monday the 12th.
+    assert_eq!(s.finish, day(2026, 10, 12));
 }
 
 #[test]
@@ -274,4 +278,49 @@ fn the_project_must_finish_by() {
     // A date far beyond any schedule is an error, not a walk across millennia.
     p.must_finish_by = Some(day(9000, 1, 1));
     assert_eq!(schedule(&p), Err(ScheduleError::TooLong));
+}
+
+/// A seven-day calendar named "seven", for concrete that cures over the weekend.
+fn with_seven_days(p: &mut Project) {
+    p.calendars.push(Calendar { name: "seven".into(), week: [true; 7], ..Calendar::default() });
+}
+
+#[test]
+fn an_activity_on_its_own_calendar() {
+    // A(5) on the five-day week, Monday the 5th to Friday the 9th; B(3) cures on the seven-day
+    // calendar from Saturday the 10th to Monday the 12th; C(1) on the five-day week, Tuesday the
+    // 13th. Every activity is critical; B's float counts its own days.
+    let mut p = project(&[("A", 5), ("B", 3), ("C", 1)], &[("A", "B", FS, 0), ("B", "C", FS, 0)]);
+    with_seven_days(&mut p);
+    p.activities[1].calendar = Some("seven".into());
+    let s = schedule(&p).unwrap();
+    let b = get(&s, "B");
+    assert_eq!((b.early_start, b.early_finish), (day(2026, 10, 10), day(2026, 10, 12)));
+    assert_eq!(get(&s, "C").early_start, day(2026, 10, 13));
+    assert!(s.activities.iter().all(|a| a.critical));
+    // Without the cure calendar, B would wait for Monday: 12th to 14th, C on the 15th.
+    p.activities[1].calendar = None;
+    assert_eq!(get(&schedule(&p).unwrap(), "C").early_start, day(2026, 10, 15));
+    // A calendar the project doesn't have.
+    p.activities[1].calendar = Some("night shift".into());
+    assert_eq!(schedule(&p), Err(ScheduleError::UnknownCalendar("B".into(), "night shift".into())));
+}
+
+#[test]
+fn the_calendar_a_lag_counts_on() {
+    // A(5) on the five-day week finishes the evening of Friday the 9th; B(1) on the seven-day
+    // calendar follows with a lag of 2 days.
+    let mut p = project(&[("A", 5), ("B", 1)], &[("A", "B", FS, 2)]);
+    with_seven_days(&mut p);
+    p.activities[1].calendar = Some("seven".into());
+    let b_start = |lag: LagCalendar, p: &mut Project| {
+        p.lag_calendar = lag;
+        get(&schedule(p).unwrap(), "B").early_start
+    };
+    // On A's five-day week: Monday the 12th and Tuesday the 13th, so B starts Wednesday the 14th.
+    assert_eq!(b_start(LagCalendar::Predecessor, &mut p), day(2026, 10, 14));
+    assert_eq!(b_start(LagCalendar::Project, &mut p), day(2026, 10, 14));
+    // On B's seven days, or around the clock: Saturday and Sunday, so Monday the 12th.
+    assert_eq!(b_start(LagCalendar::Successor, &mut p), day(2026, 10, 12));
+    assert_eq!(b_start(LagCalendar::TwentyFourHour, &mut p), day(2026, 10, 12));
 }

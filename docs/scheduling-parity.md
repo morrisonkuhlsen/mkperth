@@ -8,10 +8,11 @@ ideas.
 | Area | Behaviour | MK Perth |
 | --- | --- | --- |
 | Relationships | finish-to-start, start-to-start, finish-to-finish, start-to-finish | done |
-| Lags | positive lags and negative leads, in working days | done (project calendar) |
-| Lag calendar | the lag counted on the predecessor's, the successor's, a 24-hour or the project's calendar | next |
-| Calendars | worked weekdays, holidays, exceptions | done (one per project) |
-| Calendars | a calendar per activity; hours per day; work periods within the day | next |
+| Lags | positive lags and negative leads, in working days | done |
+| Lag calendar | the lag counted on the predecessor's, the successor's, a 24-hour or the project's calendar | done |
+| Calendars | worked weekdays, holidays, exceptions | done |
+| Calendars | a calendar per activity | done |
+| Calendars | hours per day; work periods within the day | next (#2) |
 | Durations | in hours, shown in days by hours per day | next (days for now) |
 | Milestones | start and finish milestones | done |
 | Float | total float as finish float (LF − EF) | done |

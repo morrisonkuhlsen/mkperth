@@ -17,8 +17,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   Constraints: start or finish on, on or after, on or before; mandatory start and finish (they
   override the relationships, so predecessors can get negative float); as late as possible (by
   the free float); the date a project must finish by.
-- **Next:** a calendar per activity and the lag's calendar; durations in hours with hours per
-  day.
+  A calendar per activity, and the calendar lags count on (the predecessor's by default, the
+  successor's, 24 hours or the project's): the scheduler's clock runs in calendar days and each
+  activity snaps to its own working days.
+- **Next:** durations in hours with hours per day (#2); float and critical options (#3); every
+  date with its calculation (#5).
 
 ## M1 — data in and out
 - **Next:** Perth.jl's project JSON, read and written without loss (`extra` for what Perth
