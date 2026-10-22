@@ -1,0 +1,11 @@
+[package]
+name = "mkperth-i18n"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "MK Perth's languages: message catalogs in a subset of Fluent, and the current language"
+
+[lints]
+workspace = true
+
+[dependencies]
