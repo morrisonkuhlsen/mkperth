@@ -1,0 +1,16 @@
+MK Perth
+Copyright (c) 2026 the MK Perth contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+The Morrison Kühlsen name is Morrison Kühlsen's. Brand assets, when the interface comes, will be
+Morrison Kühlsen brand assets used with their owner's permission, outside the licences above,
+each listed in ATTRIBUTION.md.
+
+Third-party material
+
+Every asset in this repository is original to MK Perth and licensed as above; the per-file list
+(author, source, licence) is in ATTRIBUTION.md.
+
+The programs are built from the Rust crates listed in Cargo.lock, each under its own permissive
+licence (MIT, Apache-2.0, BSD, Zlib, ISC or similar).

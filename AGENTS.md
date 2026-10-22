@@ -5,7 +5,7 @@ MK Perth is a clean-room, open-source, Rust-native project scheduler targeting O
 ## Start every session here
 1. Read [`docs/roadmap.md`](docs/roadmap.md): what is done, and the **Next:** items, which are the work list; then the relevant section of [`docs/architecture.md`](docs/architecture.md) and [`docs/scheduling-parity.md`](docs/scheduling-parity.md). Behaviour reference: Oracle's public P6 documentation (its ideas only), the scheduling literature, and open tools run as oracles (see *Clean-room*).
 2. Work autonomously through the next item: build it, test it, look at it, commit it when the gates pass. Stop to ask only for what is the user's to decide: priorities and scope, brand and visual identity, anything published or shared (pushing, releases), and anything destructive.
-3. **Issues.** The open GitHub issues (`gh issue list`) are work too. A problem found and not fixed in the same change becomes an issue at once (`gh issue create`), in English: a short title, the sections *Report*, *Expected / actual* and *Notes*, labelled by type (`bug`, `enhancement`) and priority (`priority: critical`, `high`, `medium`, `low`). Search the open issues first. A commit that fixes one says `Fixes #n`.
+3. **Issues.** The open GitHub issues (`gh issue list`) are work too. A problem found and not fixed in the same change becomes an issue at once (`gh issue create`), in English, following the templates in `.github/ISSUE_TEMPLATE/`: `[Bug Report] …` with *Summary*, *Steps to reproduce*, *Expected* and *Actual behavior*; `[Feature Request] …` with *Description*, *Proposal* and *Acceptance*; `[Decision] …` for what is the user's to decide; labelled by type (`bug`, `enhancement`) and priority (`priority: critical`, `high`, `medium`, `low`). Search the open issues first. A commit that fixes one says `Fixes #n`.
 
 `plan/` is gitignored (local only): working notes.
 
@@ -37,6 +37,7 @@ People trust MK Perth with their plans; a crash loses their work. **This outrank
 - **Layering** is enforced by `cargo xtask layers`: `i18n`/`core` (L0) → `sched` and the formats (L1) → `engine` (L2) → `ui-egui`/`mcp` (L3) → `apps/*` (L4). Nothing below L3 depends on egui/eframe/winit/rfd. **The UI crate is swappable.**
 - **Languages.** Every user-visible text comes from the catalogs in `crates/i18n/locales/*.ftl` through `tr!`, in English and Português (Brasil); their tests fail on a missing message or placeholder.
 - **Rust only. Never break wasm** (`cargo xtask wasm`).
+- **CHANGELOG.** Anything a user would notice gets a line in [`CHANGELOG.md`](CHANGELOG.md) under `## [Unreleased]`; a change that gives different dates or floats for the same project goes under **Changed results**, with what was computed before and what is now.
 - **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests, assets, layers, panics, wasm). Run it as `cargo xtask ci && git commit …`: a pipe after it hides its failure. One change per commit, its message saying what and why. Push only when the user asks.
 
 ## Perth.jl
