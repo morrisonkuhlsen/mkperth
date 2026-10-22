@@ -30,7 +30,8 @@ ideas.
 
 ## Perth.jl's conventions
 
-Where Perth.jl (the parity oracle for what it covers, #7) and P6 differ, MK Perth follows P6 and
+On the networks both express, Perth.jl 0.16.1 and MK Perth agree on every date and total float
+(`crates/perth/tests/oracle.rs`). Where Perth.jl and P6 differ, MK Perth follows P6 and
 the difference is noted here.
 
 - **Milestones.** Perth.jl's milestone takes its day (a successor starts the day after it); a P6

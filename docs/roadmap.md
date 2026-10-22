@@ -29,8 +29,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   dependency strings as relationships, milestones, the calendar (empty for calendar days, a
   business-day calendar's name); every other field, the task's and the project's, carried in
   `extra` and written back in the file's order. Hostile files are catalogued errors.
-- **Next:** Perth.jl's scheduler as the parity oracle (#7); a business-day calendar's holidays
-  (#29); the WBS and summary tasks (#30); P6 XML from
+  Perth.jl as the parity oracle: 25 networks (ten drawn by hand, fifteen random from a fixed
+  seed) with finish-to-start, start-to-start and finish-to-finish ties, lags and leads, own
+  starts and deadlines, scheduled by Perth.jl 0.16.1 and re-typed as constants; MK Perth gives
+  every early and late date and every total float the same (`crates/perth/tests/oracle.rs`).
+- **Next:** a business-day calendar's holidays (#29); the WBS and summary tasks (#30); P6 XML from
   Oracle's published schema; Microsoft Project XML. XER is the user's decision (no specification
   from Oracle).
 
