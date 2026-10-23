@@ -43,11 +43,14 @@ fn file() -> String {
     <ObjectId>1</ObjectId><Id>PLANT</Id><Name>Water plant</Name>
     <PlannedStartDate>2026-11-02T08:00:00</PlannedStartDate>
     <MustFinishByDate>2026-12-18T17:00:00</MustFinishByDate>
+    <DataDate>2026-11-12T08:00:00</DataDate>
     <ActivityDefaultCalendarObjectId>10</ActivityDefaultCalendarObjectId>
     <WBS><ObjectId>100</ObjectId><Code>PLANT.1</Code><Name>Design</Name></WBS>
     <WBS><ObjectId>101</ObjectId><Code>PLANT.1.1</Code><Name>Civil</Name><ParentObjectId>100</ParentObjectId></WBS>
-    <Activity><ObjectId>1000</ObjectId><Id>A100</Id><Name>Survey</Name><Type>Task Dependent</Type><PlannedDuration>40</PlannedDuration><CalendarObjectId>10</CalendarObjectId><WBSObjectId>101</WBSObjectId></Activity>
+    <Activity><ObjectId>1000</ObjectId><Id>A100</Id><Name>Survey</Name><Type>Task Dependent</Type><PlannedDuration>40</PlannedDuration><CalendarObjectId>10</CalendarObjectId><WBSObjectId>101</WBSObjectId>
+      <Status>Completed</Status><ActualStartDate>2026-11-03T08:00:00</ActualStartDate><ActualFinishDate>2026-11-09T17:00:00</ActualFinishDate><RemainingDuration>0</RemainingDuration></Activity>
     <Activity><ObjectId>1001</ObjectId><Id>A110</Id><Name>Design</Name><Type>Resource Dependent</Type><PlannedDuration>60</PlannedDuration><WBSObjectId>101</WBSObjectId>
+      <ActualStartDate>2026-11-10T08:00:00</ActualStartDate><RemainingDuration>28</RemainingDuration>
       <PrimaryConstraintType>Start On or After</PrimaryConstraintType><PrimaryConstraintDate>2026-11-10T08:00:00</PrimaryConstraintDate>
       <SecondaryConstraintType>Finish On or Before</SecondaryConstraintType><SecondaryConstraintDate>2026-12-04T17:00:00</SecondaryConstraintDate></Activity>
     <Activity><ObjectId>1002</ObjectId><Id>A120</Id><Name>Cure</Name><PlannedDuration>30</PlannedDuration><CalendarObjectId>11</CalendarObjectId><WBSObjectId>100</WBSObjectId></Activity>
@@ -97,6 +100,13 @@ fn reads_a_project() {
         ]
     );
     assert_eq!(p.relationships[4].lag_minutes, Some(-240));
+    // Progress: the data date, a completed activity, one under way with three and a half days left.
+    assert_eq!(p.data_date, Some(day(2026, 11, 12)));
+    assert_eq!(
+        (a("A100").actual_start, a("A100").actual_finish, a("A100").remaining_minutes),
+        (Some(day(2026, 11, 3)), Some(day(2026, 11, 9)), None)
+    );
+    assert_eq!((a("A110").actual_start, a("A110").actual_finish, a("A110").remaining_minutes), (Some(day(2026, 11, 10)), None, Some(1680)));
     // Seven days of ten hours from WorkTime without times; the default calendar's 08:00–17:00.
     assert_eq!(p.calendars[0].periods[0], [(480, 1080)]);
     assert_eq!(p.calendar.periods[0], [(480, 1020)]);
@@ -118,15 +128,35 @@ fn what_is_written_reads_back_the_same() {
     let back = read(&text).unwrap();
     assert!(back.warnings.is_empty(), "{:?}", back.warnings);
     let b = back.project;
-    assert_eq!((b.name.as_str(), b.start, b.must_finish_by), (p.name.as_str(), p.start, p.must_finish_by));
+    assert_eq!((b.name.as_str(), b.start, b.must_finish_by, b.data_date), (p.name.as_str(), p.start, p.must_finish_by, p.data_date));
     assert_eq!(b.calendar.week, p.calendar.week);
     assert_eq!(b.calendar.holidays, p.calendar.holidays);
     assert_eq!(b.relationships, p.relationships);
     for a in &p.activities {
         let x = b.activities.iter().find(|x| x.id == a.id).unwrap();
         assert_eq!(
-            (x.name.as_str(), x.kind, x.working_days(), &x.parent, x.constraint, x.secondary_constraint),
-            (a.name.as_str(), a.kind, a.working_days(), &a.parent, a.constraint, a.secondary_constraint),
+            (
+                x.name.as_str(),
+                x.kind,
+                x.working_days(),
+                &x.parent,
+                x.constraint,
+                x.secondary_constraint,
+                x.actual_start,
+                x.actual_finish,
+                x.remaining_minutes
+            ),
+            (
+                a.name.as_str(),
+                a.kind,
+                a.working_days(),
+                &a.parent,
+                a.constraint,
+                a.secondary_constraint,
+                a.actual_start,
+                a.actual_finish,
+                a.remaining_minutes
+            ),
             "{}",
             a.id
         );

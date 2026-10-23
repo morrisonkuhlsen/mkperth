@@ -94,3 +94,42 @@ fn add_edit_in_place_undo_and_delete() {
     assert_eq!(h.state().session.project.activities.len(), count);
     assert!(h.state().selected.is_none());
 }
+
+#[test]
+fn progress_is_typed_in_details_and_the_ribbon() {
+    use egui::accesskit::Role;
+    let mut h = harness(PerthApp::default());
+    // The data date on the Project tab, typed as it's shown.
+    h.get_by_label("Project").click();
+    h.run_steps(2);
+    h.get_by_role_and_label(Role::TextInput, "Data date").click();
+    h.run_steps(1);
+    h.get_by_role_and_label(Role::TextInput, "Data date").type_text("10-Nov-26");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(h.state().session.project.data_date, mkperth_ui_egui::read_date("2026-11-10"));
+    // A10's actual start in Details: it's under way.
+    h.state_mut().selected = Some(2);
+    h.state_mut().side = Some(mkperth_ui_egui::Side::Details);
+    h.run_steps(2);
+    h.get_by_role_and_label(Role::TextInput, "Actual start").click();
+    h.run_steps(1);
+    h.get_by_role_and_label(Role::TextInput, "Actual start").type_text("2026-11-03");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    let s = h.state().session.schedule.as_ref().unwrap();
+    assert_eq!(s.activities[2].status, mkperth_engine::sched::Status::InProgress);
+}
+
+#[test]
+fn dates_are_read_as_each_language_writes_them() {
+    use mkperth_ui_egui::read_date;
+    let d = read_date("2026-11-10");
+    assert!(d.is_some());
+    assert_eq!(read_date("10/11/2026"), d);
+    assert_eq!(read_date(" 10-Nov-26 "), d);
+    assert_eq!(read_date("10/11/26"), d);
+    assert_eq!(read_date("31/02/2026"), None);
+    assert_eq!(read_date("tomorrow"), None);
+    assert_eq!(read_date("10/99/2026"), None);
+}

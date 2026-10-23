@@ -62,6 +62,8 @@ pub(crate) struct State<'a> {
     pub links: bool,
     pub float_kind: mkperth_engine::core::FloatKind,
     pub critical_by: mkperth_engine::core::CriticalBy,
+    pub data_date: Option<mkperth_engine::core::Date>,
+    pub progress_mode: mkperth_engine::core::ProgressMode,
     /// The time scale fits the whole project.
     pub fitted: bool,
     pub view: View,
@@ -288,6 +290,11 @@ fn buttons(ui: &mut egui::Ui, tab: Tab, state: &State) -> Option<Action> {
                 go(ui, Icon::Network, &tr!("links"), &tr!("links-tip"), true, state.links, Action::Links);
             });
             group(ui, &tr!("group-options"), |ui| chosen = scheduling_options(ui, state));
+            group(ui, &tr!("group-progress"), |ui| {
+                if let Some(p) = progress_options(ui, state) {
+                    chosen = Some(p);
+                }
+            });
         }
         Tab::View => {
             group(ui, &tr!("group-views"), |ui| {
@@ -376,6 +383,38 @@ fn scheduling_options(ui: &mut egui::Ui, state: &State) -> Option<serde_json::Va
                 let response = ui.add(egui::DragValue::new(&mut value).range(-999..=999).prefix("≤ ")).on_hover_text(tr!("critical-threshold-tip"));
                 if response.changed() && value != threshold {
                     chosen = Some(serde_json::json!({ "critical": "float", "threshold": value }));
+                }
+            }
+        });
+    });
+    chosen
+}
+
+/// The data date, and how progress out of sequence is scheduled.
+fn progress_options(ui: &mut egui::Ui, state: &State) -> Option<serde_json::Value> {
+    use mkperth_engine::core::ProgressMode;
+    let t = Tokens::get(ui.ctx());
+    let mut chosen = None;
+    ui.vertical(|ui| {
+        ui.set_width(110.0);
+        ui.add_space(6.0);
+        let label = ui.label(egui::RichText::new(tr!("option-data-date")).size(12.0).color(t.text_dim));
+        if let Some(d) = crate::date_field(ui, egui::Id::new("data-date"), label.id, state.data_date, 100.0) {
+            chosen = Some(serde_json::json!({ "data_date": d.map(|d| d.to_string()) }));
+        }
+    });
+    ui.vertical(|ui| {
+        ui.set_width(170.0);
+        ui.add_space(6.0);
+        ui.label(egui::RichText::new(tr!("option-progress")).size(12.0).color(t.text_dim));
+        let name = |m: ProgressMode| match m {
+            ProgressMode::RetainedLogic => tr!("progress-retained-logic"),
+            ProgressMode::ProgressOverride => tr!("progress-override"),
+        };
+        egui::ComboBox::from_id_salt("progress-mode").selected_text(name(state.progress_mode)).width(160.0).show_ui(ui, |ui| {
+            for (m, code) in [(ProgressMode::RetainedLogic, "retained-logic"), (ProgressMode::ProgressOverride, "progress-override")] {
+                if ui.selectable_label(m == state.progress_mode, name(m)).on_hover_text(tr!(&format!("progress-{code}-tip"))).clicked() {
+                    chosen = Some(serde_json::json!({ "progress": code }));
                 }
             }
         });

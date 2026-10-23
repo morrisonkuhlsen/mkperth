@@ -111,6 +111,13 @@ pub struct Activity {
     /// Working minutes, when the duration isn't whole days (from hours); it takes the place of
     /// `duration`.
     pub duration_minutes: Option<i64>,
+    /// The day work began, once it has.
+    pub actual_start: Option<Date>,
+    /// The day work ended, once it has.
+    pub actual_finish: Option<Date>,
+    /// Working minutes left for an activity under way; when `None`, its duration less the work
+    /// since its actual start up to the data date.
+    pub remaining_minutes: Option<i64>,
     pub constraint: Option<Constraint>,
     /// A second constraint beside the first: typically a start on or after with a finish on or
     /// before. Both hold.
@@ -167,6 +174,17 @@ pub enum FloatKind {
     Smallest,
 }
 
+/// How the remaining work of an activity that started before its predecessors allowed is
+/// scheduled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ProgressMode {
+    /// Its remaining work still waits for its predecessors.
+    #[default]
+    RetainedLogic,
+    /// Its remaining work goes on from the data date, whatever its predecessors.
+    ProgressOverride,
+}
+
 /// What makes an activity critical.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CriticalBy {
@@ -193,6 +211,10 @@ pub struct Project {
     pub lag_calendar: LagCalendar,
     pub float_kind: FloatKind,
     pub critical_by: CriticalBy,
+    /// The day progress was measured to: remaining work is scheduled from it, and nothing not
+    /// yet started starts before it.
+    pub data_date: Option<Date>,
+    pub progress_mode: ProgressMode,
     /// The evening the project must finish by: the late dates count back from it instead of
     /// from the latest early finish.
     pub must_finish_by: Option<Date>,

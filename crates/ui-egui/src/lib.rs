@@ -107,6 +107,47 @@ pub fn days_text(minutes: i64, day_minutes: i64) -> String {
 }
 
 /// A date as the language writes it.
+/// A date typed as it's shown (31/12/2026, 31-Dec-26) or as 2026-12-31.
+pub fn read_date(text: &str) -> Option<Date> {
+    let text = text.trim();
+    if let Some(d) = Date::parse(text) {
+        return Some(d);
+    }
+    let parts: Vec<&str> = text.split(['/', '-', '.', ' ']).filter(|p| !p.is_empty()).collect();
+    let [day, month, year] = parts.as_slice() else { return None };
+    let month = month.parse::<u32>().ok().or_else(|| {
+        (1..=12u32).find(|m| {
+            let name = tr!(&format!("month-{m}"));
+            name.eq_ignore_ascii_case(month) || name.get(..3).zip(month.get(..3)).is_some_and(|(a, b)| a.eq_ignore_ascii_case(b))
+        })
+    })?;
+    let year = year.parse::<i32>().ok().map(|y| if (0..100).contains(&y) && year.len() <= 2 { 2000 + y } else { y })?;
+    Date::from_ymd(year, month, day.parse().ok()?)
+}
+
+/// A date that can be typed: shown as the language writes it, set when Enter is pressed or the
+/// field is left. Returns the change: a date, or none when emptied. `label` names it.
+pub(crate) fn date_field(ui: &mut egui::Ui, id: egui::Id, label: egui::Id, current: Option<Date>, width: f32) -> Option<Option<Date>> {
+    let shown = current.map(show_date).unwrap_or_default();
+    // The text typed so far, kept while the field has focus.
+    let key = id.with("text");
+    let mut text = ui.data_mut(|d| d.get_temp::<(String, String)>(key)).filter(|(was, _)| *was == shown).map_or(shown.clone(), |(_, t)| t);
+    let response = ui.add(egui::TextEdit::singleline(&mut text).id(id).desired_width(width).hint_text(tr!("date-hint"))).labelled_by(label);
+    let mut changed = None;
+    if response.lost_focus() {
+        let typed = text.trim();
+        if typed.is_empty() {
+            changed = current.is_some().then_some(None);
+        } else if let Some(d) = read_date(typed) {
+            changed = (Some(d) != current).then_some(Some(d));
+        }
+        ui.data_mut(|d| d.remove::<(String, String)>(key));
+    } else {
+        ui.data_mut(|d| d.insert_temp(key, (shown, text)));
+    }
+    changed
+}
+
 pub fn show_date(d: Date) -> String {
     let (y, m, day) = d.ymd();
     match current() {
@@ -357,6 +398,8 @@ impl PerthApp {
             late_bars: self.options.late_bars,
             links: self.options.links,
             float_kind: self.session.project.float_kind,
+            data_date: self.session.project.data_date,
+            progress_mode: self.session.project.progress_mode,
             critical_by: self.session.project.critical_by,
             fitted: self.options.scale.is_none(),
             view: self.view,
@@ -560,6 +603,56 @@ impl PerthApp {
             }
             for c in [a.constraint, a.secondary_constraint].into_iter().flatten() {
                 fact(ui, tr!("detail-constraint"), constraint_name(c, &show_date));
+            }
+            // Progress: where it stands, its actual dates and the work left.
+            if !summary {
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new(tr!("detail-progress")).size(12.5).color(t.text).strong());
+                ui.add_space(2.0);
+                if let Some(s) = scheduled {
+                    let status = match s.status {
+                        mkperth_engine::sched::Status::NotStarted => tr!("status-not-started"),
+                        mkperth_engine::sched::Status::InProgress => tr!("status-in-progress"),
+                        mkperth_engine::sched::Status::Completed => tr!("status-completed"),
+                    };
+                    fact(ui, tr!("detail-status"), status);
+                }
+                for (name, key, value) in
+                    [(tr!("detail-actual-start"), "actual_start", a.actual_start), (tr!("detail-actual-finish"), "actual_finish", a.actual_finish)]
+                {
+                    ui.horizontal(|ui| {
+                        let label = ui.add_sized(egui::vec2(120.0, 18.0), egui::Label::new(egui::RichText::new(name).size(12.0).color(t.text_dim)));
+                        if let Some(d) = date_field(ui, ui.id().with((key, i)), label.id, value, 100.0) {
+                            pending = Some(("activity.edit", json!({"id": a.id, key: d.map(|d| d.to_string())})));
+                        }
+                    });
+                    ui.add_space(3.0);
+                }
+                if a.actual_start.is_some() && a.actual_finish.is_none() {
+                    let left = scheduled.map_or(0, |s| s.remaining_minutes);
+                    ui.horizontal(|ui| {
+                        ui.add_sized(
+                            egui::vec2(120.0, 18.0),
+                            egui::Label::new(egui::RichText::new(tr!("detail-remaining")).size(12.0).color(t.text_dim)),
+                        );
+                        let mut days = left as f64 / day.max(1) as f64;
+                        let response = ui.add(
+                            egui::DragValue::new(&mut days)
+                                .range(0.0..=99_999.0)
+                                .speed(0.1)
+                                .max_decimals(2)
+                                .custom_formatter(|n, _| mkperth_engine::i18n::decimal(format!("{n:.2}").trim_end_matches('0').trim_end_matches('.')))
+                                .custom_parser(|text| text.trim().replace(',', ".").parse().ok()),
+                        );
+                        if response.changed() && !response.dragged() || response.drag_stopped() {
+                            let minutes = (days * day as f64).round() as i64;
+                            if minutes != left {
+                                pending = Some(("activity.edit", json!({"id": a.id, "remaining_minutes": minutes})));
+                            }
+                        }
+                    });
+                    ui.add_space(3.0);
+                }
             }
             if let Some(s) = scheduled {
                 ui.add_space(6.0);

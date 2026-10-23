@@ -18,6 +18,8 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
         lag_calendar: LagCalendar::default(),
         float_kind: Default::default(),
         critical_by: Default::default(),
+        data_date: None,
+        progress_mode: Default::default(),
         must_finish_by: None,
         activities: activities
             .iter()
@@ -525,4 +527,102 @@ fn a_short_friday() {
     assert_eq!(explain(&p, "B").unwrap().early_start.time, Some(13 * 60));
     // A day of duration is the calendar's first working day: eight hours.
     assert_eq!(p.calendar.day_minutes(), 480);
+}
+
+/// Progress, data date Wednesday 7 October 2026: A(3) → B(2) from Monday the 5th, C(1) alone.
+fn progressed(mode: ProgressMode) -> Project {
+    let mut p = project(&[("A", 3), ("B", 2), ("C", 1)], &[("A", "B", FS, 0)]);
+    p.data_date = Some(day(2026, 10, 7));
+    p.progress_mode = mode;
+    p
+}
+
+fn dates(s: &Schedule, id: &str) -> (Date, Date) {
+    let a = get(s, id);
+    (a.early_start, a.early_finish)
+}
+
+#[test]
+fn a_completed_activity_keeps_its_actual_dates() {
+    // A ran Monday to Tuesday, a day early. B can't start before the data date: Wed 7–Thu 8.
+    // C, not started, neither.
+    let mut p = progressed(ProgressMode::RetainedLogic);
+    p.activities[0].actual_start = Some(day(2026, 10, 5));
+    p.activities[0].actual_finish = Some(day(2026, 10, 6));
+    let s = schedule(&p).unwrap();
+    let a = get(&s, "A");
+    assert_eq!(
+        (a.early_start, a.early_finish, a.late_start, a.late_finish),
+        (day(2026, 10, 5), day(2026, 10, 6), day(2026, 10, 5), day(2026, 10, 6))
+    );
+    assert_eq!((a.status, a.total_float, a.critical, a.remaining_minutes), (Status::Completed, 0, false, 0));
+    assert_eq!(dates(&s, "B"), (day(2026, 10, 7), day(2026, 10, 8)));
+    assert!(get(&s, "B").critical);
+    assert_eq!(dates(&s, "C"), (day(2026, 10, 7), day(2026, 10, 7)));
+    assert_eq!(s.finish, day(2026, 10, 8));
+}
+
+#[test]
+fn work_left_goes_on_from_the_data_date() {
+    // A started Monday; by the data date two of its three days are worked, so one is left by
+    // default: Wednesday. Told two are left: Wednesday and Thursday, and B Friday to Monday.
+    let mut p = progressed(ProgressMode::RetainedLogic);
+    p.activities[0].actual_start = Some(day(2026, 10, 5));
+    let s = schedule(&p).unwrap();
+    let a = get(&s, "A");
+    assert_eq!((a.status, a.remaining_minutes), (Status::InProgress, 480));
+    assert_eq!((a.early_start, a.early_finish, a.late_start), (day(2026, 10, 5), day(2026, 10, 7), day(2026, 10, 5)));
+    assert_eq!(dates(&s, "B"), (day(2026, 10, 8), day(2026, 10, 9)));
+    p.activities[0].remaining_minutes = Some(960);
+    let s = schedule(&p).unwrap();
+    assert_eq!(dates(&s, "A"), (day(2026, 10, 5), day(2026, 10, 8)));
+    assert_eq!(dates(&s, "B"), (day(2026, 10, 9), day(2026, 10, 12)));
+    assert!(get(&s, "A").critical && get(&s, "B").critical);
+}
+
+#[test]
+fn out_of_sequence_progress_by_retained_logic_and_by_override() {
+    // B started Tuesday before A finished (A has two days left, to Thursday); B has a day left.
+    // Retained logic keeps it after A: Friday. Progress override lets it go on at the data date.
+    for (mode, finish) in [(ProgressMode::RetainedLogic, day(2026, 10, 9)), (ProgressMode::ProgressOverride, day(2026, 10, 7))] {
+        let mut p = progressed(mode);
+        p.activities[0].actual_start = Some(day(2026, 10, 5));
+        p.activities[0].remaining_minutes = Some(960);
+        p.activities[1].actual_start = Some(day(2026, 10, 6));
+        p.activities[1].remaining_minutes = Some(480);
+        let s = schedule(&p).unwrap();
+        assert_eq!(dates(&s, "B"), (day(2026, 10, 6), finish), "{mode:?}");
+    }
+}
+
+#[test]
+fn without_a_data_date_a_started_activity_runs_from_its_actual_start() {
+    let mut p = progressed(ProgressMode::RetainedLogic);
+    p.data_date = None;
+    p.activities[2].actual_start = Some(day(2026, 10, 9));
+    let s = schedule(&p).unwrap();
+    assert_eq!(dates(&s, "C"), (day(2026, 10, 9), day(2026, 10, 9)));
+    assert_eq!(dates(&s, "A"), (day(2026, 10, 5), day(2026, 10, 7)));
+}
+
+#[test]
+fn a_started_activity_ignores_its_start_constraint() {
+    let mut p = progressed(ProgressMode::RetainedLogic);
+    p.activities[2].constraint = Some(Constraint::StartOnOrAfter(day(2026, 10, 14)));
+    p.activities[2].actual_start = Some(day(2026, 10, 6));
+    p.activities[2].remaining_minutes = Some(480);
+    let s = schedule(&p).unwrap();
+    assert_eq!(dates(&s, "C"), (day(2026, 10, 6), day(2026, 10, 7)));
+}
+
+#[test]
+fn a_start_to_start_successor_counts_from_the_actual_start() {
+    // A started Monday, two days left from the data date (to Thursday); C SS+3 from A: Monday + 3
+    // working days is Thursday, not the data date + 3.
+    let mut p = progressed(ProgressMode::RetainedLogic);
+    p.relationships.push(Relationship { predecessor: "A".into(), successor: "C".into(), kind: SS, lag: 3, lag_minutes: None });
+    p.activities[0].actual_start = Some(day(2026, 10, 5));
+    p.activities[0].remaining_minutes = Some(960);
+    let s = schedule(&p).unwrap();
+    assert_eq!(dates(&s, "C"), (day(2026, 10, 8), day(2026, 10, 8)));
 }

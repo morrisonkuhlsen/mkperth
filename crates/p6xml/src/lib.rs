@@ -264,6 +264,17 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             parent: e.text_of("WBSObjectId").and_then(|w| wbs_id.get(w)).cloned(),
             ..Activity::default()
         };
+        // Progress: the actual dates, and the work left of an activity under way.
+        a.actual_start = e.text_of("ActualStartDate").and_then(date_of);
+        a.actual_finish = e.text_of("ActualFinishDate").and_then(date_of);
+        if a.actual_start.is_some() && a.actual_finish.is_none() {
+            a.remaining_minutes = match e.text_of("RemainingDuration") {
+                Some(h) => {
+                    to_minutes(h.parse::<f64>().ok().filter(|h| h.is_finite() && *h >= 0.0).ok_or_else(|| field("RemainingDuration"))?, per_day).1
+                }
+                None => None,
+            };
+        }
         if let Some(object) = e.text_of("ObjectId") {
             a.extra.insert(format!("{PREFIX}object"), object.to_string());
             by_object.insert(object.to_string(), id);
@@ -334,6 +345,8 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             lag_calendar: Default::default(),
             float_kind: Default::default(),
             critical_by: Default::default(),
+            data_date: p.text_of("DataDate").and_then(date_of),
+            progress_mode: Default::default(),
             must_finish_by: p.text_of("MustFinishByDate").and_then(date_of),
             activities,
             relationships,
@@ -433,6 +446,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     if let Some(d) = project.must_finish_by {
         out.push_str(&format!("    <MustFinishByDate>{}</MustFinishByDate>\n", timestamp(d, true)));
     }
+    if let Some(d) = project.data_date {
+        out.push_str(&format!("    <DataDate>{}</DataDate>\n", timestamp(d, false)));
+    }
     // Summaries are WBS elements; every other activity an Activity under its WBS. An activity's
     // object number is its place in the list, from 1000.
     let summary = |id: &str| project.activities.iter().any(|a| a.parent.as_deref() == Some(id));
@@ -465,6 +481,21 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         ));
         if let Some(p) = &a.parent {
             out.push_str(&format!("      <WBSObjectId>{}</WBSObjectId>\n", object(p)));
+        }
+        let status = match (a.actual_start, a.actual_finish) {
+            (_, Some(_)) => "Completed",
+            (Some(_), None) => "In Progress",
+            (None, None) => "Not Started",
+        };
+        out.push_str(&format!("      <Status>{status}</Status>\n"));
+        if let Some(d) = a.actual_start {
+            out.push_str(&format!("      <ActualStartDate>{}</ActualStartDate>\n", timestamp(d, false)));
+        }
+        if let Some(d) = a.actual_finish {
+            out.push_str(&format!("      <ActualFinishDate>{}</ActualFinishDate>\n", timestamp(d, true)));
+        }
+        if let (Some(_), None, Some(m)) = (a.actual_start, a.actual_finish, a.remaining_minutes) {
+            out.push_str(&format!("      <RemainingDuration>{}</RemainingDuration>\n", hours(m)));
         }
         for (which, c) in [("Primary", a.constraint), ("Secondary", a.secondary_constraint)] {
             if let Some(c) = c {

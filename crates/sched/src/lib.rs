@@ -31,7 +31,8 @@ mod explain;
 use std::collections::{HashMap, VecDeque};
 
 use mkperth_core::{
-    ActivityKind, Calendar, CalendarError, Constraint, CriticalBy, Date, FloatKind, LagCalendar, MINUTES_PER_DAY, Project, RelationshipType,
+    ActivityKind, Calendar, CalendarError, Constraint, CriticalBy, Date, FloatKind, LagCalendar, MINUTES_PER_DAY, ProgressMode, Project,
+    RelationshipType,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -78,6 +79,15 @@ pub const MAX_RELATIONSHIPS: usize = 4_000_000;
 /// schedule may span either side of its start: about five centuries.
 pub const MAX_SPAN: i64 = 100_000;
 
+/// Where an activity stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Status {
+    #[default]
+    NotStarted,
+    InProgress,
+    Completed,
+}
+
 /// One activity's dates and floats.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scheduled {
@@ -96,6 +106,9 @@ pub struct Scheduled {
     /// On the longest path, whatever the rule: a chain of driving relationships back from the
     /// activities that finish the project.
     pub longest_path: bool,
+    pub status: Status,
+    /// Working minutes left (none when completed).
+    pub remaining_minutes: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -280,16 +293,62 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
     let order = topological(n, &ties, &outgoing, &incoming, acts.iter().map(|a| a.id.as_str()).collect())?;
     // A summary takes no time and holds no constraint of its own: its dates are its children's.
     let day_minutes = |i: usize| calendars.get(cal_of(i)).map_or(480, |c| c.day_minutes());
-    let dur = |i: usize| if is_summary(i) { 0 } else { acts.get(i).map_or(0, |a| a.working_minutes(day_minutes(i))) };
+    let full = |i: usize| if is_summary(i) { 0 } else { acts.get(i).map_or(0, |a| a.working_minutes(day_minutes(i))) };
     let kind = |i: usize| acts.get(i).map_or(ActivityKind::Task, |a| a.kind);
     // Both constraints of an activity hold; the primary first.
     let constraints =
         |i: usize| acts.get(i).filter(|_| !is_summary(i)).map_or([None, None], |a| [a.constraint, a.secondary_constraint]).into_iter().flatten();
     let origin = i64::from(project.start.days()) * MINUTES_PER_DAY;
+    // Nothing not yet started, and no remaining work, before the data date.
+    let data = project.data_date.map(|d| i64::from(d.days()) * MINUTES_PER_DAY);
+    let floor = data.map_or(origin, |d| d.max(origin));
+    let status = |i: usize| match acts.get(i).filter(|_| !is_summary(i)) {
+        Some(a) if a.actual_finish.is_some() => Status::Completed,
+        Some(a) if a.actual_start.is_some() => Status::InProgress,
+        _ => Status::NotStarted,
+    };
     // Every time stays within the span of the project's start: far from overflow and from the
     // ends of the calendar.
     let bounded = |t: i64| if (t - origin).abs() > MAX_SPAN * 2 * MINUTES_PER_DAY { Err(ScheduleError::TooLong) } else { Ok(t) };
-
+    // An activity's actual start and finish as times: the first working minute of its start day,
+    // the end of the work of its finish day (its start day when only a finish was given).
+    let actual = |i: usize| -> Result<Option<(i64, Option<i64>)>, ScheduleError> {
+        let Some(a) = acts.get(i).filter(|_| !is_summary(i)) else { return Ok(None) };
+        let c = clock(cal_of(i));
+        let Some(start_day) = a.actual_start.or(a.actual_finish) else { return Ok(None) };
+        let s = c.next_start(i64::from(start_day.days()) * MINUTES_PER_DAY)?;
+        let f = match a.actual_finish {
+            Some(d) => Some(c.previous_finish((i64::from(d.days()) + 1) * MINUTES_PER_DAY)?.max(s)),
+            None => None,
+        };
+        Ok(Some((s, f)))
+    };
+    // The work left: none once completed; for an activity under way, what it says, else its
+    // duration less the work from its actual start to the data date.
+    let mut remaining = vec![0i64; acts.len()];
+    for i in 0..acts.len() {
+        let left = match (status(i), actual(i)?) {
+            (Status::Completed, _) => 0,
+            (Status::InProgress, Some((s, _))) => match acts.get(i).and_then(|a| a.remaining_minutes) {
+                Some(m) => m.clamp(0, MAX_SPAN * MINUTES_PER_DAY),
+                None => (full(i) - data.map_or(Ok(0), |d| clock(cal_of(i)).between(s, d.max(s)))?).max(0),
+            },
+            _ => full(i),
+        };
+        if let Some(slot) = remaining.get_mut(i) {
+            *slot = left;
+        }
+    }
+    // A started activity's relationships from its start count from its actual start.
+    let mut begun = vec![None; acts.len()];
+    for (i, slot) in begun.iter_mut().enumerate() {
+        if status(i) != Status::NotStarted {
+            *slot = actual(i)?.map(|(s, _)| s);
+        }
+    }
+    let begun = |i: usize, es: i64| begun.get(i).copied().flatten().unwrap_or(es);
+    // What the passes schedule: the work left.
+    let dur = |i: usize| remaining.get(i).copied().unwrap_or(0);
     // Where an activity's working time can begin and end, on its calendar.
     let place_start = |i: usize, t: i64| -> Result<i64, ScheduleError> {
         let c = clock(cal_of(i));
@@ -340,13 +399,24 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
     let mut es = vec![origin; n];
     let mut ef = vec![origin; n];
     for &i in &order {
-        let mut start = origin;
+        // A completed activity stays where it happened.
+        if status(i) == Status::Completed
+            && let Some((s, Some(f))) = actual(i)?
+        {
+            if let (Some(a), Some(b)) = (es.get_mut(i), ef.get_mut(i)) {
+                *a = s;
+                *b = f;
+            }
+            continue;
+        }
+        let mut start = floor;
         if traced(i) {
-            early_bounds.push(Bound { source: Source::ProjectStart, moment: at(origin, false)?, via: None, overrides: false });
+            let source = if data.is_some_and(|d| d > origin) { Source::DataDate } else { Source::ProjectStart };
+            early_bounds.push(Bound { source, moment: at(floor, false)?, via: None, overrides: false });
         }
         for &k in incoming.get(i).map_or(&[][..], Vec::as_slice) {
             let Some(t) = ties.get(k) else { continue };
-            let bound = forward_bound(t, es.get(t.from).copied().unwrap_or(origin), ef.get(t.from).copied().unwrap_or(origin))?;
+            let bound = forward_bound(t, begun(t.from, es.get(t.from).copied().unwrap_or(origin)), ef.get(t.from).copied().unwrap_or(origin))?;
             let (s, via) = match t.kind {
                 RelationshipType::FinishToStart | RelationshipType::StartToStart => (bound, None),
                 RelationshipType::FinishToFinish | RelationshipType::StartToFinish => (start_for_finish(i, bound)?, Some(bound)),
@@ -357,14 +427,15 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             }
             start = start.max(s);
         }
-        // Early-date constraints: no earlier than their date; a mandatory one, on it.
-        for c in constraints(i) {
+        // Early-date constraints: no earlier than their date; a mandatory one, on it. Once
+        // started, an activity's start is what happened.
+        for c in constraints(i).filter(|_| status(i) == Status::NotStarted) {
             let when = constraint_time(c, &clock(cal_of(i)))?.map(bounded).transpose()?;
             let (candidate, via, overrides) = match (c, when) {
                 (Constraint::StartOnOrAfter(_) | Constraint::StartOn(_), Some(t)) => (Some(t), None, false),
                 (Constraint::FinishOnOrAfter(_) | Constraint::FinishOn(_), Some(t)) => (Some(start_for_finish(i, t)?), Some(t), false),
-                (Constraint::MandatoryStart(_), Some(t)) => (Some(t.max(origin)), None, true),
-                (Constraint::MandatoryFinish(_), Some(t)) => (Some(start_for_finish(i, t)?.max(origin)), Some(t), true),
+                (Constraint::MandatoryStart(_), Some(t)) => (Some(t.max(floor)), None, true),
+                (Constraint::MandatoryFinish(_), Some(t)) => (Some(start_for_finish(i, t)?.max(floor)), Some(t), true),
                 _ => (None, None, false),
             };
             if let Some(x) = candidate {
@@ -378,6 +449,15 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
                     });
                 }
             }
+        }
+        // Under way: the work left goes on from the data date, after its predecessors with
+        // retained logic, at once with progress override; without a data date, from its start.
+        if status(i) == Status::InProgress {
+            start = match (data, project.progress_mode) {
+                (None, _) => actual(i)?.map_or(start, |(s, _)| s),
+                (Some(_), ProgressMode::ProgressOverride) => floor,
+                (Some(_), ProgressMode::RetainedLogic) => start,
+            };
         }
         if traced(i) {
             earliest = Some(start);
@@ -399,6 +479,13 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
     let mut ls = vec![end; n];
     let mut lf = vec![end; n];
     for &i in order.iter().rev() {
+        if status(i) == Status::Completed {
+            if let (Some(a), Some(b), Some(s), Some(f)) = (ls.get_mut(i), lf.get_mut(i), es.get(i), ef.get(i)) {
+                *a = *s;
+                *b = *f;
+            }
+            continue;
+        }
         let mut latest = end;
         if traced(i) {
             let source = if project.must_finish_by.is_some() { Source::MustFinishBy } else { Source::ProjectFinish };
@@ -505,7 +592,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         }
         for &k in outgoing.get(i).map_or(&[][..], Vec::as_slice) {
             let Some(t) = ties.get(k) else { continue };
-            let bound = forward_bound(t, e_s, e_f)?;
+            let bound = forward_bound(t, begun(i, e_s), e_f)?;
             let actual = match t.kind {
                 RelationshipType::FinishToStart | RelationshipType::StartToStart => es.get(t.to).copied().unwrap_or(origin),
                 RelationshipType::FinishToFinish | RelationshipType::StartToFinish => ef.get(t.to).copied().unwrap_or(origin),
@@ -517,8 +604,8 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             slack = slack.min(gap);
         }
         let total = between(cal_of(i), e_f, lf.get(i).copied().unwrap_or(end))?;
-        let mut own = slack.min(total).max(0);
-        if constraints(i).any(|c| c == Constraint::AsLateAsPossible) && own > 0 {
+        let mut own = if status(i) == Status::Completed { 0 } else { slack.min(total).max(0) };
+        if status(i) == Status::NotStarted && constraints(i).any(|c| c == Constraint::AsLateAsPossible) && own > 0 {
             let moved = place_start(i, c.advance(e_s, own)?)?;
             let s = if dur(i) == 0 { moved } else { c.retreat(c.advance(e_f, own)?, dur(i))? };
             let f = finish_of(i, s)?;
@@ -551,6 +638,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
     let mut longest = vec![false; n];
     for i in 0..n {
         if !is_summary(i)
+            && status(i) != Status::Completed
             && ef.get(i) == Some(&finish)
             && let Some(slot) = longest.get_mut(i)
         {
@@ -564,12 +652,13 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         let at = es.get(i).copied().unwrap_or(origin);
         for &k in incoming.get(i).map_or(&[][..], Vec::as_slice) {
             let Some(t) = ties.get(k) else { continue };
-            let bound = forward_bound(t, es.get(t.from).copied().unwrap_or(origin), ef.get(t.from).copied().unwrap_or(origin))?;
+            let bound = forward_bound(t, begun(t.from, es.get(t.from).copied().unwrap_or(origin)), ef.get(t.from).copied().unwrap_or(origin))?;
             let candidate = match t.kind {
                 RelationshipType::FinishToStart | RelationshipType::StartToStart => bound,
                 RelationshipType::FinishToFinish | RelationshipType::StartToFinish => start_for_finish(i, bound)?,
             };
             if place_start(i, candidate)? == at
+                && status(t.from) != Status::Completed
                 && let Some(slot) = longest.get_mut(t.from)
             {
                 *slot = true;
@@ -593,19 +682,30 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             FloatKind::Smallest => finish_float.min(start_float),
         };
         let on_longest = longest.get(i).copied().unwrap_or(false);
+        let state = status(i);
+        // A completed activity has no float and isn't critical; a started one shows its actual
+        // start as both its starts.
+        let total = if state == Status::Completed { 0 } else { total };
+        let actual_start = actual(i)?.map(|(s, _)| s);
+        let (shown_es, shown_ls) = match (state, actual_start) {
+            (Status::NotStarted, _) | (_, None) => (e_s, l_s),
+            (_, Some(s)) => (s, s),
+        };
         let early_finish = finish_date(i, e_f)?;
         out.push(Scheduled {
             id: a.id.clone(),
-            early_start: start_date(i, e_s)?,
+            early_start: start_date(i, shown_es)?,
             early_finish,
-            late_start: start_date(i, l_s)?,
+            late_start: start_date(i, shown_ls)?,
             late_finish: finish_date(i, l_f)?,
             total_float: days(i, total),
             free_float: days(i, free.get(i).copied().unwrap_or(0)),
             total_float_minutes: total,
             free_float_minutes: free.get(i).copied().unwrap_or(0),
-            critical: critical(i, total, on_longest),
+            critical: state != Status::Completed && critical(i, total, on_longest),
             longest_path: on_longest,
+            status: state,
+            remaining_minutes: dur(i),
         });
     }
     // Summaries: from their children's dates, deepest first so a summary under a summary is

@@ -18,6 +18,11 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Progress: a data date, actual start and finish dates, the work left of an activity under way,
+  out-of-sequence progress by retained logic or by progress override; read and written in P6
+  XML; typed in Details and on the Project tab, drawn on the Gantt chart, explained in the
+  calculation.
+- The ribbon's groups carry their names underneath.
 - Time in hours: calendars with work periods for each day of the week, durations and lags of part
   days (P6's hours kept exact), floats shown in days with decimals; the calculation names a time
   of day when it isn't the start or end of the day's work.

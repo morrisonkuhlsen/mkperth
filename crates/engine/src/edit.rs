@@ -2,7 +2,7 @@
 //! kept only if it holds together (no loop of relationships, no repeated ID); the project before
 //! it goes on the undo stack.
 
-use mkperth_core::{Activity, ActivityKind, Constraint, CriticalBy, Date, FloatKind, Project, Relationship, RelationshipType};
+use mkperth_core::{Activity, ActivityKind, Constraint, CriticalBy, Date, FloatKind, ProgressMode, Project, Relationship, RelationshipType};
 use mkperth_i18n::tr;
 use mkperth_sched::ScheduleError;
 use serde_json::Value;
@@ -28,6 +28,23 @@ fn number(params: &Value, command: &str, name: &str, range: std::ops::RangeInclu
     match params.get(name) {
         None | Some(Value::Null) => Ok(None),
         Some(v) => v.as_i64().filter(|n| range.contains(n)).map(Some).ok_or_else(|| EngineError::Value(command.to_string(), name.to_string())),
+    }
+}
+
+/// A date parameter: absent leaves it as it is, `null` clears it, `"2026-10-07"` sets it.
+fn date(params: &Value, command: &str, name: &str) -> Result<Option<Option<Date>>, EngineError> {
+    match params.get(name) {
+        None => Ok(None),
+        Some(Value::Null) => Ok(Some(None)),
+        Some(v) => v.as_str().and_then(Date::parse).map(|d| Some(Some(d))).ok_or_else(|| EngineError::Value(command.to_string(), name.to_string())),
+    }
+}
+
+/// A number parameter that `null` clears.
+fn clearable(params: &Value, command: &str, name: &str, range: std::ops::RangeInclusive<i64>) -> Result<Option<Option<i64>>, EngineError> {
+    match params.get(name) {
+        Some(Value::Null) => Ok(Some(None)),
+        _ => Ok(number(params, command, name, range)?.map(Some)),
     }
 }
 
@@ -148,8 +165,10 @@ impl Session {
         })
     }
 
-    /// The scheduling options: how total float is measured (`float`: finish, start, smallest)
-    /// and what is critical (`critical`: float, with `threshold` working days, or longest-path).
+    /// The scheduling options: how total float is measured (`float`: finish, start, smallest),
+    /// what is critical (`critical`: float, with `threshold` working days, or longest-path), the
+    /// `data_date` progress is told at, and how out-of-sequence progress is scheduled
+    /// (`progress`: retained-logic or progress-override).
     fn set_options(&mut self, params: &Value) -> Result<(), EngineError> {
         const C: &str = "project.options";
         let bad = |name: &str| EngineError::Value(C.into(), name.into());
@@ -169,9 +188,23 @@ impl Session {
                 _ => Err(bad("critical")),
             })
             .transpose()?;
+        let data_date = date(params, C, "data_date")?;
+        let progress = text(params, C, "progress")?
+            .map(|m| match m.as_str() {
+                "retained-logic" => Ok(ProgressMode::RetainedLogic),
+                "progress-override" => Ok(ProgressMode::ProgressOverride),
+                _ => Err(bad("progress")),
+            })
+            .transpose()?;
         self.change(tr!("undo-options"), |p| {
             if let Some(f) = float {
                 p.float_kind = f;
+            }
+            if let Some(d) = data_date {
+                p.data_date = d;
+            }
+            if let Some(m) = progress {
+                p.progress_mode = m;
             }
             match (critical, threshold) {
                 (Some(c), _) => p.critical_by = c,
@@ -228,6 +261,11 @@ impl Session {
         let kind = text(params, C, "kind")?.map(|k| kind_of(&k).ok_or_else(|| EngineError::Value(C.into(), "kind".into()))).transpose()?;
         let calendar = text(params, C, "calendar")?;
         let constraint = params.get("constraint").map(|c| constraint_of(c, C)).transpose()?;
+        // Progress: the actual dates, and the work left in days or in working minutes.
+        let actual_start = date(params, C, "actual_start")?;
+        let actual_finish = date(params, C, "actual_finish")?;
+        let remaining = clearable(params, C, "remaining", 0..=mkperth_sched::MAX_SPAN)?;
+        let remaining_minutes = clearable(params, C, "remaining_minutes", 0..=mkperth_sched::MAX_SPAN * 1440)?;
         let label = tr!("undo-edit-activity", id = id.as_str());
         self.change(label, |p| {
             let k = find(p, &id)?;
@@ -281,6 +319,30 @@ impl Session {
             }
             if let Some(c) = constraint {
                 a.constraint = c;
+            }
+            if let Some(d) = actual_start {
+                a.actual_start = d;
+            }
+            if let Some(d) = actual_finish {
+                a.actual_finish = d;
+            }
+            if let (Some(s), Some(f)) = (a.actual_start, a.actual_finish)
+                && f < s
+            {
+                return Err(EngineError::Value(C.into(), "actual_finish".into()));
+            }
+            if let Some(r) = remaining {
+                let day = p
+                    .calendars
+                    .iter()
+                    .chain(std::iter::once(&p.calendar))
+                    .find(|c| Some(&c.name) == a.calendar.as_ref())
+                    .unwrap_or(&p.calendar)
+                    .day_minutes();
+                a.remaining_minutes = r.map(|d| d.saturating_mul(day));
+            }
+            if let Some(m) = remaining_minutes {
+                a.remaining_minutes = m;
             }
             Ok(())
         })

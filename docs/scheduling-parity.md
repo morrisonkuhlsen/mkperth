@@ -26,8 +26,8 @@ ideas.
 | Constraints | a secondary constraint beside the primary | done (both hold; the allowed pairs are #4) |
 | Constraints | expected finish | next (#4) |
 | Project | must finish by date | done |
-| Progress | data date; actual start and finish; remaining duration | later |
-| Progress | retained logic, progress override, actual dates | later |
+| Progress | data date; actual start and finish; remaining duration | done (#19) |
+| Progress | retained logic, progress override, actual dates | done (#19); percent complete, suspend and resume later |
 | Resources | levelling with priorities | later |
 
 ## Perth.jl's conventions

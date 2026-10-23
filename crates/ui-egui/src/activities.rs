@@ -5,7 +5,7 @@ use egui::{Align2, FontId, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use mkperth_engine::Session;
 use mkperth_engine::core::{ActivityKind, Date, RelationshipType};
 use mkperth_engine::i18n::tr;
-use mkperth_engine::sched::Scheduled;
+use mkperth_engine::sched::{Scheduled, Status};
 
 use crate::show_date;
 use crate::theme::Tokens;
@@ -212,6 +212,10 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
         options.offset -= header_response.drag_delta().x / scale;
     }
     let chart_header = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, header.top()), header.max));
+    if let Some(d) = session.project.data_date {
+        let xd = x_of(d.days(), chart_left);
+        chart_header.vline(xd, header.y_range(), Stroke::new(1.5, t.green.gamma_multiply(0.7)));
+    }
     let mut month_end = f32::NEG_INFINITY;
     for k in first_day.max(0)..=last_day.min(days) {
         let Some(d) = Date::from_days(from + k) else { continue };
@@ -240,6 +244,7 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
     }
 
     let calendar = &session.project.calendar;
+    let data_date = session.project.data_date;
     let row_of: std::collections::HashMap<usize, usize> = rows.iter().enumerate().map(|(n, &(i, _))| (i, n)).collect();
     let index_of: std::collections::HashMap<&str, usize> = acts.iter().enumerate().map(|(i, a)| (a.id.as_str(), i)).collect();
     let is_summary = |i: usize| acts.get(i).is_some_and(|a| acts.iter().any(|c| c.parent.as_deref() == Some(a.id.as_str())));
@@ -283,6 +288,13 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
                         let xd = x_of(d.days(), chart_left);
                         painter.rect_filled(Rect::from_min_max(pos2(xd, rect.top()), pos2(xd + scale, rect.bottom())), 0.0, t.header_bg);
                     }
+                }
+            }
+            // The data date: a line down the chart where progress was told.
+            if let Some(d) = data_date {
+                let xd = x_of(d.days(), chart_left);
+                if xd >= chart_left {
+                    painter.vline(xd, rect.y_range(), Stroke::new(1.5, t.green.gamma_multiply(0.7)));
                 }
             }
             placed.push((i, depth, rect));
@@ -392,7 +404,7 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
             let chart = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, rect.top()), rect.max));
             painter.hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, t.gridline));
             let background = if selected == Some(i) { t.accent_soft } else { t.grid_bg };
-            let look = Look { summary, selected: selected == Some(i), float: options.late_bars, background };
+            let look = Look { summary, selected: selected == Some(i), float: options.late_bars, background, data_date };
             bar(&chart, a.kind, &a.name, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, look, &t);
         }
     });
@@ -440,6 +452,8 @@ struct Look {
     float: bool,
     /// The row's background, behind the name so lines passing under it don't cross the text.
     background: egui::Color32,
+    /// Where the work done ends on an activity under way.
+    data_date: Option<Date>,
 }
 
 /// A colour a little darker, for a bar's edge.
@@ -484,7 +498,14 @@ fn bar(
         }
         return;
     }
-    let color = if s.critical { t.red } else { t.blue };
+    // What happened in green: a completed activity whole, an activity under way up to the data date.
+    let color = if s.status == Status::Completed {
+        t.green
+    } else if s.critical {
+        t.red
+    } else {
+        t.blue
+    };
     if kind.is_milestone() || s.early_start > s.early_finish {
         // A start milestone at the morning of its day, a finish milestone at the evening.
         let x = if kind == ActivityKind::FinishMilestone { x_of(s.early_finish) + scale } else { x_of(s.early_start) };
@@ -513,6 +534,18 @@ fn bar(
         1.0,
         egui::Color32::from_white_alpha(46),
     );
+    if s.status == Status::InProgress
+        && let Some(d) = look.data_date
+    {
+        let done = x_of(d).clamp(l, r);
+        if done > l {
+            painter.rect_filled(
+                Rect::from_min_max(pos2(l, mid - 6.0), pos2(done, mid + 6.0)),
+                egui::CornerRadius { nw: 3, sw: 3, ne: 0, se: 0 },
+                t.green,
+            );
+        }
+    }
     let end = if look.float && s.total_float > 0 { span(s.late_start, s.late_finish).1 } else { r };
     label(end);
 }

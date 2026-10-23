@@ -21,6 +21,8 @@ pub struct Moment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
     ProjectStart,
+    /// The data date: nothing not yet started, and no remaining work, before it.
+    DataDate,
     /// A relationship from a predecessor (forward) or to a successor (backward).
     Relationship {
         other: String,
@@ -137,11 +139,16 @@ impl Explanation {
         // Working minutes in days, with a decimal when they aren't whole.
         let in_days = |minutes: i64| {
             let d = self.day_minutes.max(1);
-            if minutes % d == 0 { (minutes / d).to_string() } else { format!("{:.2}", minutes as f64 / d as f64).trim_end_matches('0').to_string() }
+            if minutes % d == 0 {
+                (minutes / d).to_string()
+            } else {
+                mkperth_i18n::decimal(format!("{:.2}", minutes as f64 / d as f64).trim_end_matches('0'))
+            }
         };
         let lag = |l: i64| if l == 0 { String::new() } else { tr!("ex-lag", lag = format!("{l:+}").as_str()) };
         let source = |s: &Source| match s {
             Source::ProjectStart => tr!("ex-src-project-start"),
+            Source::DataDate => tr!("ex-src-data-date"),
             Source::ProjectFinish => tr!("ex-src-project-finish"),
             Source::MustFinishBy => tr!("ex-src-must-finish-by"),
             Source::Constraint(c) => constraint_name(*c, date),
@@ -163,6 +170,20 @@ impl Explanation {
             return out;
         }
         // Each bound under its pass, indented by two spaces (the catalogs keep no leading space).
+        match self.scheduled.status {
+            crate::Status::Completed => {
+                out.push(tr!("ex-completed", start = date(self.scheduled.early_start).as_str(), finish = date(self.scheduled.early_finish).as_str()));
+                return out;
+            }
+            crate::Status::InProgress => {
+                out.push(tr!(
+                    "ex-in-progress",
+                    start = date(self.scheduled.early_start).as_str(),
+                    left = in_days(self.scheduled.remaining_minutes).as_str()
+                ));
+            }
+            crate::Status::NotStarted => {}
+        }
         out.push(tr!("ex-forward"));
         for b in &self.early {
             out.push(

@@ -226,9 +226,36 @@ mod tests {
         assert_eq!(s.project.critical_by, mkperth_core::CriticalBy::LongestPath);
         assert_eq!(s.project.float_kind, mkperth_core::FloatKind::Smallest);
         assert!(matches!(s.run("project.options", &json!({"float": "sideways"})), Err(EngineError::Value(..))));
+        assert!(matches!(s.run("project.options", &json!({"progress": "sideways"})), Err(EngineError::Value(..))));
+        assert!(matches!(s.run("project.options", &json!({"data_date": "2026-13-01"})), Err(EngineError::Value(..))));
         s.run("edit.undo", &Value::Null).unwrap();
         s.run("edit.undo", &Value::Null).unwrap();
         assert_eq!(critical(&s), before);
+    }
+
+    #[test]
+    fn progress_is_told_by_commands() {
+        let mut s = Session::default();
+        let original = s.project.clone();
+        let status = |s: &Session, id: &str| {
+            s.schedule.as_ref().ok().and_then(|x| x.activities.iter().find(|a| a.id == id).map(|a| (a.status, a.remaining_minutes)))
+        };
+        s.run("project.options", &json!({"data_date": "2026-11-10", "progress": "progress-override"})).unwrap();
+        assert_eq!(s.project.data_date, mkperth_core::Date::parse("2026-11-10"));
+        assert_eq!(s.project.progress_mode, mkperth_core::ProgressMode::ProgressOverride);
+        s.run("activity.edit", &json!({"id": "A10", "actual_start": "2026-11-03", "actual_finish": "2026-11-06"})).unwrap();
+        assert_eq!(status(&s, "A10"), Some((mkperth_sched::Status::Completed, 0)));
+        s.run("activity.edit", &json!({"id": "A10", "actual_finish": null, "remaining": 2})).unwrap();
+        assert_eq!(status(&s, "A10"), Some((mkperth_sched::Status::InProgress, 960)));
+        assert!(matches!(
+            s.run("activity.edit", &json!({"id": "A10", "actual_finish": "2026-11-02"})),
+            Err(EngineError::Value(_, ref name)) if name == "actual_finish"
+        ));
+        assert!(matches!(s.run("activity.edit", &json!({"id": "A10", "remaining": -1})), Err(EngineError::Value(..))));
+        for _ in 0..3 {
+            s.run("edit.undo", &Value::Null).unwrap();
+        }
+        assert_eq!(s.project, original);
     }
 
     #[test]

@@ -56,6 +56,8 @@ pub(crate) fn project() -> Project {
         lag_calendar: Default::default(),
         float_kind: Default::default(),
         critical_by: Default::default(),
+        data_date: None,
+        progress_mode: Default::default(),
         must_finish_by: None,
         activities,
         relationships: vec![

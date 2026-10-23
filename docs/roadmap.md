@@ -26,6 +26,13 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   Time in minutes: calendars with work periods per weekday (a short Friday), durations and lags
   in working minutes for part days and P6's hours, floats in minutes shown in days with decimals;
   every earlier test and oracle network keeps its dates.
+  Progress: a data date before which nothing not started and no work left is scheduled; actual
+  start and finish dates (a completed activity keeps them, with no float, never critical); the
+  work left of an activity under way (told, or its duration less the work to the data date),
+  after its predecessors with retained logic or from the data date with progress override; its
+  start-to-start successors count from its actual start; start constraints drop once it starts.
+  Read and written as P6 XML's `DataDate`, `ActualStartDate`, `ActualFinishDate` and
+  `RemainingDuration`; told in Details and on the Project tab; drawn green on the Gantt chart.
 - **Next:** an exception day's own work periods; the rest of #4 and #5.
 
 ## M1 — data in and out
@@ -105,7 +112,8 @@ measurement statement per period, retention and price adjustment, as constructio
 measure work. A module of its own, after costs reach parity.
 
 ## Later
-- Progress: data date, actuals, retained logic and progress override, out-of-sequence progress.
+- Progress beyond dates: percent complete, suspend and resume, expected finish; the progress
+  mode in P6 XML.
 - Resources and roles, resource levelling, histograms.
 - Baselines, earned value, S-curves.
 - Activity codes, user-defined fields, EPS and OBS, multiple projects.
