@@ -126,8 +126,13 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
 - **Next:** the network view (#17); the brand (#18, the user's: the splash's lilac is chosen).
 
 ## M4 — resources
-- **Next:** resources and roles with units per time and prices that change over time; assignments
-  to activities; resource-dependent activities; levelling with priorities; histograms.
+- *Started (#20):* resources (labor, nonlabor, material, with a unit, a calendar and units an
+  hour), roles they fill, and assignments of a resource or an unstaffed role to an activity with
+  budgeted, actual and remaining units; `resource.*`, `role.*` and `assignment.*` commands with
+  undo, an assignment's default budget the activity's hours at the resource's units an hour.
+- **Next:** P6 XML and Perth's `assignee` read and written; the Resources view; duration types
+  and resource-dependent activities; histograms; prices that change over time (#23); levelling
+  with priorities (#21).
 
 ## M5 — costs and earned value
 - **Next:** each activity's budgeted, actual, remaining and at-completion costs, from its

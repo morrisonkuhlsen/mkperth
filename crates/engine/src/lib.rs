@@ -6,6 +6,7 @@
 mod edit;
 mod notes;
 mod report;
+mod resources;
 mod sample;
 mod write;
 
@@ -51,6 +52,19 @@ pub enum EngineError {
     NothingToUndo,
     #[error("{}", tr!("err-nothing-to-redo"))]
     NothingToRedo,
+    #[error("{}", tr!("err-no-resource", id = .0.as_str()))]
+    UnknownResource(String),
+    #[error("{}", tr!("err-resource-taken", id = .0.as_str()))]
+    ResourceIdTaken(String),
+    #[error("{}", tr!("err-no-role", id = .0.as_str()))]
+    UnknownRole(String),
+    #[error("{}", tr!("err-role-taken", id = .0.as_str()))]
+    RoleIdTaken(String),
+    /// The activity and the resource (or role) already on it.
+    #[error("{}", tr!("err-assignment-exists", activity = .0.as_str(), resource = .1.as_str()))]
+    AssignmentExists(String, String),
+    #[error("{}", tr!("err-no-assignment", activity = .0.as_str(), resource = .1.as_str()))]
+    UnknownAssignment(String, String),
     /// A command that failed in a way no error foresaw; the project was put back as it was.
     #[error("{}", tr!("err-internal", command = .0.as_str()))]
     Internal(String),
@@ -63,7 +77,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 21] = [
+pub const COMMANDS: [&str; 29] = [
     "project.new",
     "project.open",
     "project.save",
@@ -77,6 +91,14 @@ pub const COMMANDS: [&str; 21] = [
     "relationship.delete",
     "project.options",
     "calendar.edit",
+    "resource.add",
+    "resource.edit",
+    "resource.delete",
+    "role.add",
+    "role.delete",
+    "assignment.add",
+    "assignment.edit",
+    "assignment.delete",
     "edit.undo",
     "edit.redo",
     "band.add",
@@ -140,7 +162,7 @@ impl Session {
 
     fn run_command(&mut self, id: &str, params: &Value) -> Result<(), EngineError> {
         let param = |name: &str| params.get(name).and_then(Value::as_str).ok_or_else(|| EngineError::Param(id.to_string(), name.to_string()));
-        if let Some(result) = self.run_edit(id, params).or_else(|| self.note_command(id, params)) {
+        if let Some(result) = self.run_edit(id, params).or_else(|| self.note_command(id, params)).or_else(|| self.resource_command(id, params)) {
             return result;
         }
         match id {

@@ -178,6 +178,110 @@ impl Activity {
     }
 }
 
+/// Units are kept in hundredths, so 7.5 hours or 0.25 m³ are whole numbers: `UNIT` is one.
+pub const UNIT: i64 = 100;
+
+/// What a resource is, as P6 has it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ResourceKind {
+    /// People: their work is counted in hours.
+    #[default]
+    Labor,
+    /// Equipment and the like: also counted in hours.
+    Nonlabor,
+    /// What is used up, counted in its own unit (m³, t, bags).
+    Material,
+}
+
+impl ResourceKind {
+    /// `labor`, `nonlabor` or `material`: the commands' and files' word for it.
+    pub fn code(self) -> &'static str {
+        match self {
+            ResourceKind::Labor => "labor",
+            ResourceKind::Nonlabor => "nonlabor",
+            ResourceKind::Material => "material",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<ResourceKind> {
+        Some(match code.to_ascii_lowercase().replace(['-', ' '], "").as_str() {
+            "labor" | "labour" => ResourceKind::Labor,
+            "nonlabor" | "nonlabour" | "equipment" => ResourceKind::Nonlabor,
+            "material" => ResourceKind::Material,
+            _ => return None,
+        })
+    }
+}
+
+/// Who or what does the work: a person, a crew, a machine, a material.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resource {
+    /// Unique among the resources (P6's Resource ID).
+    pub id: String,
+    pub name: String,
+    pub kind: ResourceKind,
+    /// A material's unit of measure (`m³`); hours for the others, so empty.
+    pub unit: String,
+    /// The calendar it works on; the project's when `None`.
+    pub calendar: Option<String>,
+    /// The most it does at once, in hundredths of a unit per hour: `UNIT` is one person (or
+    /// machine) full time, `2 * UNIT` two of them.
+    pub max_units: i64,
+    /// The roles it can fill, by their IDs.
+    pub roles: Vec<String>,
+    pub extra: Extra,
+}
+
+impl Default for Resource {
+    fn default() -> Self {
+        Resource {
+            id: String::new(),
+            name: String::new(),
+            kind: ResourceKind::Labor,
+            unit: String::new(),
+            calendar: None,
+            max_units: UNIT,
+            roles: Vec::new(),
+            extra: Extra::new(),
+        }
+    }
+}
+
+/// A kind of work a resource can fill (an electrician, a crane operator): an activity may ask
+/// for a role before a resource is chosen.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Role {
+    /// Unique among the roles.
+    pub id: String,
+    pub name: String,
+    pub extra: Extra,
+}
+
+/// A resource, or a role still to be staffed, put to work on an activity.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Assignment {
+    /// The activity's ID.
+    pub activity: String,
+    /// The resource's ID; `None` for a role not staffed yet.
+    pub resource: Option<String>,
+    /// The role it fills, if one is named.
+    pub role: Option<String>,
+    /// Budgeted work, in hundredths of the resource's unit (hours for people and equipment).
+    pub planned: i64,
+    /// Work done so far, the same way.
+    pub actual: i64,
+    /// Work left; when `None`, the budget less what is done.
+    pub remaining: Option<i64>,
+    pub extra: Extra,
+}
+
+impl Assignment {
+    /// The work left: as given, else the budget less what is done (never below nothing).
+    pub fn remaining_units(&self) -> i64 {
+        self.remaining.unwrap_or_else(|| self.planned.saturating_sub(self.actual).max(0))
+    }
+}
+
 /// Which calendar a relationship's lag counts its working days on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LagCalendar {
@@ -255,6 +359,10 @@ pub struct Project {
     pub bands: Vec<Band>,
     pub markers: Vec<Marker>,
     pub month_marks: Vec<MonthMark>,
+    /// Who and what does the work, the roles they fill, and their assignments to activities.
+    pub resources: Vec<Resource>,
+    pub roles: Vec<Role>,
+    pub assignments: Vec<Assignment>,
     pub extra: Extra,
 }
 

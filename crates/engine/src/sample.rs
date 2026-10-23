@@ -22,6 +22,9 @@ pub(crate) fn empty(name: String, start: Date) -> Project {
         bands: Vec::new(),
         markers: Vec::new(),
         month_marks: Vec::new(),
+        resources: Vec::new(),
+        roles: Vec::new(),
+        assignments: Vec::new(),
         extra: Default::default(),
     }
 }
@@ -95,6 +98,9 @@ pub(crate) fn project() -> Project {
             label_at: 0,
         }],
         month_marks: vec![MonthMark { month: Date::from_ymd(2027, 1, 1).unwrap_or(start), name: "holidays".into(), color: String::new() }],
+        resources: Vec::new(),
+        roles: Vec::new(),
+        assignments: Vec::new(),
         activities,
         relationships: vec![
             tie("M0", "A10", FinishToStart, 0),

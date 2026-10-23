@@ -24,6 +24,9 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
         bands: Vec::new(),
         markers: Vec::new(),
         month_marks: Vec::new(),
+        resources: Vec::new(),
+        roles: Vec::new(),
+        assignments: Vec::new(),
         activities: activities
             .iter()
             .map(|(id, d)| Activity { id: id.to_string(), name: id.to_string(), duration: *d, ..Activity::default() })
