@@ -601,8 +601,10 @@ impl PerthApp {
             if let Some(parent) = a.parent.as_deref() {
                 fact(ui, tr!("detail-wbs"), parent.to_string());
             }
-            for c in [a.constraint, a.secondary_constraint].into_iter().flatten() {
-                fact(ui, tr!("detail-constraint"), constraint_name(c, &show_date));
+            for (name, c) in [(tr!("detail-constraint"), a.constraint), (tr!("detail-secondary-constraint"), a.secondary_constraint)] {
+                if let Some(c) = c {
+                    fact(ui, name, constraint_name(c, &show_date));
+                }
             }
             // Progress: where it stands, its actual dates and the work left.
             if !summary {
@@ -617,9 +619,14 @@ impl PerthApp {
                     };
                     fact(ui, tr!("detail-status"), status);
                 }
-                for (name, key, value) in
-                    [(tr!("detail-actual-start"), "actual_start", a.actual_start), (tr!("detail-actual-finish"), "actual_finish", a.actual_finish)]
-                {
+                let mut fields = vec![
+                    (tr!("detail-actual-start"), "actual_start", a.actual_start),
+                    (tr!("detail-actual-finish"), "actual_finish", a.actual_finish),
+                ];
+                if !a.kind.is_milestone() && a.actual_finish.is_none() {
+                    fields.push((tr!("detail-expected-finish"), "expected_finish", a.expected_finish));
+                }
+                for (name, key, value) in fields {
                     ui.horizontal(|ui| {
                         let label = ui.add_sized(egui::vec2(120.0, 18.0), egui::Label::new(egui::RichText::new(name).size(12.0).color(t.text_dim)));
                         if let Some(d) = date_field(ui, ui.id().with((key, i)), label.id, value, 100.0) {

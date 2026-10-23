@@ -239,6 +239,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             actual_start: None,
             actual_finish: None,
             remaining_minutes: None,
+            expected_finish: None,
             constraint: start.map(Constraint::StartOnOrAfter),
             secondary_constraint: deadline.map(Constraint::FinishOnOrBefore),
             calendar: None,

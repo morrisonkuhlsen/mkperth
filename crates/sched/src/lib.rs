@@ -348,7 +348,11 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
     }
     let begun = |i: usize, es: i64| begun.get(i).copied().flatten().unwrap_or(es);
     // What the passes schedule: the work left.
-    let dur = |i: usize| remaining.get(i).copied().unwrap_or(0);
+    // An expected finish resets it in the forward pass, so it's a cell.
+    let work: Vec<std::cell::Cell<i64>> = remaining.into_iter().map(std::cell::Cell::new).collect();
+    let dur = |i: usize| work.get(i).map_or(0, std::cell::Cell::get);
+    let expected =
+        |i: usize| acts.get(i).filter(|a| !is_summary(i) && !a.kind.is_milestone() && status(i) != Status::Completed).and_then(|a| a.expected_finish);
     // Where an activity's working time can begin and end, on its calendar.
     let place_start = |i: usize, t: i64| -> Result<i64, ScheduleError> {
         let c = clock(cal_of(i));
@@ -463,6 +467,15 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             earliest = Some(start);
         }
         let s = bounded(place_start(i, start)?)?;
+        // Expected to finish on a day: the work runs from its start to that evening (none when
+        // the day is already past).
+        if let Some(day) = expected(i) {
+            let c = clock(cal_of(i));
+            let evening = bounded(c.previous_finish((i64::from(day.days()) + 1) * MINUTES_PER_DAY)?)?;
+            if let Some(cell) = work.get(i) {
+                cell.set(c.between(s, evening.max(s))?);
+            }
+        }
         let f = bounded(finish_of(i, s)?)?;
         if let (Some(a), Some(b)) = (es.get_mut(i), ef.get_mut(i)) {
             *a = s;
@@ -768,6 +781,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
                 id: id_of(i),
                 calendar: calendars.get(cal_of(i)).map_or_else(String::new, |c| c.name.clone()),
                 duration: dur(i),
+                expected: expected(i),
                 day_minutes: day_minutes(i),
                 children: (0..n).filter(|&c| parent.get(c).copied().flatten() == Some(i)).map(id_of).collect(),
                 early: early_bounds,

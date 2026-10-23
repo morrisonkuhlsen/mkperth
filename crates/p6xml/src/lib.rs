@@ -267,6 +267,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         // Progress: the actual dates, and the work left of an activity under way.
         a.actual_start = e.text_of("ActualStartDate").and_then(date_of);
         a.actual_finish = e.text_of("ActualFinishDate").and_then(date_of);
+        a.expected_finish = e.text_of("ExpectedFinishDate").and_then(date_of);
         if a.actual_start.is_some() && a.actual_finish.is_none() {
             a.remaining_minutes = match e.text_of("RemainingDuration") {
                 Some(h) => {
@@ -493,6 +494,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         if let Some(d) = a.actual_finish {
             out.push_str(&format!("      <ActualFinishDate>{}</ActualFinishDate>\n", timestamp(d, true)));
+        }
+        if let Some(d) = a.expected_finish {
+            out.push_str(&format!("      <ExpectedFinishDate>{}</ExpectedFinishDate>\n", timestamp(d, true)));
         }
         if let (Some(_), None, Some(m)) = (a.actual_start, a.actual_finish, a.remaining_minutes) {
             out.push_str(&format!("      <RemainingDuration>{}</RemainingDuration>\n", hours(m)));

@@ -54,7 +54,7 @@ fn file() -> String {
       <PrimaryConstraintType>Start On or After</PrimaryConstraintType><PrimaryConstraintDate>2026-11-10T08:00:00</PrimaryConstraintDate>
       <SecondaryConstraintType>Finish On or Before</SecondaryConstraintType><SecondaryConstraintDate>2026-12-04T17:00:00</SecondaryConstraintDate></Activity>
     <Activity><ObjectId>1002</ObjectId><Id>A120</Id><Name>Cure</Name><PlannedDuration>30</PlannedDuration><CalendarObjectId>11</CalendarObjectId><WBSObjectId>100</WBSObjectId></Activity>
-    <Activity><ObjectId>1003</ObjectId><Id>A130</Id><Name>Review</Name><PlannedDuration>20</PlannedDuration></Activity>
+    <Activity><ObjectId>1003</ObjectId><Id>A130</Id><Name>Review</Name><PlannedDuration>20</PlannedDuration><ExpectedFinishDate>2026-11-20T17:00:00</ExpectedFinishDate></Activity>
     <Activity><ObjectId>1004</ObjectId><Id>M900</Id><Name>Handover</Name><Type>Finish Milestone</Type><PlannedDuration>0</PlannedDuration></Activity>
     <Relationship><ObjectId>1</ObjectId><PredecessorActivityObjectId>1000</PredecessorActivityObjectId><SuccessorActivityObjectId>1001</SuccessorActivityObjectId><Type>Finish to Start</Type><Lag>8</Lag></Relationship>
     <Relationship><ObjectId>2</ObjectId><PredecessorActivityObjectId>1001</PredecessorActivityObjectId><SuccessorActivityObjectId>1002</SuccessorActivityObjectId><Type>Start to Start</Type><Lag>16</Lag></Relationship>
@@ -102,6 +102,7 @@ fn reads_a_project() {
     assert_eq!(p.relationships[4].lag_minutes, Some(-240));
     // Progress: the data date, a completed activity, one under way with three and a half days left.
     assert_eq!(p.data_date, Some(day(2026, 11, 12)));
+    assert_eq!(a("A130").expected_finish, Some(day(2026, 11, 20)));
     assert_eq!(
         (a("A100").actual_start, a("A100").actual_finish, a("A100").remaining_minutes),
         (Some(day(2026, 11, 3)), Some(day(2026, 11, 9)), None)
@@ -144,7 +145,8 @@ fn what_is_written_reads_back_the_same() {
                 x.secondary_constraint,
                 x.actual_start,
                 x.actual_finish,
-                x.remaining_minutes
+                x.remaining_minutes,
+                x.expected_finish
             ),
             (
                 a.name.as_str(),
@@ -155,7 +157,8 @@ fn what_is_written_reads_back_the_same() {
                 a.secondary_constraint,
                 a.actual_start,
                 a.actual_finish,
-                a.remaining_minutes
+                a.remaining_minutes,
+                a.expected_finish
             ),
             "{}",
             a.id

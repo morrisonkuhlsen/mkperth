@@ -23,8 +23,8 @@ ideas.
 | Critical | the longest path (driving relationships back from the project's finish) | done |
 | Open ends | activities with no successor finish by the project's finish | done |
 | Constraints | start/finish on, on or after, on or before; mandatory start/finish; as late as possible | done |
-| Constraints | a secondary constraint beside the primary | done (both hold; the allowed pairs are #4) |
-| Constraints | expected finish | next (#4) |
+| Constraints | a secondary constraint beside the primary | done: both hold; a secondary needs a dated primary and bounds the other end (a start's with a finish's), never mandatory nor as late as possible — MK Perth's rule, as Oracle publishes no table of pairs (#4) |
+| Constraints | expected finish | done: the work (left, once started) runs from the start to that evening (#4) |
 | Project | must finish by date | done |
 | Progress | data date; actual start and finish; remaining duration | done (#19) |
 | Progress | retained logic, progress override, actual dates | done (#19); percent complete, suspend and resume later |

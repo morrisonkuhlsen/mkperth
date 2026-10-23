@@ -23,6 +23,8 @@ Read it before re-scheduling a plan with a new version.
   XML; typed in Details and on the Project tab, drawn on the Gantt chart, explained in the
   calculation.
 - The ribbon's groups carry their names underneath.
+- An expected finish date that sets an activity's work (or its work left); secondary constraints
+  checked against their primary, pairs that can't stand together refused.
 - Time in hours: calendars with work periods for each day of the week, durations and lags of part
   days (P6's hours kept exact), floats shown in days with decimals; the calculation names a time
   of day when it isn't the start or end of the day's work.

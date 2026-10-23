@@ -99,6 +99,31 @@ pub enum Constraint {
     AsLateAsPossible,
 }
 
+impl Constraint {
+    /// Whether it bounds the start (`Some(true)`) or the finish (`Some(false)`); none for as late
+    /// as possible.
+    pub fn on_start(self) -> Option<bool> {
+        match self {
+            Constraint::StartOnOrAfter(_) | Constraint::StartOnOrBefore(_) | Constraint::StartOn(_) | Constraint::MandatoryStart(_) => Some(true),
+            Constraint::FinishOnOrAfter(_) | Constraint::FinishOnOrBefore(_) | Constraint::FinishOn(_) | Constraint::MandatoryFinish(_) => {
+                Some(false)
+            }
+            Constraint::AsLateAsPossible => None,
+        }
+    }
+
+    /// Whether `secondary` may stand beside `primary`: a dated primary, and a secondary that is
+    /// neither mandatory nor as late as possible, on the other end of the activity (a start's
+    /// with a finish's, as a window to work in).
+    pub fn pairs(primary: Constraint, secondary: Constraint) -> bool {
+        let soft = !matches!(secondary, Constraint::MandatoryStart(_) | Constraint::MandatoryFinish(_) | Constraint::AsLateAsPossible);
+        match (primary.on_start(), secondary.on_start()) {
+            (Some(a), Some(b)) => soft && a != b,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Activity {
     /// Unique within the project (P6's Activity ID).
@@ -118,6 +143,9 @@ pub struct Activity {
     /// Working minutes left for an activity under way; when `None`, its duration less the work
     /// since its actual start up to the data date.
     pub remaining_minutes: Option<i64>,
+    /// The day it is expected to finish: its work (what is left, once started) runs from its
+    /// start to the evening of that day.
+    pub expected_finish: Option<Date>,
     pub constraint: Option<Constraint>,
     /// A second constraint beside the first: typically a start on or after with a finish on or
     /// before. Both hold.

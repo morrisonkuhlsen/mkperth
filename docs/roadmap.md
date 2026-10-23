@@ -33,7 +33,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   start-to-start successors count from its actual start; start constraints drop once it starts.
   Read and written as P6 XML's `DataDate`, `ActualStartDate`, `ActualFinishDate` and
   `RemainingDuration`; told in Details and on the Project tab; drawn green on the Gantt chart.
-- **Next:** an exception day's own work periods; the rest of #4 and #5.
+  Constraint pairs: a secondary needs a dated primary and bounds the other end, neither
+  mandatory nor as late as possible; other pairs are refused with a catalogued message. An
+  expected finish sets the work, or the work left, from the start to that evening (P6 XML's
+  `ExpectedFinishDate`).
+- **Next:** an exception day's own work periods; #5.
 
 ## M1 — data in and out
 - *Done:* Perth.jl's project JSON (`mkperth-perth`), read and written back byte for byte: a
@@ -112,7 +116,7 @@ measurement statement per period, retention and price adjustment, as constructio
 measure work. A module of its own, after costs reach parity.
 
 ## Later
-- Progress beyond dates: percent complete, suspend and resume, expected finish; the progress
+- Progress beyond dates: percent complete, suspend and resume; the progress
   mode in P6 XML.
 - Resources and roles, resource levelling, histograms.
 - Baselines, earned value, S-curves.

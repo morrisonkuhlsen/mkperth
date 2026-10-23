@@ -42,6 +42,9 @@ pub enum EngineError {
     DuplicateRelationship(String, String),
     #[error("{}", tr!("err-no-relationship", predecessor = .0.as_str(), successor = .1.as_str()))]
     UnknownRelationship(String, String),
+    /// The activity whose secondary constraint can't stand beside its primary.
+    #[error("{}", tr!("err-constraint-pair", id = .0.as_str()))]
+    ConstraintPair(String),
     #[error("{}", tr!("err-nothing-to-undo"))]
     NothingToUndo,
     #[error("{}", tr!("err-nothing-to-redo"))]
@@ -231,6 +234,33 @@ mod tests {
         s.run("edit.undo", &Value::Null).unwrap();
         s.run("edit.undo", &Value::Null).unwrap();
         assert_eq!(critical(&s), before);
+    }
+
+    #[test]
+    fn a_secondary_constraint_pairs_with_its_primary() {
+        let mut s = Session::default();
+        let window = json!({"id": "A10", "constraint": {"type": "start-on-or-after", "date": "2026-11-04"},
+            "secondary_constraint": {"type": "finish-on-or-before", "date": "2026-11-20"}});
+        s.run("activity.edit", &window).unwrap();
+        let a = s.project.activities.iter().find(|a| a.id == "A10").unwrap();
+        assert!(a.constraint.is_some() && a.secondary_constraint.is_some());
+        // Two on the start, a mandatory secondary, no primary at all: refused, the project as it was.
+        let before = s.project.clone();
+        for bad in [
+            json!({"id": "A10", "secondary_constraint": {"type": "start-on-or-before", "date": "2026-11-06"}}),
+            json!({"id": "A10", "secondary_constraint": {"type": "mandatory-finish", "date": "2026-11-20"}}),
+            json!({"id": "A10", "secondary_constraint": {"type": "as-late-as-possible"}}),
+            json!({"id": "A10", "constraint": null}),
+            json!({"id": "A10", "constraint": {"type": "as-late-as-possible"}}),
+        ] {
+            assert_eq!(s.run("activity.edit", &bad), Err(EngineError::ConstraintPair("A10".into())), "{bad}");
+        }
+        assert_eq!(s.project, before);
+        // An expected finish, then cleared.
+        s.run("activity.edit", &json!({"id": "A10", "expected_finish": "2026-11-27"})).unwrap();
+        assert_eq!(s.project.activities.iter().find(|a| a.id == "A10").unwrap().expected_finish, mkperth_core::Date::parse("2026-11-27"));
+        s.run("activity.edit", &json!({"id": "A10", "expected_finish": null})).unwrap();
+        assert_eq!(s.project.activities.iter().find(|a| a.id == "A10").unwrap().expected_finish, None);
     }
 
     #[test]

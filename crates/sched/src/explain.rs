@@ -62,6 +62,8 @@ pub struct Explanation {
     pub calendar: String,
     /// Working minutes; 0 for a milestone or a summary.
     pub duration: i64,
+    /// The day it is expected to finish, which set `duration`.
+    pub expected: Option<Date>,
     /// The minutes of a working day on its calendar, to say durations and floats in days.
     pub day_minutes: i64,
     /// The children whose dates a summary takes; empty for any other activity.
@@ -198,6 +200,9 @@ impl Explanation {
         out.push(tr!("ex-earliest", at = at(self.earliest).as_str()));
         if self.early_start != self.earliest {
             out.push(tr!("ex-placed", calendar = self.calendar.as_str(), at = at(self.early_start).as_str()));
+        }
+        if let Some(day) = self.expected {
+            out.push(tr!("ex-expected", date = date(day).as_str(), n = in_days(self.duration).as_str()));
         }
         if self.duration > 0 {
             out.push(tr!(

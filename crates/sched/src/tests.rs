@@ -626,3 +626,26 @@ fn a_start_to_start_successor_counts_from_the_actual_start() {
     let s = schedule(&p).unwrap();
     assert_eq!(dates(&s, "C"), (day(2026, 10, 8), day(2026, 10, 8)));
 }
+
+#[test]
+fn an_expected_finish_sets_the_work() {
+    // B(2) after A(3), expected to finish Tuesday 13 October: from Thursday 8 to Tuesday 13 is four
+    // working days, which push the project's finish.
+    let mut p = project(&[("A", 3), ("B", 2)], &[("A", "B", FS, 0)]);
+    p.activities[1].expected_finish = Some(day(2026, 10, 13));
+    let s = schedule(&p).unwrap();
+    assert_eq!(dates(&s, "B"), (day(2026, 10, 8), day(2026, 10, 13)));
+    assert_eq!(get(&s, "B").remaining_minutes, 4 * 480);
+    assert!(explain(&p, "B").unwrap().lines(&|d: Date| d.to_string()).iter().any(|l| l.contains("2026-10-13")));
+    // A done, B under way with a data date: the work left runs from the data date (Monday 12) to Tuesday.
+    p.data_date = Some(day(2026, 10, 12));
+    p.activities[0].actual_start = Some(day(2026, 10, 5));
+    p.activities[0].actual_finish = Some(day(2026, 10, 7));
+    p.activities[1].actual_start = Some(day(2026, 10, 8));
+    let s = schedule(&p).unwrap();
+    assert_eq!(get(&s, "B").remaining_minutes, 2 * 480);
+    assert_eq!(dates(&s, "B"), (day(2026, 10, 8), day(2026, 10, 13)));
+    // An expected day already past leaves no work: it finishes as it starts.
+    p.activities[1].expected_finish = Some(day(2026, 10, 9));
+    assert_eq!(get(&schedule(&p).unwrap(), "B").remaining_minutes, 0);
+}

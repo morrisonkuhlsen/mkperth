@@ -260,3 +260,7 @@ status-completed = Concluída
 detail-actual-start = Início real
 detail-actual-finish = Término real
 detail-remaining = Restante (dias)
+ex-expected = Término esperado em { $date }: seu trabalho são os { $n } dias úteis do início até a noite desse dia.
+err-constraint-pair = { $id }: uma restrição secundária precisa de uma primária com data e limita a outra ponta da atividade (um início com um término); não pode ser obrigatória nem o mais tarde possível.
+detail-expected-finish = Término esperado
+detail-secondary-constraint = Restrição secundária

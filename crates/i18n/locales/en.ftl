@@ -260,3 +260,7 @@ status-completed = Completed
 detail-actual-start = Actual start
 detail-actual-finish = Actual finish
 detail-remaining = Remaining (days)
+ex-expected = Expected to finish on { $date }: its work is the { $n } working days from its start to that evening.
+err-constraint-pair = { $id }: a secondary constraint needs a dated primary, and bounds the other end of the activity (a start with a finish); it is neither mandatory nor as late as possible.
+detail-expected-finish = Expected finish
+detail-secondary-constraint = Secondary constraint

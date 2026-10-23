@@ -261,6 +261,8 @@ impl Session {
         let kind = text(params, C, "kind")?.map(|k| kind_of(&k).ok_or_else(|| EngineError::Value(C.into(), "kind".into()))).transpose()?;
         let calendar = text(params, C, "calendar")?;
         let constraint = params.get("constraint").map(|c| constraint_of(c, C)).transpose()?;
+        let secondary = params.get("secondary_constraint").map(|c| constraint_of(c, C)).transpose()?;
+        let expected = date(params, C, "expected_finish")?;
         // Progress: the actual dates, and the work left in days or in working minutes.
         let actual_start = date(params, C, "actual_start")?;
         let actual_finish = date(params, C, "actual_finish")?;
@@ -319,6 +321,18 @@ impl Session {
             }
             if let Some(c) = constraint {
                 a.constraint = c;
+            }
+            if let Some(c) = secondary {
+                a.secondary_constraint = c;
+            }
+            // A secondary stands only beside a primary it pairs with.
+            if let Some(s) = a.secondary_constraint
+                && !a.constraint.is_some_and(|p| Constraint::pairs(p, s))
+            {
+                return Err(EngineError::ConstraintPair(a.id.clone()));
+            }
+            if let Some(d) = expected {
+                a.expected_finish = d;
             }
             if let Some(d) = actual_start {
                 a.actual_start = d;
