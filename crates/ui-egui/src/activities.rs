@@ -51,6 +51,46 @@ pub(crate) enum RowAction {
     Details,
 }
 
+/// What dragging a bar changes: the whole bar (its start, the finish following), its start (the
+/// finish kept) or its finish (the start kept).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BarMode {
+    Move,
+    Start,
+    Finish,
+}
+
+/// A bar dragged and let go: its activity, what moved, and the days it now starts and finishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BarEdit {
+    pub index: usize,
+    pub mode: BarMode,
+    pub start: Date,
+    pub finish: Date,
+}
+
+/// A bar being dragged: where the press began, and the days it started and finished on.
+#[derive(Debug, Clone, Copy)]
+struct BarDrag {
+    index: usize,
+    mode: BarMode,
+    x: f32,
+    start: i32,
+    finish: i32,
+}
+
+impl BarDrag {
+    /// The days it starts and finishes on with the pointer at `x`, a day being `scale` wide.
+    fn days(&self, x: f32, scale: f32) -> (i32, i32) {
+        let moved = ((x - self.x) / scale.max(0.1)).round() as i32;
+        match self.mode {
+            BarMode::Move => (self.start + moved, self.finish + moved),
+            BarMode::Start => ((self.start + moved).min(self.finish), self.finish),
+            BarMode::Finish => (self.start, (self.finish + moved).max(self.start)),
+        }
+    }
+}
+
 /// What happened in the view this frame.
 #[derive(Debug, Default)]
 pub(crate) struct Events {
@@ -68,6 +108,8 @@ pub(crate) struct Events {
     pub add_month: Option<(Date, egui::Pos2)>,
     /// What a row's context menu asked for, on which row.
     pub menu: Option<(usize, RowAction)>,
+    /// A bar dragged to new days.
+    pub bar: Option<BarEdit>,
     /// An edit to make: the activity's index, the column, the new text.
     pub commit: Option<(usize, Column, String)>,
 }
@@ -362,6 +404,32 @@ pub(crate) fn show(
     let released = ui.input(|i| !i.pointer.primary_down());
     let mut banded: Vec<usize> = Vec::new();
     let modifiers = ui.input(|i| i.modifiers);
+    // A bar being dragged, and where its row is in view.
+    let bar_id = egui::Id::unique("activities-bar-drag");
+    let dragging = ui.data(|d| d.get_temp::<BarDrag>(bar_id));
+    let mut drag_row: Option<Rect> = None;
+    // A bar that can be dragged: not a summary's, not begun; its extent on the chart.
+    let draggable = |i: usize| -> Option<(f32, f32)> {
+        let s = schedule.activities.get(i).filter(|s| !is_summary(i) && s.status == Status::NotStarted)?;
+        Some((x_of(s.early_start.days(), chart_left), x_of(s.early_finish.days(), chart_left) + scale))
+    };
+    // Where on a bar `x` is: its edges resize a task wide enough, anywhere else moves it.
+    let mode_at = |i: usize, x: f32| -> Option<BarMode> {
+        let (x0, x1) = draggable(i)?;
+        if x < x0 - 4.0 || x > x1 + 4.0 || x <= chart_left {
+            return None;
+        }
+        let short = acts.get(i).is_none_or(|a| a.kind.is_milestone() || a.working_days() == 0) || x1 - x0 < 14.0;
+        Some(if short {
+            BarMode::Move
+        } else if (x - x0).abs() <= 5.0 {
+            BarMode::Start
+        } else if (x1 - x).abs() <= 5.0 {
+            BarMode::Finish
+        } else {
+            BarMode::Move
+        })
+    };
     let position = |i: usize| rows.iter().position(|(r, _)| *r == i);
     egui::ScrollArea::vertical().id_salt("activities").auto_shrink(false).show_rows(ui, ROW, rows.len(), |ui, range| {
         // In layers: the rows' backgrounds, then the relationship lines, then the cells, bars and
@@ -371,10 +439,31 @@ pub(crate) fn show(
         for &(i, depth) in rows.iter().skip(range.start).take(range.len()) {
             let (rect, response) = ui.allocate_exact_size(vec2(full.width(), ROW), Sense::click_and_drag());
             first_top.get_or_insert(rect.top());
+            // A press on a bar drags the bar; anywhere else, a rectangle to choose rows. Both
+            // from where the press began, not where the drag was noticed.
             if response.drag_started()
-                && let Some(p) = response.interact_pointer_pos()
+                && let Some(p) = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos())
             {
-                ui.data_mut(|d| d.insert_temp(band_id, p));
+                match (mode_at(i, p.x), schedule.activities.get(i)) {
+                    (Some(mode), Some(s)) => {
+                        let drag = BarDrag { index: i, mode, x: p.x, start: s.early_start.days(), finish: s.early_finish.days() };
+                        ui.data_mut(|d| d.insert_temp(bar_id, drag));
+                    }
+                    _ => {
+                        ui.data_mut(|d| d.insert_temp(band_id, p));
+                    }
+                }
+            }
+            if dragging.is_some_and(|d| d.index == i) {
+                drag_row = Some(rect);
+            }
+            // The pointer says what a press there would do.
+            if let Some(h) = response.hover_pos().filter(|_| dragging.is_none() && band.is_none()) {
+                match mode_at(i, h.x) {
+                    Some(BarMode::Move) => ui.ctx().set_cursor_icon(egui::CursorIcon::Grab),
+                    Some(_) => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal),
+                    None => {}
+                }
             }
             if response.clicked() {
                 if modifiers.command {
@@ -620,7 +709,39 @@ pub(crate) fn show(
             let look = Look { summary, selected: chosen, float: options.late_bars, background, data_date };
             bar(&chart, a.kind, &a.name, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, look, &t);
         }
+        // The bar where it would go, over its row, with its new days beside the pointer.
+        if let (Some(drag), Some(row), Some(p)) = (dragging, drag_row, pointer_now) {
+            let (start, finish) = drag.days(p.x, scale);
+            let ghost =
+                Rect::from_min_max(pos2(x_of(start, chart_left), row.top() + 5.0), pos2(x_of(finish, chart_left) + scale, row.bottom() - 5.0));
+            let clip =
+                ui.painter().with_clip_rect(Rect::from_min_max(pos2(chart_left, ui.clip_rect().top()), pos2(full.right(), ui.clip_rect().bottom())));
+            clip.rect_filled(ghost, 3.0, t.accent.gamma_multiply(0.25));
+            clip.rect_stroke(ghost, 3.0, Stroke::new(1.5, t.accent), StrokeKind::Inside);
+            if let (Some(s), Some(f)) = (Date::from_days(start), Date::from_days(finish)) {
+                let text = format!("{} – {}", show_date(s), show_date(f));
+                let galley = clip.layout_no_wrap(text, FontId::proportional(12.0), t.text);
+                let at = pos2(p.x + 12.0, row.top() - galley.size().y - 4.0);
+                clip.rect_filled(Rect::from_min_size(at - vec2(4.0, 2.0), galley.size() + vec2(8.0, 4.0)), 3.0, t.paper);
+                clip.galley(at, galley, t.text);
+            }
+            ui.ctx().set_cursor_icon(if drag.mode == BarMode::Move { egui::CursorIcon::Grabbing } else { egui::CursorIcon::ResizeHorizontal });
+        }
     });
+    // A bar let go: its new days, when they changed.
+    if let Some(drag) = dragging
+        && released
+    {
+        ui.data_mut(|d| d.remove::<BarDrag>(bar_id));
+        if let Some(p) = pointer_now {
+            let (start, finish) = drag.days(p.x, scale);
+            if (start, finish) != (drag.start, drag.finish)
+                && let (Some(s), Some(f)) = (Date::from_days(start), Date::from_days(finish))
+            {
+                events.bar = Some(BarEdit { index: drag.index, mode: drag.mode, start: s, finish: f });
+            }
+        }
+    }
     // A thin scroll bar under the chart when part of it is out of view.
     if options.scale.is_some() && visible_days < days as f32 {
         let track = Rect::from_min_max(pos2(chart_left + 2.0, full.bottom() - 9.0), pos2(full.right() - 2.0, full.bottom() - 3.0));

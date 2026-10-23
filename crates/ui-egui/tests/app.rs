@@ -544,3 +544,47 @@ fn the_font_is_chosen_from_the_view_menu() {
     h.run_steps(3);
     assert!(h.query_by_label("File").is_some(), "still drawn");
 }
+
+/// Pressed at `from`, dragged in steps to `to`, let go.
+fn drag(h: &mut Harness<'static, PerthApp>, from: egui::Pos2, to: egui::Pos2) {
+    button(h, from, true, egui::Modifiers::NONE);
+    for k in 1..=6 {
+        h.event(egui::Event::PointerMoved(from + (to - from) * (k as f32 / 6.0)));
+        h.run_steps(1);
+    }
+    button(h, to, false, egui::Modifiers::NONE);
+    h.run_steps(2);
+}
+
+// B10, Earthworks, has 19 days of float: its bar is the blue one on its row, from 25 November.
+const ROW_B10: f32 = 373.0;
+const B10_MIDDLE: f32 = 981.0;
+const B10_FINISH_EDGE: f32 = 989.0;
+
+/// A bar dragged later starts on or after its new day, and the dates follow; its finish edge
+/// dragged makes it longer. Each is one undo.
+#[test]
+fn bars_are_dragged_and_stretched() {
+    use mkperth_engine::core::Constraint;
+    let mut h = harness(PerthApp::default());
+    let b10 = |h: &Harness<'static, PerthApp>| {
+        let p = &h.state().session.project;
+        let k = p.activities.iter().position(|a| a.id == "B10").unwrap();
+        (p.activities[k].clone(), h.state().session.schedule.as_ref().unwrap().activities[k].clone())
+    };
+    let (before, s0) = b10(&h);
+    drag(&mut h, egui::pos2(B10_MIDDLE, ROW_B10), egui::pos2(B10_MIDDLE + 45.0, ROW_B10));
+    let (after, s1) = b10(&h);
+    assert!(matches!(after.constraint, Some(Constraint::StartOnOrAfter(d)) if d > s0.early_start), "{:?}", after.constraint);
+    assert!(s1.early_start > s0.early_start, "the dates follow the bar");
+    assert_eq!(after.duration, before.duration, "moved, not stretched");
+    assert_eq!(h.state().session.undo_label(), Some("edit activity B10"));
+    // Its finish edge, dragged on.
+    h.state_mut().run("edit.undo", serde_json::Value::Null);
+    h.run_steps(2);
+    drag(&mut h, egui::pos2(B10_FINISH_EDGE, ROW_B10), egui::pos2(B10_FINISH_EDGE + 22.0, ROW_B10));
+    let (stretched, s2) = b10(&h);
+    assert!(stretched.duration > before.duration, "{} working days", stretched.duration);
+    assert_eq!(s2.early_start, s0.early_start, "the start stays");
+    assert!(stretched.constraint == before.constraint, "no constraint for a finish dragged");
+}

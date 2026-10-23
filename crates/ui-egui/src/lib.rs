@@ -345,6 +345,48 @@ impl PerthApp {
         }
     }
 
+    /// A bar dragged on the chart, as a change to its activity (one undo): moved, it starts on or
+    /// after its new day; its finish dragged, its duration is the working days from its start
+    /// to the new finish on its calendar; its start dragged, both, the finish kept.
+    fn edit_bar(&mut self, edit: activities::BarEdit) {
+        use mkperth_engine::core::Constraint;
+        let p = &self.session.project;
+        let Some(a) = p.activities.get(edit.index) else { return };
+        let calendar = a.calendar.as_deref().and_then(|n| p.calendars.iter().find(|c| c.name == n)).unwrap_or(&p.calendar);
+        let working = |from: Date, to: Date| -> i64 {
+            let (mut d, mut n) = (from, 0i64);
+            while d <= to && n < mkperth_engine::sched::MAX_SPAN {
+                n += i64::from(calendar.is_working(d));
+                match d.succ() {
+                    Some(next) => d = next,
+                    None => break,
+                }
+            }
+            n.max(1)
+        };
+        // A finish milestone holds its finish; anything else its start.
+        let (code, date, constraint) = match a.kind {
+            ActivityKind::FinishMilestone => ("finish-on-or-after", edit.finish, Constraint::FinishOnOrAfter(edit.finish)),
+            _ => ("start-on-or-after", edit.start, Constraint::StartOnOrAfter(edit.start)),
+        };
+        let mut params = json!({"id": a.id});
+        if let Some(map) = params.as_object_mut() {
+            if edit.mode != activities::BarMode::Finish {
+                map.insert("constraint".into(), json!({"type": code, "date": date.to_string()}));
+                // A secondary that wouldn't stand beside the new one goes.
+                if a.secondary_constraint.is_some_and(|s| !Constraint::pairs(constraint, s)) {
+                    map.insert("secondary_constraint".into(), serde_json::Value::Null);
+                }
+            }
+            if edit.mode != activities::BarMode::Move {
+                map.insert("duration".into(), json!(working(edit.start, edit.finish)));
+            }
+        }
+        self.run("activity.edit", params);
+        self.selected = Some(edit.index);
+        self.marked = std::iter::once(edit.index).collect();
+    }
+
     /// The small window a double click on the chart opens: a band's name and days, or a marked
     /// month's name; Enter or Add adds it, Esc or Cancel drops it.
     fn quick_note_window(&mut self, ctx: &egui::Context) {
@@ -1029,6 +1071,9 @@ impl PerthApp {
         }
         if let Some((month, at)) = events.add_month {
             self.quick_note = Some(QuickNote { month: true, from: month, to: month, name: String::new(), at });
+        }
+        if let Some(edit) = events.bar {
+            self.edit_bar(edit);
         }
         if let Some((i, action)) = events.menu {
             self.selected = Some(i);

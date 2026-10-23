@@ -24,6 +24,12 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Bars are dragged on the chart: the whole bar moves the activity (it starts on or after its
+  new day, a finish milestone finishes on or after it), its finish edge stretches or shortens it
+  (working days from its start on its calendar), its start edge moves its start and keeps its
+  finish; a ghost bar with the new days follows the pointer, the cursor says move or resize,
+  and the dates, floats and calculation follow on release, one undo each. Summaries and
+  activities already begun don't drag.
 - View > Font: the interface's typeface (MK Perth's own, Ubuntu Light, or one the system has:
   Segoe UI, Arial, Calibri, Verdana and others where they are installed), its size (small,
   normal, large, larger, every text scaled) and, for a system family, bold and italic; kept
