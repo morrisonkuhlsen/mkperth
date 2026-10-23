@@ -23,6 +23,9 @@ pub struct ResourceForm {
     pub resource: String,
     /// Fields being typed for the selected resource or its assignments: (key, text).
     typing: Vec<(String, String)>,
+    /// A price change being typed: the day it takes effect and the price.
+    pub price_from: Option<mkperth_engine::core::Date>,
+    pub price_new: String,
 }
 
 /// Details' Resources tab: the assignments on `activity` (who, or which role, and the work
@@ -399,6 +402,63 @@ impl PerthApp {
                             }
                         });
                     }
+
+                    // Its prices: from the start, and each change from its day on.
+                    details.add_space(8.0);
+                    let unit = if r.kind == ResourceKind::Material { r.unit.clone() } else { tr!("resource-hour") };
+                    details.label(egui::RichText::new(tr!("resource-prices", unit = unit.as_str())).size(12.0).color(t.text_dim));
+                    let as_json = |ps: &[mkperth_engine::core::Price]| -> Value {
+                        json!(
+                            ps.iter().map(|x| json!({"from": x.from.map(|d| d.to_string()), "price": x.per_unit as f64 / 100.0})).collect::<Vec<_>>()
+                        )
+                    };
+                    let mut list = r.prices.clone();
+                    if list.is_empty() {
+                        list.push(mkperth_engine::core::Price { from: None, per_unit: 0 });
+                    }
+                    egui::Grid::new("resource-prices").num_columns(3).spacing(egui::vec2(10.0, 4.0)).show(details, |ui| {
+                        let mut changed = None;
+                        for (k, price) in list.iter().enumerate() {
+                            let when = price.from.map_or_else(|| tr!("resource-price-always"), crate::show_date);
+                            let l = ui.label(egui::RichText::new(when).size(12.0)).id;
+                            if let Some(v) = field(ui, &mut form.typing, &format!("price:{k}"), crate::days_text(price.per_unit, 100), l, 80.0)
+                                && let Some(m) = read_units(&v)
+                            {
+                                let mut new = list.clone();
+                                if let Some(x) = new.get_mut(k) {
+                                    x.per_unit = (m * 100.0).round() as i64;
+                                }
+                                changed = Some(new);
+                            }
+                            if price.from.is_some() && icon_button(ui, Icon::Close, &tr!("resource-price-delete")) {
+                                let mut new = list.clone();
+                                new.remove(k);
+                                changed = Some(new);
+                            }
+                            ui.end_row();
+                        }
+                        if let Some(new) = changed {
+                            pending.push(("resource.edit", json!({"id": id, "prices": as_json(&new)})));
+                        }
+                    });
+                    details.horizontal(|ui| {
+                        let l = label(ui, tr!("resource-price-from"));
+                        if let Some(d) = crate::date_field(ui, egui::Id::unique("price-from"), l, form.price_from, 90.0) {
+                            form.price_from = d;
+                        }
+                        let l = label(ui, tr!("resource-price"));
+                        ui.add(egui::TextEdit::singleline(&mut form.price_new).desired_width(60.0)).labelled_by(l);
+                        let price = read_units(&form.price_new);
+                        if ui.add_enabled(form.price_from.is_some() && price.is_some(), egui::Button::new(tr!("resource-price-add"))).clicked()
+                            && let Some(m) = price
+                        {
+                            let mut new = list.clone();
+                            new.push(mkperth_engine::core::Price { from: form.price_from, per_unit: (m * 100.0).round() as i64 });
+                            pending.push(("resource.edit", json!({"id": id, "prices": as_json(&new)})));
+                            form.price_from = None;
+                            form.price_new.clear();
+                        }
+                    });
 
                     // Its assignments: the work budgeted, done and left on each activity.
                     let unit = if r.kind == ResourceKind::Material { r.unit.clone() } else { tr!("resource-hours") };

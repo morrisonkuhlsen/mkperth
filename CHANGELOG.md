@@ -41,6 +41,13 @@ Read it before re-scheduling a plan with a new version.
   finish; a ghost bar with the new days follows the pointer, the cursor says move or resize,
   and the dates, floats and calculation follow on release, one undo each. Summaries and
   activities already begun don't drag.
+- Costs in the window (#23): Details' Costs tab (the activity's budget, actual, remaining, at
+  completion and variance; its expenses, the actual typed in place, a new one with its accrual
+  and account); the Costs pane (Project > Costs…: the currency, the project's costs, the budget
+  by month, the cost accounts in their hierarchy); a resource's prices over time in the
+  Resources view; the Budget, Actual cost, At completion and Cost var. columns (in Filters).
+  Costs travel in P6 XML (resource rates, cost accounts, activity expenses) and in Perth's JSON
+  (its task `cost` read as an expense).
 - Costs (#23, part 1): resources' prices over time (`resource.add` and `resource.edit` take
   `prices`), expenses on activities accrued at the start, the end or evenly (`expense.add`,
   `.edit`, `.delete`), cost accounts in a hierarchy (`cost-account.add`, `.delete`) and the

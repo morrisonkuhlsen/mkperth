@@ -161,6 +161,10 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   changes over time, and with the activity codes of #26 as priorities.
 
 ## M5 — costs and earned value
+- *Done (#23):* resources' prices over time, expenses with their accrual, cost accounts, a
+  currency's symbol; each activity's budget, actual, remaining and at-completion costs (a price
+  change mid-activity counted from its day), the project's, its spending by day; the cost
+  variance against a baseline; P6 XML's rates, cost accounts and expenses; Perth's task cost.
 - **Next:** each activity's budgeted, actual, remaining and at-completion costs, from its
   resources' prices and from expenses (accrued at the start, the end or over the activity); cost
   accounts as a hierarchy; the project's and the WBS's budget (original and current, the log of

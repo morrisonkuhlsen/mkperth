@@ -11,6 +11,7 @@ mod baselines_ui;
 mod calendars;
 mod chrome;
 mod comments_ui;
+mod costs_ui;
 mod datepick;
 pub mod fonts;
 pub mod icons;
@@ -91,6 +92,8 @@ pub enum DetailsTab {
     Comments,
     /// The resources assigned to the activity.
     Resources,
+    /// Its costs and expenses.
+    Costs,
 }
 
 /// The panes the strip at the right edge opens.
@@ -108,6 +111,8 @@ pub enum Side {
     Pert,
     /// The baselines: assigned, the one in use, deleted.
     Baselines,
+    /// The costs: the currency, the project's, its spending, the cost accounts.
+    Costs,
 }
 
 /// The note the Notes pane is making: its kind (0 a band, 1 a marker, 2 a month), name, dates
@@ -204,6 +209,9 @@ pub struct PerthApp {
     pert_target: Option<Date>,
     /// The name typed for the next baseline.
     baseline_name: String,
+    /// The new expense and cost account being typed.
+    expense_form: costs_ui::ExpenseForm,
+    costs_form: costs_ui::CostsForm,
     /// The resource selected in the Resources view, by index, and what that view is typing.
     pub resource_selected: Option<usize>,
     pub resource_form: ResourceForm,
@@ -311,6 +319,8 @@ impl PerthApp {
             pert_cache: None,
             pert_target: None,
             baseline_name: String::new(),
+            expense_form: Default::default(),
+            costs_form: Default::default(),
             resource_selected: None,
             resource_form: ResourceForm::default(),
             comment_form: CommentForm::default(),
@@ -563,6 +573,7 @@ impl PerthApp {
             Action::BaselineBars => self.options.baseline_bars = !self.options.baseline_bars,
             Action::Stripes => self.options.striped = !self.options.striped,
             Action::Baselines => self.side = Some(Side::Baselines),
+            Action::Costs => self.side = Some(Side::Costs),
             Action::Links => self.options.links = !self.options.links,
             Action::Table => self.options.table_hidden = !self.options.table_hidden,
             Action::Options(params) => self.run("project.options", params),
@@ -948,6 +959,7 @@ impl PerthApp {
                             Side::Levelling => self.levelling_pane(ui),
                             Side::Pert => self.pert_pane(ui),
                             Side::Baselines => self.baselines_pane(ui),
+                            Side::Costs => self.costs_pane(ui),
                         }
                     });
                 });
@@ -1325,6 +1337,7 @@ impl PerthApp {
                 (DetailsTab::Relationships, tr!("details-relationships")),
                 (DetailsTab::Notes, tr!("details-notes")),
                 (DetailsTab::Resources, tr!("details-resources")),
+                (DetailsTab::Costs, tr!("details-costs")),
                 (DetailsTab::Comments, tr!("details-comments")),
             ] {
                 ui.selectable_value(&mut tab, k, name);
@@ -1529,6 +1542,13 @@ impl PerthApp {
                     }
                     if let Some((p, s)) = remove {
                         pending = Some(("relationship.delete", json!({"predecessor": p, "successor": s})));
+                    }
+                }
+                DetailsTab::Costs => {
+                    if let Ok(s) = &self.session.schedule
+                        && let Some(p) = costs_ui::costs_tab(ui, &t, project, s, i, &mut self.expense_form)
+                    {
+                        pending = Some(p);
                     }
                 }
                 DetailsTab::Resources => {

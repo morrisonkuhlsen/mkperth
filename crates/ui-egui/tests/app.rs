@@ -752,3 +752,48 @@ fn the_table_is_striped_on_asking() {
     h.run_steps(2);
     assert!(!h.state().options.striped && h.query_by_label("File").is_some());
 }
+
+/// Costs: the currency and a cost account in the Costs pane; an expense on A10 in Details'
+/// Costs tab, its budget in the project's.
+#[test]
+fn costs_in_their_pane_and_details() {
+    use egui::accesskit::Role;
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Project").click();
+    h.run_steps(2);
+    h.get_by_label("Costs…").click();
+    h.run_steps(2);
+    assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::Costs));
+    h.get_by_role_and_label(Role::TextInput, "Currency").click();
+    h.run_steps(1);
+    h.get_by_role_and_label(Role::TextInput, "Currency").type_text("R$");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project.currency, "R$");
+    for (field, text) in [("ID", "1"), ("Name", "Site")] {
+        h.get_by_role_and_label(Role::TextInput, field).click();
+        h.run_steps(1);
+        h.get_by_role_and_label(Role::TextInput, field).type_text(text);
+        h.run_steps(1);
+    }
+    h.run_steps(1);
+    h.get_by_label("Add account").click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project.cost_accounts.len(), 1);
+    click(&mut h, egui::pos2(TABLE_X, ROW_A10), egui::Modifiers::NONE);
+    h.state_mut().side = Some(mkperth_ui_egui::Side::Details);
+    h.state_mut().details_tab = mkperth_ui_egui::DetailsTab::Costs;
+    h.run_steps(2);
+    for (field, text) in [("Name", "Permit"), ("Budget", "450,50")] {
+        h.get_by_role_and_label(Role::TextInput, field).click();
+        h.run_steps(1);
+        h.get_by_role_and_label(Role::TextInput, field).type_text(text);
+        h.run_steps(1);
+    }
+    h.run_steps(1);
+    h.get_by_label("Add expense").click();
+    h.run_steps(2);
+    let p = &h.state().session.project;
+    assert_eq!(p.expenses.len(), 1);
+    assert_eq!((p.expenses[0].activity.as_str(), p.expenses[0].planned), ("A10", 45_050));
+}

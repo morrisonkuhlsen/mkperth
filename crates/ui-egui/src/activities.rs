@@ -14,7 +14,7 @@ const ROW: f32 = 24.0;
 const HEADER: f32 = 44.0;
 
 /// The table's columns: a message id and a width. The ID and the name are always shown.
-pub const COLUMNS: [(&str, f32); 14] = [
+pub const COLUMNS: [(&str, f32); 18] = [
     ("col-id", 84.0),
     ("col-name", 230.0),
     ("col-duration", 60.0),
@@ -29,10 +29,14 @@ pub const COLUMNS: [(&str, f32); 14] = [
     ("col-start-variance", 72.0),
     ("col-finish-variance", 72.0),
     ("col-duration-variance", 72.0),
+    ("col-budget-cost", 96.0),
+    ("col-actual-cost", 96.0),
+    ("col-at-completion-cost", 96.0),
+    ("col-cost-variance", 96.0),
 ];
 
 /// The columns hidden at first: the baseline's, until asked for.
-pub const HIDDEN: [bool; 14] = [false, false, false, false, false, false, false, false, false, true, true, true, true, true];
+pub const HIDDEN: [bool; 18] = [false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true];
 
 /// A table cell that can be edited in place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,7 +143,7 @@ pub struct Options {
     /// Rows whose ID or name holds this text (any case), with their summaries.
     pub search: String,
     /// The columns hidden, by their place in `COLUMNS`.
-    pub hidden: [bool; 14],
+    pub hidden: [bool; 18],
     /// The baseline in use as thin bars under the schedule's.
     pub baseline_bars: bool,
     /// Every other row tinted, as spreadsheets band them.
@@ -275,7 +279,17 @@ pub(crate) fn show(
     let baseline: std::collections::HashMap<&str, &mkperth_engine::core::BaselineActivity> =
         session.project.baseline().map(|b| b.activities.iter().map(|x| (x.id.as_str(), x)).collect()).unwrap_or_default();
     let compared = !baseline.is_empty() && (options.baseline_bars || (9..14).any(|k| !options.hidden.get(k).copied().unwrap_or(true)));
-    let variances = if compared { mkperth_engine::sched::variances(&session.project, schedule) } else { Vec::new() };
+    let variances = if compared || !options.hidden.get(17).copied().unwrap_or(true) {
+        mkperth_engine::sched::variances(&session.project, schedule)
+    } else {
+        Vec::new()
+    };
+    // The costs, when a cost column is shown.
+    let costs = if (14..17).any(|k| !options.hidden.get(k).copied().unwrap_or(true)) {
+        mkperth_engine::sched::costs(&session.project, schedule)
+    } else {
+        Vec::new()
+    };
     let columns = if options.table_hidden { Vec::new() } else { options.columns() };
     let table_width: f32 = columns.iter().map(|(_, _, w)| w).sum();
     // Where a column starts, if shown.
@@ -691,6 +705,7 @@ pub(crate) fn show(
             let float_color = if s.critical && !summary { t.red } else { t.cell_text };
             let b = baseline.get(a.id.as_str()).copied();
             let v = variances.get(i).copied().flatten();
+            let c = costs.get(i).copied();
             // Late (a negative variance) in red.
             let late = |x: Option<i64>| if x.is_some_and(|x| x < 0) { t.red } else { t.cell_text };
             let signed = |m: i64| if m < 0 { format!("-{}", crate::days_text(-m, day)) } else { crate::days_text(m, day) };
@@ -709,6 +724,10 @@ pub(crate) fn show(
                 (v.map(|v| v.start.to_string()).unwrap_or_default(), late(v.map(|v| v.start)), 0.0),
                 (v.map(|v| v.finish.to_string()).unwrap_or_default(), late(v.map(|v| v.finish)), 0.0),
                 (v.map(|v| signed(v.duration)).unwrap_or_default(), late(v.map(|v| v.duration)), 0.0),
+                (c.map(|c| crate::costs_ui::money_text(c.budget, "")).unwrap_or_default(), t.cell_text, 0.0),
+                (c.map(|c| crate::costs_ui::money_text(c.actual, "")).unwrap_or_default(), t.cell_text, 0.0),
+                (c.map(|c| crate::costs_ui::money_text(c.at_completion(), "")).unwrap_or_default(), t.cell_text, 0.0),
+                (v.map(|v| crate::costs_ui::money_text(v.cost, "")).unwrap_or_default(), late(v.map(|v| v.cost)), 0.0),
             ];
             let mut x = rect.left();
             for (k, (text, color, indent)) in cells.into_iter().enumerate() {
