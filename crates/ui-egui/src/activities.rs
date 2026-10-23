@@ -57,9 +57,17 @@ pub struct Options {
     pub late_bars: bool,
     /// Relationship lines between the bars.
     pub links: bool,
+    /// The time scale in points per day; `None` fits the whole project in the chart.
+    pub scale: Option<f32>,
+    /// Days scrolled past the chart's first day (with a set scale).
+    pub offset: f32,
     /// Rows whose ID or name holds this text (any case), with their summaries.
     pub search: String,
 }
+
+/// The narrowest and the widest a day may be drawn, in points.
+pub const MIN_SCALE: f32 = 0.5;
+pub const MAX_SCALE: f32 = 80.0;
 
 /// The rows: each activity's index and its depth in the WBS, depth first.
 pub(crate) fn rows(session: &Session) -> Vec<(usize, usize)> {
@@ -132,7 +140,7 @@ pub(crate) fn visible(session: &Session, options: &Options) -> Vec<(usize, usize
 
 /// Paints the view in the space given. A double click on an ID, a name or a duration edits it in
 /// place: Enter or leaving the cell keeps the text, Esc drops it.
-pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, selected: Option<usize>, editing: &mut Option<Editing>) -> Events {
+pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, selected: Option<usize>, editing: &mut Option<Editing>) -> Events {
     let t = Tokens::get(ui.ctx());
     let mut events = Events::default();
     let Ok(schedule) = &session.schedule else { return events };
@@ -150,11 +158,36 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
     }
     let from = first.days() - 2;
     let days = (last.days() + 4 - from).max(7);
-    let scale = chart_width / days as f32;
-    let x_of = |d: i32, left: f32| left + (d - from) as f32 * scale;
+    // The time scale: the whole project fitted, or a scale the person chose and scrolled.
+    let fit = chart_width / days as f32;
+    let chart_area = Rect::from_min_max(pos2(chart_left, full.top()), full.max);
+    let pointer = ui.input(|i| i.pointer.hover_pos()).filter(|p| chart_area.contains(*p));
+    if let Some(p) = pointer {
+        let (zoom, pan) = ui.input(|i| (i.zoom_delta(), i.smooth_scroll_delta.x));
+        let scale = options.scale.unwrap_or(fit);
+        if (zoom - 1.0).abs() > f32::EPSILON {
+            // Ctrl and the wheel (or a pinch): zoom about the day under the pointer.
+            let day = options.offset + (p.x - chart_left) / scale;
+            let new = (scale * zoom).clamp(MIN_SCALE, MAX_SCALE);
+            options.scale = Some(new);
+            options.offset = day - (p.x - chart_left) / new;
+        } else if pan.abs() > 0.0 && options.scale.is_some() {
+            // Shift and the wheel, or a sideways swipe: scroll in time.
+            options.offset -= pan / scale;
+        }
+    }
+    let scale = options.scale.unwrap_or(fit);
+    // Never scrolled past either end.
+    let visible_days = chart_width / scale;
+    options.offset = if options.scale.is_none() { 0.0 } else { options.offset.clamp(0.0, (days as f32 - visible_days).max(0.0)) };
+    let offset = options.offset;
+    let x_of = |d: i32, left: f32| left + ((d - from) as f32 - offset) * scale;
+    // Only the days in view are drawn.
+    let first_day = offset.floor() as i32;
+    let last_day = (offset + visible_days).ceil() as i32 + 1;
 
-    // The header: column titles; months and weeks over the chart.
-    let (header, _) = ui.allocate_exact_size(vec2(full.width(), HEADER), Sense::hover());
+    // The header: column titles; months, weeks and days over the chart, as the scale allows.
+    let (header, header_response) = ui.allocate_exact_size(vec2(full.width(), HEADER), Sense::drag());
     let painter = ui.painter_at(header);
     painter.rect_filled(header, 0.0, t.header_bg);
     painter.hline(header.x_range(), header.bottom(), Stroke::new(1.0, t.header_line));
@@ -171,25 +204,36 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
         x += w;
         painter.vline(x, header.y_range(), Stroke::new(1.0, t.gridline));
     }
+    // Dragging the dates scrolls in time.
+    if header_response.dragged() && header_response.interact_pointer_pos().is_some_and(|p| p.x > chart_left) {
+        if options.scale.is_none() {
+            options.scale = Some(scale);
+        }
+        options.offset -= header_response.drag_delta().x / scale;
+    }
     let chart_header = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, header.top()), header.max));
-    for k in 0..=days {
+    let mut month_end = f32::NEG_INFINITY;
+    for k in first_day.max(0)..=last_day.min(days) {
         let Some(d) = Date::from_days(from + k) else { continue };
         let (y, m, day) = d.ymd();
         let xd = x_of(d.days(), chart_left);
-        // A month's name at its first day; the first month's at the left edge only when it has
-        // room before the next one starts.
-        let room = (32 - i32::try_from(day).unwrap_or(1)) as f32 * scale > 70.0;
-        if day == 1 || (k == 0 && room) {
-            chart_header.vline(xd, header.top()..=header.center().y, Stroke::new(1.0, t.gridline));
-            chart_header.text(
-                pos2(xd + 4.0, header.top() + 11.0),
-                Align2::LEFT_CENTER,
-                format!("{} {y}", tr!(&format!("month-{m}"))),
-                FontId::proportional(12.0),
-                t.header_text,
-            );
+        // A month's name at its first day (the first one in view at the left edge), when it
+        // doesn't run into the one before.
+        if day == 1 || k == first_day.max(0) {
+            let text = format!("{} {y}", tr!(&format!("month-{m}")));
+            let galley = chart_header.layout_no_wrap(text, FontId::proportional(12.0), t.header_text);
+            let at = if day == 1 { xd } else { xd.max(chart_left) };
+            if day == 1 {
+                chart_header.vline(xd, header.top()..=header.center().y, Stroke::new(1.0, t.gridline));
+            }
+            if at + 4.0 > month_end {
+                month_end = at + 4.0 + galley.size().x + 8.0;
+                chart_header.galley(pos2(at + 4.0, header.top() + 11.0 - galley.size().y / 2.0), galley, t.header_text);
+            }
         }
-        if d.weekday().index() == 0 && scale * 7.0 >= 22.0 {
+        // Every day when a day is wide; Mondays when a week is.
+        let every_day = scale >= 18.0;
+        if every_day || (d.weekday().index() == 0 && scale * 7.0 >= 22.0) {
             chart_header.vline(xd, header.center().y..=header.bottom(), Stroke::new(1.0, t.gridline));
             chart_header.text(pos2(xd + 3.0, header.bottom() - 10.0), Align2::LEFT_CENTER, day.to_string(), FontId::proportional(11.0), t.text_dim);
         }
@@ -234,7 +278,7 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
             painter.rect_filled(rect, 0.0, if selected == Some(i) { t.accent_soft } else { t.grid_bg });
             // Non-working days of the project's calendar, shaded, when they're wide enough.
             if scale >= 8.0 {
-                for k in 0..days {
+                for k in first_day.max(0)..last_day.min(days) {
                     if let Some(d) = Date::from_days(from + k).filter(|d| !calendar.is_working(*d)) {
                         let xd = x_of(d.days(), chart_left);
                         painter.rect_filled(Rect::from_min_max(pos2(xd, rect.top()), pos2(xd + scale, rect.bottom())), 0.0, t.header_bg);
@@ -345,6 +389,20 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &Options, sele
             bar(&chart, a.kind, &a.name, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, look, &t);
         }
     });
+    // A thin scroll bar under the chart when part of it is out of view.
+    if options.scale.is_some() && visible_days < days as f32 {
+        let track = Rect::from_min_max(pos2(chart_left + 2.0, full.bottom() - 9.0), pos2(full.right() - 2.0, full.bottom() - 3.0));
+        let response = ui.interact(track, ui.id().with("time-scroll"), Sense::drag());
+        let share = (visible_days / days as f32).clamp(0.05, 1.0);
+        let thumb_width = track.width() * share;
+        let at = track.left() + (track.width() - thumb_width) * (options.offset / (days as f32 - visible_days).max(1.0));
+        let thumb = Rect::from_min_size(pos2(at, track.top()), vec2(thumb_width, track.height()));
+        ui.painter().rect_filled(track, 3.0, t.header_bg);
+        ui.painter().rect_filled(thumb, 3.0, if response.hovered() || response.dragged() { t.text_dim } else { t.header_line });
+        if response.dragged() {
+            options.offset += response.drag_delta().x / (track.width() - thumb_width).max(1.0) * (days as f32 - visible_days);
+        }
+    }
     if rows.is_empty() {
         ui.painter().text(full.center(), Align2::CENTER_CENTER, tr!("activities-none"), FontId::proportional(13.0), t.text_dim);
     }

@@ -199,6 +199,7 @@ impl PerthApp {
             Action::CriticalOnly => self.options.critical_only = !self.options.critical_only,
             Action::LateBars => self.options.late_bars = !self.options.late_bars,
             Action::Links => self.options.links = !self.options.links,
+            Action::TimeScale(step) => self.time_scale(step),
             Action::View(view) => self.view = view,
             Action::Theme(preference) => ctx.set_theme(preference),
             Action::ToggleAutoSave => self.autosave = !self.autosave,
@@ -208,6 +209,16 @@ impl PerthApp {
                 self.calculation = None;
             }
         }
+    }
+
+    /// The Gantt chart's time scale: wider (`1`), narrower (`-1`), or fitted to the project (`0`).
+    pub fn time_scale(&mut self, step: i8) {
+        self.options.scale = match (step, self.options.scale) {
+            (0, _) => None,
+            // From the fitted scale, the first step makes a day 6 points wide.
+            (_, None) => Some(if step > 0 { 6.0 } else { 2.0 }),
+            (s, Some(scale)) => Some((scale * if s > 0 { 1.5 } else { 1.0 / 1.5 }).clamp(activities::MIN_SCALE, activities::MAX_SCALE)),
+        };
     }
 
     /// A new activity after the selected one (or at the end), selected and its name being
@@ -316,6 +327,7 @@ impl PerthApp {
             critical_only: self.options.critical_only,
             late_bars: self.options.late_bars,
             links: self.options.links,
+            fitted: self.options.scale.is_none(),
             view: self.view,
             undo: self.session.undo_label(),
             redo: self.session.redo_label(),
@@ -413,7 +425,7 @@ impl PerthApp {
             ui.allocate_ui(size, |ui| {
                 ui.set_min_size(size);
                 match &self.session.schedule {
-                    Ok(_) => events = activities::show(ui, &self.session, &self.options, self.selected, &mut self.editing),
+                    Ok(_) => events = activities::show(ui, &self.session, &mut self.options, self.selected, &mut self.editing),
                     Err(e) => {
                         ui.add_space(20.0);
                         ui.colored_label(t.danger, format!("  {e}"));
@@ -743,6 +755,26 @@ mod tests {
         let search = activities::visible(&s, &Options { search: "plaster".into(), ..Options::default() });
         let ids: Vec<&str> = search.iter().map(|&(i, _)| s.project.activities[i].id.as_str()).collect();
         assert_eq!(ids, ["W3", "C40"]);
+    }
+
+    #[test]
+    fn time_scale_steps() {
+        let mut app = PerthApp::default();
+        assert_eq!(app.options.scale, None, "fitted at first");
+        app.time_scale(1);
+        assert_eq!(app.options.scale, Some(6.0));
+        app.time_scale(1);
+        assert_eq!(app.options.scale, Some(9.0));
+        for _ in 0..30 {
+            app.time_scale(1);
+        }
+        assert_eq!(app.options.scale, Some(activities::MAX_SCALE));
+        for _ in 0..60 {
+            app.time_scale(-1);
+        }
+        assert_eq!(app.options.scale, Some(activities::MIN_SCALE));
+        app.time_scale(0);
+        assert_eq!(app.options.scale, None);
     }
 
     #[test]

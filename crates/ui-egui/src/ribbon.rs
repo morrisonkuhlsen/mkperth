@@ -42,6 +42,8 @@ pub(crate) enum Action {
     CriticalOnly,
     LateBars,
     Links,
+    /// Wider (1), narrower (-1) or fitted (0).
+    TimeScale(i8),
     View(View),
     Theme(egui::ThemePreference),
     ToggleAutoSave,
@@ -56,6 +58,8 @@ pub(crate) struct State<'a> {
     pub critical_only: bool,
     pub late_bars: bool,
     pub links: bool,
+    /// The time scale fits the whole project.
+    pub fitted: bool,
     pub view: View,
     pub undo: Option<&'a str>,
     pub redo: Option<&'a str>,
@@ -278,6 +282,10 @@ fn buttons(ui: &mut egui::Ui, tab: Tab, state: &State) -> Option<Action> {
                 state.view == View::Activities,
                 Action::View(View::Activities),
             );
+            divider(ui);
+            go(ui, Icon::Plus, &tr!("time-wider"), &tr!("time-wider-tip"), true, false, Action::TimeScale(1));
+            go(ui, Icon::Minus, &tr!("time-narrower"), &tr!("time-narrower-tip"), true, false, Action::TimeScale(-1));
+            go(ui, Icon::Grid, &tr!("time-fit"), &tr!("time-fit-tip"), true, state.fitted, Action::TimeScale(0));
             divider(ui);
             if let Some(lang) = language(ui) {
                 action = Some(Action::Language(lang));

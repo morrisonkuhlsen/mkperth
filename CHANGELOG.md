@@ -39,6 +39,10 @@ Read it before re-scheduling a plan with a new version.
   band to the late finish; each activity's name beside its bar; relationship lines with arrows,
   by kind (FS, SS, FF, SF), red between critical activities; thinner summary brackets; diamond
   milestones; weekends shaded only when a day is wide enough.
+- The Gantt chart's time scale: zoom with Ctrl and the wheel (about the day under the pointer) or
+  Zoom in time, Zoom out time and Fit project in View; scroll in time with Shift and the wheel, a
+  sideways swipe, by dragging the dates or the scroll bar under the chart; days, weeks and months
+  labelled as the scale allows, without overlapping.
 - Every date with its calculation: the bounds of each pass, the winner, the calendar's placing,
   the floats.
 - Messages in English and Brazilian Portuguese.

@@ -2,7 +2,7 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang CODE]
-//!  [--select N] [--side details|filters] [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1)
+//!  [--select N] [--side details|filters] [--scale PT_PER_DAY] [--offset DAYS] [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1)
 
 use mkperth_ui_egui::PerthApp;
 
@@ -20,6 +20,14 @@ fn main() -> Result<(), String> {
                 app.open(std::path::Path::new(args.get(i).ok_or("--in needs a path")?));
             }
             "--dark" => dark = true,
+            "--scale" => {
+                i += 1;
+                app.options.scale = Some(args.get(i).and_then(|n| n.parse().ok()).ok_or("--scale needs points per day")?);
+            }
+            "--offset" => {
+                i += 1;
+                app.options.offset = args.get(i).and_then(|n| n.parse().ok()).ok_or("--offset needs days")?;
+            }
             "--side" => {
                 i += 1;
                 app.side = match args.get(i).map(String::as_str) {
