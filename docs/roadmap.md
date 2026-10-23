@@ -125,6 +125,9 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   edge, markers as dashed lines with their names, months painted in the ruler; read and written
   in Perth.jl's JSON, made and deleted by command (`band.add`, `marker.add`, `month-mark.add`,
   and their `.delete`) with undo, and in the Chart notes pane.
+  Clicking and dragging: rows chosen by a dragged rectangle, Ctrl and Shift; double clicks on
+  the chart and ruler add bands and marked months where they land, or open a bar's details; a
+  row's context menu.
 - **Next:** the network view (#17); the brand (#18, the user's: the splash's lilac is chosen).
 
 ## M4 — resources

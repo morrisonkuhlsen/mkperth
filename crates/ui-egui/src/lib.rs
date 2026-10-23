@@ -102,6 +102,17 @@ pub struct NoteForm {
     pub color: String,
 }
 
+/// A band (`month: false`, from and to) or a marked month (`month: true`, its first day) being
+/// added where a double click was, its name typed in a small window there.
+#[derive(Debug, Clone, PartialEq)]
+pub struct QuickNote {
+    pub month: bool,
+    pub from: Date,
+    pub to: Date,
+    pub name: String,
+    pub at: egui::Pos2,
+}
+
 /// The colours a note can take besides its default: original picks, readable in both themes.
 const NOTE_COLORS: [&str; 6] = ["#4a7fd4", "#3a9a5b", "#d08a2b", "#c4473f", "#8a5cc7", "#6b7280"];
 
@@ -152,6 +163,12 @@ pub struct PerthApp {
     pub details_tab: DetailsTab,
     /// The Notes pane's new note.
     pub note_form: NoteForm,
+    /// The activities chosen together (dragged over, Ctrl- or Shift-clicked), by index; the
+    /// selected one among them.
+    pub marked: std::collections::BTreeSet<usize>,
+    /// A band or a marked month being added from a double click on the chart, in a small window
+    /// where it happened.
+    pub quick_note: Option<QuickNote>,
     /// What the Calendars pane is editing.
     pub calendar_form: CalendarForm,
     /// The resource selected in the Resources view, by index, and what that view is typing.
@@ -250,6 +267,8 @@ impl PerthApp {
             link: (String::new(), RelationshipType::FinishToStart, 0),
             details_tab: DetailsTab::default(),
             note_form: NoteForm::default(),
+            marked: std::collections::BTreeSet::new(),
+            quick_note: None,
             calendar_form: CalendarForm::default(),
             resource_selected: None,
             resource_form: ResourceForm::default(),
@@ -303,6 +322,68 @@ impl PerthApp {
         self.recent.truncate(backstage::RECENT);
         if let Some(save) = &self.services.save_recent {
             save(&self.recent);
+        }
+    }
+
+    /// The small window a double click on the chart opens: a band's name and days, or a marked
+    /// month's name; Enter or Add adds it, Esc or Cancel drops it.
+    fn quick_note_window(&mut self, ctx: &egui::Context) {
+        let Some(mut note) = self.quick_note.clone() else { return };
+        let mut add = false;
+        let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let title = if note.month {
+            let (y, m, _) = note.from.ymd();
+            tr!("quick-month", month = format!("{} {y}", tr!(&format!("month-{m}"))).as_str())
+        } else {
+            tr!("quick-band")
+        };
+        egui::Window::new(title)
+            .id(egui::Id::unique("quick-note"))
+            .collapsible(false)
+            .resizable(false)
+            .fixed_pos(note.at + egui::vec2(8.0, 8.0))
+            .show(ctx, |ui| {
+                let label = ui.label(tr!("notes-name")).id;
+                let response =
+                    ui.add(egui::TextEdit::singleline(&mut note.name).desired_width(220.0).hint_text(tr!("quick-name-hint"))).labelled_by(label);
+                if !response.has_focus() && note.name.is_empty() {
+                    response.request_focus();
+                }
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    add = true;
+                }
+                if !note.month {
+                    egui::Grid::new("quick-note-days").num_columns(2).show(ui, |ui| {
+                        let from = ui.label(tr!("notes-from")).id;
+                        if let Some(Some(d)) = date_field(ui, egui::Id::unique("quick-from"), from, Some(note.from), 110.0) {
+                            note.from = d;
+                            note.to = note.to.max(d);
+                        }
+                        ui.end_row();
+                        let to = ui.label(tr!("notes-to")).id;
+                        if let Some(Some(d)) = date_field(ui, egui::Id::unique("quick-to"), to, Some(note.to), 110.0) {
+                            note.to = d.max(note.from);
+                        }
+                        ui.end_row();
+                    });
+                }
+                ui.horizontal(|ui| {
+                    add |= ui.add_enabled(!note.name.trim().is_empty(), egui::Button::new(tr!("notes-add"))).clicked();
+                    cancel |= ui.button(tr!("comments-cancel")).clicked();
+                });
+            });
+        if add && !note.name.trim().is_empty() {
+            let (command, params) = if note.month {
+                ("month-mark.add", json!({"month": note.from.to_string(), "name": note.name.trim()}))
+            } else {
+                ("band.add", json!({"name": note.name.trim(), "from": note.from.to_string(), "to": note.to.to_string()}))
+            };
+            self.run(command, params);
+            self.quick_note = None;
+        } else if cancel {
+            self.quick_note = None;
+        } else {
+            self.quick_note = Some(note);
         }
     }
 
@@ -442,10 +523,16 @@ impl PerthApp {
         }
     }
 
+    /// Deletes the chosen activities (the selected one, or all of those chosen together), as one
+    /// change.
     pub fn delete_activity(&mut self) {
-        if let Some(id) = self.selected.and_then(|i| self.session.project.activities.get(i)).map(|a| a.id.clone()) {
-            self.run("activity.delete", json!({ "id": id }));
+        let mut chosen: std::collections::BTreeSet<usize> = self.marked.clone();
+        chosen.extend(self.selected);
+        let ids: Vec<String> = chosen.iter().filter_map(|i| self.session.project.activities.get(*i)).map(|a| a.id.clone()).collect();
+        if !ids.is_empty() {
+            self.run("activity.delete", json!({ "ids": ids }));
             self.selected = None;
+            self.marked.clear();
         }
     }
 
@@ -503,6 +590,15 @@ impl PerthApp {
             }
             if shortcut(egui::Modifiers::NONE, egui::Key::Delete) {
                 self.delete_activity();
+            }
+            // Every activity chosen; Esc leaves the selected one alone.
+            if shortcut(egui::Modifiers::COMMAND, egui::Key::A) {
+                self.marked = (0..self.session.project.activities.len()).collect();
+                self.selected = self.selected.or(self.marked.iter().next().copied());
+            }
+            // Read, not taken: the backstage and the quick window close on Esc too.
+            if self.quick_note.is_none() && self.backstage.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.marked = self.selected.into_iter().collect();
             }
         }
         let shortcut = |modifiers, key| ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(modifiers, key)));
@@ -661,6 +757,7 @@ impl PerthApp {
         });
         ui.add_space(2.0);
         self.status_line(ui);
+        self.quick_note_window(ui.ctx());
         let zoom = self.zoom as f32 / 100.0;
         if (ui.ctx().zoom_factor() - zoom).abs() > 0.001 {
             ui.ctx().set_zoom_factor(zoom);
@@ -794,7 +891,7 @@ impl PerthApp {
             ui.allocate_ui(size, |ui| {
                 ui.set_min_size(size);
                 match &self.session.schedule {
-                    Ok(_) => events = activities::show(ui, &self.session, &mut self.options, self.selected, &mut self.editing),
+                    Ok(_) => events = activities::show(ui, &self.session, &mut self.options, self.selected, &self.marked, &mut self.editing),
                     Err(e) => {
                         ui.add_space(20.0);
                         ui.colored_label(t.danger, format!("  {e}"));
@@ -805,6 +902,55 @@ impl PerthApp {
         if events.clicked.is_some() && events.clicked != self.selected {
             self.selected = events.clicked;
             self.calculation = None;
+        }
+        // A plain click chooses the one row; Ctrl adds or takes one; a drag or Shift chooses many.
+        if let Some(i) = events.clicked
+            && events.marked.is_none()
+        {
+            self.marked = std::iter::once(i).collect();
+        }
+        if let Some(i) = events.toggled {
+            // The selected one counts among those chosen; the row clicked joins them or leaves.
+            self.marked.extend(self.selected);
+            if !self.marked.remove(&i) {
+                self.marked.insert(i);
+            }
+            self.selected = if self.marked.contains(&i) { Some(i) } else { self.marked.iter().next().copied() };
+            self.calculation = None;
+        }
+        if let Some(rows) = events.marked {
+            self.marked = rows.into_iter().collect();
+            if events.clicked.is_none() {
+                self.selected = self.marked.iter().next().copied();
+            }
+            self.calculation = None;
+        }
+        if let Some(i) = events.open {
+            self.selected = Some(i);
+            self.marked = std::iter::once(i).collect();
+            self.side = Some(Side::Details);
+            self.details_tab = DetailsTab::General;
+        }
+        if let Some((day, at)) = events.add_band {
+            self.quick_note = Some(QuickNote { month: false, from: day, to: day, name: String::new(), at });
+        }
+        if let Some((month, at)) = events.add_month {
+            self.quick_note = Some(QuickNote { month: true, from: month, to: month, name: String::new(), at });
+        }
+        if let Some((i, action)) = events.menu {
+            self.selected = Some(i);
+            match action {
+                activities::RowAction::AddAfter => self.add_activity(),
+                activities::RowAction::Delete => self.delete_activity(),
+                activities::RowAction::Comment => {
+                    self.side = Some(Side::Details);
+                    self.details_tab = DetailsTab::Comments;
+                }
+                activities::RowAction::Details => {
+                    self.side = Some(Side::Details);
+                    self.details_tab = DetailsTab::General;
+                }
+            }
         }
         if let Some((index, column, text)) = events.commit {
             self.commit(index, column, text);
@@ -1392,6 +1538,9 @@ impl PerthApp {
         match &self.session.schedule {
             Ok(s) => {
                 facts.push(tr!("fact-activities", n = s.activities.len()));
+                if self.marked.len() > 1 {
+                    facts.push(tr!("fact-chosen", n = self.marked.len()));
+                }
                 facts.push(tr!("fact-finish", date = show_date(s.finish).as_str()));
                 facts.push(tr!("fact-critical", n = s.activities.iter().filter(|a| a.critical).count()));
                 if !s.ignored.is_empty() {

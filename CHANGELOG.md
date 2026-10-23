@@ -24,6 +24,13 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Clicking and dragging on the activities: drag over rows to choose them (in the table every
+  row spanned, on the chart the bars touched), Ctrl and a click to add or take one, Shift and a
+  click for a run of them, Ctrl+A for all, Esc to keep only the selected; Delete takes every one
+  chosen as one change. A double click on the chart away from a bar, or on the ruler's days,
+  opens a small window there for a band from that day (its name, then Enter); on the ruler's
+  months, one to mark the month; on a bar, its details. A right click on a row: new activity
+  after it, delete, comment, details. The status bar counts those chosen.
 - Duration types (#20): an activity's duration, its assignments' units and their units an hour
   hold together (units = units an hour × hours) by its type, chosen in Details (fixed duration
   and units/time, the default; fixed duration and units; fixed units/time; fixed units): a new

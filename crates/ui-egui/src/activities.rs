@@ -42,10 +42,32 @@ pub struct Editing {
     pub text: String,
 }
 
+/// What a row's context menu asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RowAction {
+    AddAfter,
+    Delete,
+    Comment,
+    Details,
+}
+
 /// What happened in the view this frame.
 #[derive(Debug, Default)]
 pub(crate) struct Events {
     pub clicked: Option<usize>,
+    /// Rows chosen together: dragged over (rows in the table, bars in the chart), or a click with
+    /// Shift from the selected row.
+    pub marked: Option<Vec<usize>>,
+    /// A click with Ctrl (⌘): the row joins the selection, or leaves it.
+    pub toggled: Option<usize>,
+    /// A double click on a bar: its activity's details.
+    pub open: Option<usize>,
+    /// A double click on a day (on the ruler's days or the chart away from a bar), and on the
+    /// ruler's months: a band, or a marked month, to add there; with where it was.
+    pub add_band: Option<(Date, egui::Pos2)>,
+    pub add_month: Option<(Date, egui::Pos2)>,
+    /// What a row's context menu asked for, on which row.
+    pub menu: Option<(usize, RowAction)>,
     /// An edit to make: the activity's index, the column, the new text.
     pub commit: Option<(usize, Column, String)>,
 }
@@ -174,7 +196,14 @@ pub(crate) fn visible(session: &Session, options: &Options) -> Vec<(usize, usize
 
 /// Paints the view in the space given. A double click on an ID, a name or a duration edits it in
 /// place: Enter or leaving the cell keeps the text, Esc drops it.
-pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, selected: Option<usize>, editing: &mut Option<Editing>) -> Events {
+pub(crate) fn show(
+    ui: &mut egui::Ui,
+    session: &Session,
+    options: &mut Options,
+    selected: Option<usize>,
+    marked: &std::collections::BTreeSet<usize>,
+    editing: &mut Option<Editing>,
+) -> Events {
     let t = Tokens::get(ui.ctx());
     let mut events = Events::default();
     let Ok(schedule) = &session.schedule else { return events };
@@ -224,7 +253,7 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
     let last_day = (offset + visible_days).ceil() as i32 + 1;
 
     // The header: column titles; months, weeks and days over the chart, as the scale allows.
-    let (header, header_response) = ui.allocate_exact_size(vec2(full.width(), HEADER), Sense::drag());
+    let (header, header_response) = ui.allocate_exact_size(vec2(full.width(), HEADER), Sense::click_and_drag());
     let painter = ui.painter_at(header);
     painter.rect_filled(header, 0.0, t.header_bg);
     painter.hline(header.x_range(), header.bottom(), Stroke::new(1.0, t.header_line));
@@ -247,6 +276,20 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
             options.scale = Some(scale);
         }
         options.offset -= header_response.drag_delta().x / scale;
+    }
+    // The day under `x` on the chart.
+    let day_at = |x: f32| Date::from_days(from + (offset + (x - chart_left) / scale).floor() as i32);
+    // A double click on the ruler: on its months, the month to mark; on its days, a band there.
+    if header_response.double_clicked()
+        && let Some(p) = header_response.interact_pointer_pos().or(header_response.hover_pos()).filter(|p| p.x > chart_left)
+        && let Some(d) = day_at(p.x)
+    {
+        if p.y < header.center().y {
+            let (y, m, _) = d.ymd();
+            events.add_month = Date::from_ymd(y, m, 1).map(|first| (first, p));
+        } else {
+            events.add_band = Some((d, p));
+        }
     }
     let chart_header = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, header.top()), header.max));
     if let Some(d) = session.project.data_date {
@@ -312,19 +355,57 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
     let is_summary = |i: usize| summary_of.get(i).copied().unwrap_or(false);
     let mut clicked = None;
     let mut double = None;
+    // A rectangle dragged over the rows: from where the press began to the pointer now.
+    let band_id = egui::Id::unique("activities-drag-select");
+    let pointer_now = ui.input(|i| i.pointer.latest_pos());
+    let band = ui.data(|d| d.get_temp::<egui::Pos2>(band_id)).zip(pointer_now).map(|(a, b)| Rect::from_two_pos(a, b));
+    let released = ui.input(|i| !i.pointer.primary_down());
+    let mut banded: Vec<usize> = Vec::new();
+    let modifiers = ui.input(|i| i.modifiers);
+    let position = |i: usize| rows.iter().position(|(r, _)| *r == i);
     egui::ScrollArea::vertical().id_salt("activities").auto_shrink(false).show_rows(ui, ROW, rows.len(), |ui, range| {
         // In layers: the rows' backgrounds, then the relationship lines, then the cells, bars and
         // names over them.
         let mut first_top = None;
         let mut placed = Vec::with_capacity(range.len());
         for &(i, depth) in rows.iter().skip(range.start).take(range.len()) {
-            let (rect, response) = ui.allocate_exact_size(vec2(full.width(), ROW), Sense::click());
+            let (rect, response) = ui.allocate_exact_size(vec2(full.width(), ROW), Sense::click_and_drag());
             first_top.get_or_insert(rect.top());
+            if response.drag_started()
+                && let Some(p) = response.interact_pointer_pos()
+            {
+                ui.data_mut(|d| d.insert_temp(band_id, p));
+            }
             if response.clicked() {
+                if modifiers.command {
+                    events.toggled = Some(i);
+                } else if modifiers.shift
+                    && let (Some(a), Some(b)) = (selected.and_then(position), position(i))
+                {
+                    events.marked = Some(rows.iter().skip(a.min(b)).take(a.max(b) - a.min(b) + 1).map(|(r, _)| *r).collect());
+                    clicked = Some(i);
+                } else {
+                    clicked = Some(i);
+                }
+            }
+            // A right click picks the row, unless it is already among those chosen.
+            if response.secondary_clicked() && selected != Some(i) && !marked.contains(&i) {
                 clicked = Some(i);
             }
+            response.context_menu(|ui| {
+                for (action, name) in [
+                    (RowAction::AddAfter, tr!("row-add-after")),
+                    (RowAction::Delete, tr!("row-delete")),
+                    (RowAction::Comment, tr!("comment-menu")),
+                    (RowAction::Details, tr!("pane-details")),
+                ] {
+                    if ui.button(name).clicked() {
+                        events.menu = Some((i, action));
+                    }
+                }
+            });
             if response.double_clicked()
-                && let Some(pos) = response.interact_pointer_pos()
+                && let Some(pos) = response.interact_pointer_pos().or(response.hover_pos())
             {
                 let x = pos.x - rect.left();
                 let (mut at, mut hit) = (0.0, None);
@@ -340,12 +421,35 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
                     Some(2) => Some((i, Column::Duration)),
                     _ => None,
                 };
+                // On the chart: a bar opens its activity; anywhere else, a band from that day.
+                if pos.x > chart_left
+                    && let Some(s) = schedule.activities.get(i)
+                {
+                    let (x0, x1) = (x_of(s.early_start.days(), chart_left), x_of(s.early_finish.days(), chart_left) + scale);
+                    if pos.x >= x0 - 3.0 && pos.x <= x1 + 3.0 {
+                        events.open = Some(i);
+                    } else if let Some(d) = day_at(pos.x) {
+                        events.add_band = Some((d, pos));
+                    }
+                }
             }
             if acts.get(i).is_none() || schedule.activities.get(i).is_none() {
                 continue;
             }
             let painter = ui.painter_at(rect);
-            painter.rect_filled(rect, 0.0, if selected == Some(i) { t.accent_soft } else { t.grid_bg });
+            // Under a rectangle being dragged: from the table, every row it spans; on the chart,
+            // the bars it touches.
+            if let Some(b) = band
+                && b.y_range().intersects(rect.y_range())
+                && let Some(s) = schedule.activities.get(i)
+            {
+                let (x0, x1) = (x_of(s.early_start.days(), chart_left), x_of(s.early_finish.days(), chart_left) + scale);
+                if b.left() < chart_left || (b.right() >= x0 && b.left() <= x1) {
+                    banded.push(i);
+                }
+            }
+            let chosen = selected == Some(i) || marked.contains(&i) || banded.last() == Some(&i);
+            painter.rect_filled(rect, 0.0, if chosen { t.accent_soft } else { t.grid_bg });
             // Non-working days of the project's calendar, shaded, when they're wide enough.
             if scale >= 8.0 {
                 for k in first_day.max(0)..last_day.min(days) {
@@ -511,8 +615,9 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
             }
             let chart = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, rect.top()), rect.max));
             painter.hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, t.gridline));
-            let background = if selected == Some(i) { t.accent_soft } else { t.grid_bg };
-            let look = Look { summary, selected: selected == Some(i), float: options.late_bars, background, data_date };
+            let chosen = selected == Some(i) || marked.contains(&i) || banded.contains(&i);
+            let background = if chosen { t.accent_soft } else { t.grid_bg };
+            let look = Look { summary, selected: chosen, float: options.late_bars, background, data_date };
             bar(&chart, a.kind, &a.name, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, look, &t);
         }
     });
@@ -545,6 +650,19 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
                 }
             };
             *editing = Some(Editing { index: i, column, text });
+        }
+    }
+    // The rectangle while it is dragged; let go, what it spans is chosen.
+    if let Some(b) = band {
+        if released {
+            ui.data_mut(|d| d.remove::<egui::Pos2>(band_id));
+            if b.width() > 4.0 || b.height() > 4.0 {
+                events.marked = Some(banded);
+            }
+        } else {
+            let painter = ui.painter().with_clip_rect(full);
+            painter.rect_filled(b, 2.0, t.accent_soft.gamma_multiply(0.5));
+            painter.rect_stroke(b, 2.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
         }
     }
     events.clicked = clicked;

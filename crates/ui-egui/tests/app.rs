@@ -409,3 +409,97 @@ fn views_open_as_tabs() {
     h.run_steps(2);
     assert_eq!((h.state().view, h.state().open_views.clone()), (View::Activities, vec![View::Activities]));
 }
+
+/// The pointer at `pos`, pressed (or let go) with `modifiers`.
+fn button(h: &mut Harness<'static, PerthApp>, pos: egui::Pos2, pressed: bool, modifiers: egui::Modifiers) {
+    // The keys held, as the window tells egui.
+    h.event(egui::Event::ModifiersChanged(modifiers));
+    h.event(egui::Event::PointerMoved(pos));
+    h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers });
+    h.run_steps(1);
+}
+
+fn click(h: &mut Harness<'static, PerthApp>, pos: egui::Pos2, modifiers: egui::Modifiers) {
+    button(h, pos, true, modifiers);
+    button(h, pos, false, modifiers);
+}
+
+/// Two clicks close together (with a harness of short steps, `quick`).
+fn double_click(h: &mut Harness<'static, PerthApp>, pos: egui::Pos2) {
+    click(h, pos, egui::Modifiers::NONE);
+    click(h, pos, egui::Modifiers::NONE);
+    h.run_steps(2);
+}
+
+/// A harness whose steps are a hundredth of a second, so two clicks make a double click.
+fn quick(app: PerthApp) -> Harness<'static, PerthApp> {
+    let mut h = Harness::builder().with_size(egui::vec2(1360.0, 820.0)).with_step_dt(0.01).build_ui_state(|ui, app: &mut PerthApp| app.ui(ui), app);
+    h.run_steps(3);
+    h
+}
+
+// Where the sample's rows and ruler are in the 1360 × 820 window: W1, M0, A10, A20, A30 down
+// the table; the ruler's months over its days; the chart past the table.
+const TABLE_X: f32 = 200.0;
+const ROW_A10: f32 = 253.0;
+const ROW_A20: f32 = 277.0;
+const ROW_A30: f32 = 301.0;
+
+/// Dragging over rows of the table chooses them all; Ctrl and a click adds one; Delete takes
+/// every one chosen, in one change.
+#[test]
+fn rows_are_chosen_by_dragging_and_ctrl_clicks() {
+    let mut h = harness(PerthApp::default());
+    let n = h.state().session.project.activities.len();
+    button(&mut h, egui::pos2(TABLE_X, ROW_A10), true, egui::Modifiers::NONE);
+    for y in [260.0, 280.0, ROW_A30] {
+        h.event(egui::Event::PointerMoved(egui::pos2(TABLE_X + 10.0, y)));
+        h.run_steps(1);
+    }
+    button(&mut h, egui::pos2(TABLE_X + 10.0, ROW_A30), false, egui::Modifiers::NONE);
+    h.run_steps(2);
+    assert_eq!(h.state().marked.iter().copied().collect::<Vec<_>>(), [2, 3, 4], "A10, A20 and A30");
+    // A plain click chooses one; Ctrl and a click adds another.
+    click(&mut h, egui::pos2(TABLE_X, ROW_A10), egui::Modifiers::NONE);
+    h.run_steps(1);
+    assert_eq!(h.state().marked.iter().copied().collect::<Vec<_>>(), [2]);
+    click(&mut h, egui::pos2(TABLE_X, ROW_A30), egui::Modifiers::COMMAND);
+    h.run_steps(1);
+    assert_eq!(h.state().marked.iter().copied().collect::<Vec<_>>(), [2, 4]);
+    h.key_press(egui::Key::Delete);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project.activities.len(), n - 2);
+    assert_eq!(h.state().session.undo_label(), Some("delete 2 activities"));
+    // Ctrl+A chooses every one.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run_steps(1);
+    assert_eq!(h.state().marked.len(), n - 2);
+}
+
+/// A double click on the chart away from a bar opens a small window for a band from that day;
+/// on the ruler's months, one to mark the month; on a bar, its details.
+#[test]
+fn double_clicks_on_the_chart_add_notes_and_open_details() {
+    let mut h = quick(PerthApp::default());
+    double_click(&mut h, egui::pos2(1250.0, ROW_A10));
+    let note = h.state().quick_note.clone().expect("a band's window");
+    assert!(!note.month && note.from == note.to);
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Name").type_text("Rain");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    let bands = &h.state().session.project.bands;
+    assert!(bands.iter().any(|b| b.name == "Rain" && b.from == note.from), "{bands:?}");
+    assert!(h.state().quick_note.is_none());
+    // January 2027 on the ruler's months (a fresh window: the name just typed keeps the focus).
+    let mut h = quick(PerthApp::default());
+    double_click(&mut h, egui::pos2(1090.0, 161.0));
+    let note = h.state().quick_note.clone().expect("a month's window");
+    assert_eq!((note.month, note.from.to_string()), (true, "2027-01-01".to_string()));
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().quick_note.is_none(), "Esc drops it");
+    // A20's bar.
+    let mut h = quick(PerthApp::default());
+    double_click(&mut h, egui::pos2(960.0, ROW_A20));
+    assert_eq!((h.state().selected, h.state().side), (Some(3), Some(mkperth_ui_egui::Side::Details)));
+}

@@ -500,3 +500,11 @@ comments-new = Novo comentário
 comments-hint = Pergunte, anote ou sinalize algo sobre esta atividade
 comments-send = Comentar
 comment-menu = Comentário
+
+# Clicking and dragging on the activities.
+row-add-after = Nova atividade depois
+row-delete = Excluir
+quick-band = Nova faixa
+quick-month = Marcar { $month }
+quick-name-hint = Um nome, depois Enter
+fact-chosen = { $n } escolhidas
