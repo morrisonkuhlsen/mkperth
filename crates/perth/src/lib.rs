@@ -13,8 +13,9 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use mkperth_core::{
-    Activity, ActivityKind, Assignment, Band, Baseline, BaselineActivity, Calendar, Comment, Constraint, Date, Extra, LevelBy, Levelled,
-    LevellingOptions, LevellingPriority, Marker, MonthMark, Pert, Project, Region, Relationship, RelationshipType, Resource, UNIT,
+    Accrual, Activity, ActivityKind, Assignment, Band, Baseline, BaselineActivity, Calendar, Comment, Constraint, CostAccount, Date, Expense, Extra,
+    LevelBy, Levelled, LevellingOptions, LevellingPriority, Marker, MonthMark, Pert, Price, Project, Region, Relationship, RelationshipType,
+    Resource, UNIT,
 };
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
@@ -93,7 +94,12 @@ const TASK_MAPPED: [&str; 13] = [
 ];
 /// The longest a PERT estimate may be, in days.
 const MAX_ESTIMATE: f64 = 1e6;
-const PROJECT_MAPPED: [&str; 9] = ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING, BASELINES];
+const PROJECT_MAPPED: [&str; 10] = ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING, BASELINES, COSTS];
+/// MK Perth's costs: the currency, the cost accounts, the resources' prices and the expenses,
+/// written only when they say more than Perth's own task `cost` (read as an expense).
+const COSTS: &str = "mkperth_costs";
+/// The name of the expense a task's Perth `cost` is read as.
+pub const PERTH_COST: &str = "Perth.jl";
 /// MK Perth's baselines, written only when they aren't the one Perth's own task fields hold.
 const BASELINES: &str = "mkperth_baselines";
 /// The name of the baseline Perth's `baseline_start` and `baseline_duration` make.
@@ -438,6 +444,51 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         },
         Some(_) => return Err(PerthError::Field(String::new(), BASELINES.into())),
     };
+    // Costs: MK Perth's own when the file has them; else the expenses Perth's task costs say.
+    let mut prices: Vec<(String, Vec<Price>)> = Vec::new();
+    let (expenses, cost_accounts, currency) = match root.get(COSTS) {
+        Some(Value::Object(o)) => {
+            let bad = || PerthError::Field(String::new(), COSTS.into());
+            let list = |k: &str| o.get(k).and_then(Value::as_array).map(|a| a.iter().take(MAX_TASKS).collect::<Vec<_>>()).unwrap_or_default();
+            let text = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
+            let mut expenses = Vec::new();
+            for e in list("expenses") {
+                expenses.push(Expense {
+                    activity: text(e, "activity").ok_or_else(bad)?,
+                    name: text(e, "name").ok_or_else(bad)?,
+                    account: text(e, "account").filter(|a| !a.is_empty()),
+                    planned: e.get("planned").and_then(money_of).unwrap_or(0),
+                    actual: e.get("actual").and_then(money_of).unwrap_or(0),
+                    remaining: e.get("remaining").and_then(money_of),
+                    accrual: text(e, "accrual").and_then(|a| Accrual::from_code(&a)).unwrap_or_default(),
+                });
+            }
+            let mut accounts = Vec::new();
+            for c in list("accounts") {
+                accounts.push(CostAccount {
+                    id: text(c, "id").ok_or_else(bad)?,
+                    name: text(c, "name").unwrap_or_default(),
+                    parent: text(c, "parent"),
+                });
+            }
+            if let Some(Value::Object(by)) = o.get("prices") {
+                for (id, ps) in by.iter().take(MAX_TASKS) {
+                    let mut list = Vec::new();
+                    for p in ps.as_array().ok_or_else(bad)?.iter().take(1000) {
+                        let from = match p.get("from") {
+                            None | Some(Value::Null) => None,
+                            Some(d) => Some(d.as_str().and_then(Date::parse).ok_or_else(bad)?),
+                        };
+                        list.push(Price { from, per_unit: p.get("price").and_then(money_of).ok_or_else(bad)? });
+                    }
+                    prices.push((id.clone(), list));
+                }
+            }
+            (expenses, accounts, text(&Value::Object(o.clone()), "currency").unwrap_or_default())
+        }
+        Some(Value::Null) | None => (perth_expenses(&activities), Vec::new(), String::new()),
+        Some(_) => return Err(PerthError::Field(String::new(), COSTS.into())),
+    };
     // An assignee is a resource named as written (one for each name), assigned for the task's
     // effort, else its working hours at one an hour.
     let mut resources: Vec<Resource> = Vec::new();
@@ -449,6 +500,11 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         let minutes = activities.iter().find(|a| a.id == task).map_or(0, |a| a.working_minutes(calendar.day_minutes()));
         let planned = effort.map_or(minutes.saturating_mul(UNIT) / 60, |hours| (hours * UNIT as f64).round() as i64);
         assignments.push(Assignment { activity: task, resource: Some(name), planned, ..Assignment::default() });
+    }
+    for (id, list) in prices {
+        if let Some(r) = resources.iter_mut().find(|r| r.id == id) {
+            r.prices = list;
+        }
     }
     Ok(Read {
         project: Project {
@@ -472,15 +528,37 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             levelling,
             baselines,
             baseline_in_use,
-            expenses: Vec::new(),
-            cost_accounts: Vec::new(),
-            currency: String::new(),
+            expenses,
+            cost_accounts,
+            currency,
             activities,
             relationships,
             extra,
         },
         warnings,
     })
+}
+
+/// The expenses Perth.jl's task `cost` (kept in `extra`) says: one for each task with a cost,
+/// spread evenly over it.
+fn perth_expenses(activities: &[Activity]) -> Vec<Expense> {
+    activities
+        .iter()
+        .filter_map(|a| {
+            let cost = a.extra.get("perth.cost").and_then(|v| v.parse::<f64>().ok()).filter(|c| c.is_finite() && *c > 0.0 && *c < 1e13)?;
+            Some(Expense { activity: a.id.clone(), name: PERTH_COST.into(), planned: (cost * 100.0).round() as i64, ..Expense::default() })
+        })
+        .collect()
+}
+
+/// Hundredths of the currency as a JSON number: whole when it is.
+fn money_value(cents: i64) -> Value {
+    if cents % 100 == 0 { Value::from(cents / 100) } else { Value::from(cents as f64 / 100.0) }
+}
+
+/// A JSON number as hundredths of the currency.
+fn money_of(v: &Value) -> Option<i64> {
+    v.as_f64().filter(|m| m.is_finite() && m.abs() < 1e13).map(|m| (m * 100.0).round() as i64)
 }
 
 /// The baseline Perth.jl keeps in its tasks (`baseline_start` and `baseline_duration`, in days,
@@ -660,6 +738,32 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         .collect();
     if !comments.is_empty() {
         fields.push((COMMENTS.into(), Value::Array(comments)));
+    }
+    // The costs, when they say more than Perth's task costs already do.
+    let priced: Vec<&Resource> = project.resources.iter().filter(|r| !r.prices.is_empty()).collect();
+    if !project.currency.is_empty()
+        || !project.cost_accounts.is_empty()
+        || !priced.is_empty()
+        || project.expenses != perth_expenses(&project.activities)
+    {
+        let expenses: Vec<Value> = project
+            .expenses
+            .iter()
+            .map(|e| {
+                serde_json::json!({"activity": e.activity, "name": e.name, "account": e.account.clone().unwrap_or_default(),
+                    "planned": money_value(e.planned), "actual": money_value(e.actual), "remaining": e.remaining.map(money_value),
+                    "accrual": e.accrual.code()})
+            })
+            .collect();
+        let accounts: Vec<Value> =
+            project.cost_accounts.iter().map(|c| serde_json::json!({"id": c.id, "name": c.name, "parent": c.parent})).collect();
+        let mut prices = Map::new();
+        for r in priced {
+            let list: Vec<Value> =
+                r.prices.iter().map(|p| serde_json::json!({"from": p.from.map(|d| d.to_string()), "price": money_value(p.per_unit)})).collect();
+            prices.insert(r.id.clone(), Value::Array(list));
+        }
+        fields.push((COSTS.into(), serde_json::json!({"currency": project.currency, "accounts": accounts, "prices": prices, "expenses": expenses})));
     }
     // The baselines, unless they are just the one Perth's task fields already say.
     let from_tasks = perth_baseline(&project.activities, &project.calendar);

@@ -284,6 +284,33 @@ fn an_assignee_is_a_resource_assigned() {
     assert_eq!(warnings.len(), 1);
 }
 
+/// Perth's task cost (`a`'s 1 200.50) is read as an expense and written back as it was; MK
+/// Perth's own costs (a currency, accounts, prices, expenses) travel in a field of their own.
+#[test]
+fn costs_from_perth_and_our_own() {
+    use mkperth_core::{Accrual, CostAccount, Expense, Price};
+    let p = read(&full().to_string()).unwrap().project;
+    assert_eq!(p.expenses, [Expense { activity: "a".into(), name: PERTH_COST.into(), planned: 120_050, ..Expense::default() }]);
+    assert!(!write(&p).0.contains("mkperth_costs"), "Perth's own field says it");
+    let mut q = p.clone();
+    q.currency = "R$".into();
+    q.cost_accounts = vec![CostAccount { id: "1".into(), name: "Site".into(), parent: None }];
+    q.resources[0].prices = vec![Price { from: None, per_unit: 2550 }, Price { from: Some(day(2026, 10, 1)), per_unit: 3000 }];
+    q.expenses.push(Expense {
+        activity: "b".into(),
+        name: "Permit".into(),
+        account: Some("1".into()),
+        planned: 45_050,
+        actual: 10_000,
+        remaining: Some(35_050),
+        accrual: Accrual::Start,
+    });
+    let (text, _) = write(&q);
+    let back = read(&text).unwrap().project;
+    assert_eq!((&back.currency, &back.cost_accounts, &back.expenses), (&q.currency, &q.cost_accounts, &q.expenses));
+    assert_eq!(back.resources[0].prices, q.resources[0].prices);
+}
+
 /// Perth's baseline (task `a` from 1 September, 5 days, on Brazil's calendar: the 1st to the
 /// 8th, the 7th a holiday) is read as a baseline in use, and written back as it was; one taken
 /// in MK Perth travels in a field of its own.
