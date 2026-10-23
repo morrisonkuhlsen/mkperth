@@ -2,7 +2,7 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang CODE]
-//!  [--select N] [--side details|filters|notes] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--splash] [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
+//!  [--select N] [--side details|filters|notes|calendars] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--splash] [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
 //!  `--click` clicks what has that accessible name, in order: `--click View --click Theme` opens a submenu)
 
 use egui_kittest::kittest::Queryable as _;
@@ -40,7 +40,8 @@ fn main() -> Result<(), String> {
                     Some("details") => Some(mkperth_ui_egui::Side::Details),
                     Some("filters") => Some(mkperth_ui_egui::Side::Filters),
                     Some("notes") => Some(mkperth_ui_egui::Side::Notes),
-                    _ => return Err("--side details|filters|notes".into()),
+                    Some("calendars") => Some(mkperth_ui_egui::Side::Calendars),
+                    _ => return Err("--side details|filters|notes|calendars".into()),
                 };
             }
             "--details" => {

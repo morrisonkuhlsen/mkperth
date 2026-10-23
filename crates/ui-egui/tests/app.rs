@@ -271,3 +271,22 @@ fn a_new_project_from_the_file_menu() {
     assert_eq!(h.state().session.project.start.to_string(), "2026-11-06");
     assert_eq!(h.state().status, Some(mkperth_ui_egui::Status::Info("New project".into())));
 }
+
+/// The Calendars pane: Saturday worked, the region's holidays off, each undoable.
+#[test]
+fn calendars_are_edited_in_their_pane() {
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Calendars").click();
+    h.run_steps(2);
+    assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::Calendars));
+    assert!(!h.state().session.project.calendar.week[5]);
+    h.get_by_label("Sat").click();
+    h.run_steps(2);
+    assert!(h.state().session.project.calendar.week[5], "Saturday is worked");
+    h.get_by_label("Brazil's national holidays").click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project.calendar.region, None);
+    h.state_mut().run("edit.undo", serde_json::Value::Null);
+    h.run_steps(2);
+    assert!(h.state().session.project.calendar.region.is_some());
+}

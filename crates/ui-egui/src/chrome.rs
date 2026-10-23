@@ -36,6 +36,7 @@ pub(crate) enum Action {
     ToggleAutoSave,
     ToggleToolbar,
     Search,
+    Calendars,
     Language(Lang),
 }
 
@@ -281,6 +282,10 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         ui.separator();
         if let Some(p) = scheduling_options(ui, state) {
             set(Action::Options(p));
+        }
+        ui.separator();
+        if item(ui, &tr!("calendars-menu"), None, true) {
+            set(Action::Calendars);
         }
     });
     menu(ui, &tr!("menu-view"), |ui| {

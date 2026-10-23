@@ -6,6 +6,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod activities;
+mod calendars;
 mod chrome;
 pub mod icons;
 pub mod splash;
@@ -20,6 +21,7 @@ use mkperth_engine::sched::constraint_name;
 use serde_json::json;
 
 pub use activities::{Column, Editing, Options};
+pub use calendars::{CalendarForm, periods_text, read_periods};
 pub use mkperth_engine::core::Date;
 pub use mkperth_engine::i18n;
 pub use theme::Tokens;
@@ -65,6 +67,8 @@ pub enum Side {
     Filters,
     /// The chart's notes: bands, markers, marked months.
     Notes,
+    /// The calendars: weeks, work periods, holidays.
+    Calendars,
 }
 
 /// The note the Notes pane is making: its kind (0 a band, 1 a marker, 2 a month), name, dates
@@ -119,6 +123,8 @@ pub struct PerthApp {
     pub details_tab: DetailsTab,
     /// The Notes pane's new note.
     pub note_form: NoteForm,
+    /// What the Calendars pane is editing.
+    pub calendar_form: CalendarForm,
     /// The selected activity's calculation, in words: (its index, the lines).
     calculation: Option<(usize, Vec<String>)>,
     themed: bool,
@@ -207,6 +213,7 @@ impl PerthApp {
             link: (String::new(), RelationshipType::FinishToStart, 0),
             details_tab: DetailsTab::default(),
             note_form: NoteForm::default(),
+            calendar_form: CalendarForm::default(),
             calculation: None,
             themed: false,
             title: String::new(),
@@ -300,6 +307,7 @@ impl PerthApp {
             Action::ToggleAutoSave => self.autosave = !self.autosave,
             Action::ToggleToolbar => self.toolbar_hidden = !self.toolbar_hidden,
             Action::Search => self.side = Some(Side::Filters),
+            Action::Calendars => self.side = Some(Side::Calendars),
             Action::Language(lang) => {
                 i18n::set(lang);
                 self.calculation = None;
@@ -493,6 +501,7 @@ impl PerthApp {
                             Side::Details => self.details(ui),
                             Side::Filters => self.filters(ui),
                             Side::Notes => self.notes_pane(ui),
+                            Side::Calendars => self.calendars_pane(ui),
                         }
                     });
                 });
@@ -890,7 +899,8 @@ impl PerthApp {
         for (k, (side, icon, name, badge)) in [
             (Side::Details, Icon::Info, tr!("pane-details"), 0),
             (Side::Filters, Icon::Filter, tr!("filters"), count),
-            (Side::Notes, Icon::Calendar, tr!("pane-notes"), 0),
+            (Side::Notes, Icon::Pin, tr!("pane-notes"), 0),
+            (Side::Calendars, Icon::Calendar, tr!("pane-calendars"), 0),
         ]
         .into_iter()
         .enumerate()
@@ -968,9 +978,8 @@ impl PerthApp {
     /// The chart's notes: each kind listed with a button to delete it, and a form for a new one.
     fn notes_pane(&mut self, ui: &mut egui::Ui) {
         let t = Tokens::get(ui.ctx());
-        if theme::pane_header(ui, Icon::Calendar, &tr!("pane-notes"), &tr!("pane-notes-tip"), |ui| {
-            icon_button(ui, Icon::ChevronRight, &tr!("pane-close"))
-        }) {
+        if theme::pane_header(ui, Icon::Pin, &tr!("pane-notes"), &tr!("pane-notes-tip"), |ui| icon_button(ui, Icon::ChevronRight, &tr!("pane-close")))
+        {
             self.side = None;
         }
         let p = &self.session.project;
@@ -1148,7 +1157,7 @@ impl PerthApp {
 }
 
 /// A small icon button, for the status bar and the panes' headers.
-fn icon_button(ui: &mut egui::Ui, icon: Icon, name: &str) -> bool {
+pub(crate) fn icon_button(ui: &mut egui::Ui, icon: Icon, name: &str) -> bool {
     let t = Tokens::get(ui.ctx());
     let (rect, response) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));

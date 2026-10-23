@@ -20,6 +20,9 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- The Calendars pane (the strip at the right, or Project > Calendars…): a calendar's working
+  week, its work periods, Brazil's national holidays, and its days off and worked days, edited
+  in the app and undoable. Chart notes take a pin for their icon, leaving the calendar to it.
 - `project.new`: an empty project from a given start (File > New, Ctrl+N, from today).
 - `calendar.edit`: a calendar's working week, its work periods, holidays and worked days added
   or taken away, and its region's holidays, by command (the app, the CLI and MCP), undoable.

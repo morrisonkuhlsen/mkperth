@@ -43,7 +43,9 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   (`activity.export-tex`, the Calculation pane's LaTeX button).
   An exception day works periods of its own (a short Christmas Eve, a Saturday morning), read
   and written as P6 XML's `HolidayOrException` work times.
-- **Next:** calendars edited in the app.
+  Calendars edited in the app: the Calendars pane (the strip, or Project > Calendars…) sets a
+  calendar's working week, work periods, region and days off or worked, through `calendar.edit`.
+- **Next:** calendars added, renamed and deleted; an activity's calendar chosen in Details.
 
 ## M1 — data in and out
 - *Done:* Perth.jl's project JSON (`mkperth-perth`), read and written back byte for byte: a
@@ -121,7 +123,7 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   edge, markers as dashed lines with their names, months painted in the ruler; read and written
   in Perth.jl's JSON, made and deleted by command (`band.add`, `marker.add`, `month-mark.add`,
   and their `.delete`) with undo, and in the Chart notes pane.
-- **Next:** calendars edited in the app; the network view (#17); the brand (#18, the user's).
+- **Next:** the network view (#17); the brand (#18, the user's: the splash's lilac is chosen).
 
 ## M4 — resources
 - **Next:** resources and roles with units per time and prices that change over time; assignments
