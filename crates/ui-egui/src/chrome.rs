@@ -98,6 +98,14 @@ fn tool_response(ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: 
     response.on_hover_text(tip)
 }
 
+/// A group's name before its icons in the toolbar, small and dim.
+fn group_name(ui: &mut egui::Ui, name: &str) {
+    let t = Tokens::get(ui.ctx());
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new(name).size(11.5).color(t.text_dim));
+    ui.add_space(4.0);
+}
+
 /// A hairline between the toolbar's groups.
 fn divider(ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
@@ -437,18 +445,22 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
                 action = Some(then);
             }
         };
+        group_name(&mut row, &tr!("group-edit"));
         let undo = state.undo.map_or_else(|| tr!("nothing-to-undo"), |l| tr!("undo-named", what = l));
         go(&mut row, Icon::Undo, &tr!("undo"), &undo, state.undo.is_some(), false, Action::Undo);
         let redo = state.redo.map_or_else(|| tr!("nothing-to-redo"), |l| tr!("redo-named", what = l));
         go(&mut row, Icon::Redo, &tr!("redo"), &redo, state.redo.is_some(), false, Action::Redo);
         divider(&mut row);
+        group_name(&mut row, &tr!("group-activities"));
         go(&mut row, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
         go(&mut row, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
         divider(&mut row);
+        group_name(&mut row, &tr!("group-show"));
         go(&mut row, Icon::Critical, &tr!("critical-only"), &tr!("critical-only-tip"), true, state.critical_only, Action::CriticalOnly);
         go(&mut row, Icon::Gantt, &tr!("late-bars"), &tr!("late-bars-tip"), true, state.late_bars, Action::LateBars);
         go(&mut row, Icon::Network, &tr!("links"), &tr!("links-tip"), true, state.links, Action::Links);
         divider(&mut row);
+        group_name(&mut row, &tr!("group-time-scale"));
         go(&mut row, Icon::Minus, &tr!("time-narrower"), &tr!("time-narrower-tip"), true, false, Action::TimeScale(-1));
         go(&mut row, Icon::Grid, &tr!("time-fit"), &tr!("time-fit-tip"), true, state.fitted, Action::TimeScale(0));
         go(&mut row, Icon::Plus, &tr!("time-wider"), &tr!("time-wider-tip"), true, false, Action::TimeScale(1));
