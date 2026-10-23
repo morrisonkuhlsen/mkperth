@@ -8,8 +8,16 @@ use egui::epaint::text::{FontData, FontDefinitions, FontFamily, FontTweak};
 
 /// The face added before egui's own in the proportional family.
 const FACE: &str = "mkperth-face";
-/// The sizes offered, in percent of the usual.
-pub const SIZES: [u8; 4] = [90, 100, 115, 130];
+/// The size, in points as spreadsheets count them: 10 is the usual, every face scaled by its
+/// tenth; the usual ones offered, and the least and most.
+pub const SIZES: [u8; 10] = [6, 7, 8, 9, 10, 11, 12, 14, 18, 24];
+pub const MIN_SIZE: u8 = 6;
+pub const MAX_SIZE: u8 = 24;
+
+/// A size kept within the least and the most.
+pub fn clamp_size(size: u8) -> u8 {
+    size.clamp(MIN_SIZE, MAX_SIZE)
+}
 
 /// The interface's typeface: a system family (`None` for egui's own), its size in percent, and
 /// whether it is set bold or italic (when the family has those faces).
@@ -23,12 +31,12 @@ pub struct FontChoice {
 
 impl Default for FontChoice {
     fn default() -> Self {
-        FontChoice { family: None, size: 100, bold: false, italic: false }
+        FontChoice { family: None, size: 10, bold: false, italic: false }
     }
 }
 
 impl FontChoice {
-    /// `Segoe UI|115|bold|italic` (empty family for egui's own), for keeping between runs.
+    /// `Segoe UI|12|bold|italic` (empty family for egui's own), for keeping between runs.
     pub fn to_line(&self) -> String {
         format!(
             "{}|{}|{}|{}",
@@ -43,7 +51,12 @@ impl FontChoice {
     pub fn from_line(line: &str) -> FontChoice {
         let mut parts = line.trim().split('|');
         let family = parts.next().filter(|f| !f.trim().is_empty()).map(|f| f.trim().to_string());
-        let size = parts.next().and_then(|s| s.parse::<u8>().ok()).filter(|s| SIZES.contains(s)).unwrap_or(100);
+        // A size kept in percent before (90 to 130) is its tenth in points.
+        let size = match parts.next().and_then(|s| s.parse::<u8>().ok()) {
+            Some(s) if (MIN_SIZE..=MAX_SIZE).contains(&s) => s,
+            Some(s) if (90..=130).contains(&s) => ((u16::from(s) + 5) / 10) as u8,
+            _ => 10,
+        };
         let bold = parts.next() == Some("bold");
         let italic = parts.next() == Some("italic");
         FontChoice { family, size, bold, italic }
@@ -54,7 +67,7 @@ impl FontChoice {
 /// proportional family, egui's after it for the glyphs it lacks; every face scaled to the size.
 pub(crate) fn definitions(choice: &FontChoice, bytes: Option<Vec<u8>>) -> FontDefinitions {
     let mut defs = FontDefinitions::default();
-    let scale = f32::from(choice.size) / 100.0;
+    let scale = f32::from(clamp_size(choice.size)) / 10.0;
     for data in defs.font_data.values_mut() {
         let mut scaled = FontData::clone(data);
         scaled.tweak.scale *= scale;
@@ -79,16 +92,17 @@ mod tests {
 
     #[test]
     fn a_choice_is_kept_as_a_line() {
-        let c = FontChoice { family: Some("Segoe UI".into()), size: 115, bold: true, italic: false };
-        assert_eq!(c.to_line(), "Segoe UI|115|bold|");
+        let c = FontChoice { family: Some("Segoe UI".into()), size: 12, bold: true, italic: false };
+        assert_eq!(c.to_line(), "Segoe UI|12|bold|");
         assert_eq!(FontChoice::from_line(&c.to_line()), c);
         assert_eq!(FontChoice::from_line(""), FontChoice::default());
         assert_eq!(FontChoice::from_line("Arial|999|x|y"), FontChoice { family: Some("Arial".into()), ..FontChoice::default() });
+        assert_eq!(FontChoice::from_line("|115||").size, 12, "a size kept in percent");
     }
 
     #[test]
     fn the_size_scales_every_face_and_the_chosen_one_comes_first() {
-        let choice = FontChoice { size: 130, ..FontChoice::default() };
+        let choice = FontChoice { size: 13, ..FontChoice::default() };
         let usual = FontDefinitions::default();
         let defs = definitions(&choice, None);
         for (name, data) in &usual.font_data {

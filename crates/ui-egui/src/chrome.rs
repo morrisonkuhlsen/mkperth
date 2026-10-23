@@ -475,8 +475,7 @@ fn font_sizes(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoi
     let mut chosen = None;
     let now = state.font;
     for size in crate::fonts::SIZES {
-        let name = format!("{size}% · {}", tr!(&format!("font-size-{size}")));
-        if ui.radio(now.size == size, name).clicked() && now.size != size {
+        if ui.radio(now.size == size, size.to_string()).clicked() && now.size != size {
             chosen = Some(crate::fonts::FontChoice { size, ..now.clone() });
         }
     }
@@ -493,7 +492,9 @@ fn drop_down<R>(ui: &mut egui::Ui, text: &str, name: &str, tip: &str, width: f32
         ui.painter().rect_filled(rect, ROUND, if response.is_pointer_button_down_on() { t.pressed } else { t.hover });
     }
     let painter = ui.painter().with_clip_rect(rect.shrink2(egui::vec2(4.0, 0.0)).intersect(ui.clip_rect()));
-    let galley = painter.layout_no_wrap(text.to_string(), egui::FontId::proportional(12.5), t.text);
+    let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), egui::FontId::proportional(12.5), t.text);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width - 28.0);
+    let galley = painter.layout_job(job);
     painter.galley(egui::pos2(rect.left() + 7.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
     let chevron = egui::Rect::from_center_size(egui::pos2(rect.right() - 10.0, rect.center().y), egui::vec2(10.0, 10.0));
     ui.painter().rect_filled(chevron.expand(3.0), 0.0, if response.hovered() { t.hover } else { egui::Color32::TRANSPARENT });
@@ -502,45 +503,52 @@ fn drop_down<R>(ui: &mut egui::Ui, text: &str, name: &str, tip: &str, width: f32
     egui::Popup::menu(&response).show(contents).and_then(|r| r.inner)
 }
 
-/// A toolbar button that is a letter in its style (B, I), lit when on.
-fn letter_tool(ui: &mut egui::Ui, letter: egui::RichText, name: &str, tip: &str, enabled: bool, on: bool) -> bool {
-    let t = Tokens::get(ui.ctx());
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, on, name));
-    if on {
-        ui.painter().rect_filled(rect, ROUND, t.accent_soft);
-    } else if enabled && response.hovered() {
-        ui.painter().rect_filled(rect, ROUND, if response.is_pointer_button_down_on() { t.pressed } else { t.hover });
-    }
-    let color = if enabled { t.text } else { t.text_dim.gamma_multiply(0.6) };
-    let galley = egui::WidgetText::from(letter.size(14.5).color(color)).into_galley(
-        ui,
-        Some(egui::TextWrapMode::Extend),
-        f32::INFINITY,
-        egui::TextStyle::Body,
-    );
-    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
-    response.on_hover_text(tip).clicked() && enabled
-}
-
-/// The toolbar's Font group: the typeface, its size, bold and italic (those two once a system
-/// typeface is chosen: egui's own has neither face).
+/// The toolbar's font, as spreadsheets have it: the typeface as a drop-down, then the size
+/// between a minus and a plus, a box that takes a size typed or opens the usual ones.
 fn font_tools(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoice> {
+    let t = Tokens::get(ui.ctx());
     let now = state.font;
-    let family = now.family.clone().unwrap_or_else(|| "Ubuntu Light".into());
-    let mut chosen =
-        drop_down(ui, &family, &tr!("font-family-named", name = family.as_str()), &tr!("font-family-tip"), 132.0, |ui| font_families(ui, state));
-    ui.add_space(2.0);
-    let size = format!("{}%", now.size);
-    chosen = chosen.or(drop_down(ui, &size, &tr!("font-size-named", size = size.as_str()), &tr!("font-size-tip"), 62.0, |ui| font_sizes(ui, state)));
-    ui.add_space(2.0);
-    let own = now.family.is_some();
-    let tip = |name: String| if own { name } else { format!("{name} — {}", tr!("font-face-needs-family")) };
-    if letter_tool(ui, egui::RichText::new("B").strong(), &tr!("font-bold"), &tip(tr!("font-bold")), own, now.bold) {
-        chosen = Some(crate::fonts::FontChoice { bold: !now.bold, ..now.clone() });
+    let shown = now.family.clone().unwrap_or_else(|| tr!("font-default-short"));
+    let name = tr!("font-family-named", name = shown.as_str());
+    let mut chosen = drop_down(ui, &shown, &name, &tr!("font-family-tip"), 92.0, |ui| font_families(ui, state));
+    divider(ui);
+    let with = |size: u8| (size != now.size).then(|| crate::fonts::FontChoice { size: crate::fonts::clamp_size(size), ..now.clone() });
+    if tool(ui, Icon::Minus, &tr!("font-smaller"), &tr!("font-smaller"), now.size > crate::fonts::MIN_SIZE, false) {
+        chosen = with(now.size.saturating_sub(1));
     }
-    if letter_tool(ui, egui::RichText::new("I").italics(), &tr!("font-italic"), &tip(tr!("font-italic")), own, now.italic) {
-        chosen = Some(crate::fonts::FontChoice { italic: !now.italic, ..now.clone() });
+    // The size: typed and kept on Enter, or picked from the usual ones under it.
+    let key = egui::Id::unique("toolbar-font-size");
+    let mut text = ui.data(|d| d.get_temp::<(u8, String)>(key)).filter(|(was, _)| *was == now.size).map_or(now.size.to_string(), |(_, t)| t);
+    let label = tr!("font-size");
+    let field =
+        egui::Frame::new().stroke(egui::Stroke::new(1.0, t.text_dim)).corner_radius(4.0).inner_margin(egui::Margin::symmetric(2, 1)).show(ui, |ui| {
+            ui.add(egui::TextEdit::singleline(&mut text).desired_width(24.0).align(egui::Align2::CENTER_CENTER).frame(egui::Frame::NONE))
+        });
+    let response = field.inner;
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, &label));
+    if response.lost_focus() {
+        if let Ok(n) = text.trim().parse::<u8>() {
+            chosen = with(n);
+        }
+        ui.data_mut(|d| d.remove::<(u8, String)>(key));
+    } else if response.changed() {
+        let typed = text.clone();
+        ui.data_mut(|d| d.insert_temp(key, (now.size, typed)));
+    }
+    let picked = egui::Popup::menu(&response).width(48.0).show(|ui| {
+        let mut picked = None;
+        for size in crate::fonts::SIZES {
+            if ui.selectable_label(size == now.size, size.to_string()).clicked() {
+                picked = Some(size);
+            }
+        }
+        picked
+    });
+    if let Some(size) = picked.and_then(|r| r.inner) {
+        chosen = with(size);
+    }
+    if tool(ui, Icon::Plus, &tr!("font-larger"), &tr!("font-larger"), now.size < crate::fonts::MAX_SIZE, false) {
+        chosen = with(now.size.saturating_add(1));
     }
     chosen
 }

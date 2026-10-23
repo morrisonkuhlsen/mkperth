@@ -533,23 +533,21 @@ fn the_font_is_chosen_in_the_toolbar() {
         ..Services::default()
     };
     let mut h = harness(PerthApp::new(services));
-    h.get_by_label("Bold").click();
-    h.run_steps(2);
-    assert!(!h.state().font.bold, "egui's own face has no bold");
-    h.get_by_label("Typeface: Ubuntu Light").click();
+    h.get_by_label("Typeface: Default").click();
     h.run_steps(2);
     h.get_by_label("Segoe UI").click();
     h.run_steps(3);
     assert_eq!(h.state().font.family.as_deref(), Some("Segoe UI"));
-    assert_eq!(saved.lock().unwrap().last().map(String::as_str), Some("Segoe UI|100||"));
-    h.get_by_label("Bold").click();
+    assert_eq!(saved.lock().unwrap().last().map(String::as_str), Some("Segoe UI|10||"));
+    h.state_mut().font.bold = true;
+    h.get_by_label("Increase font size").click();
     h.run_steps(3);
-    assert!(h.state().font.bold);
-    h.get_by_label("Size: 100%").click();
+    assert_eq!(saved.lock().unwrap().last().map(String::as_str), Some("Segoe UI|11|bold|"));
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Font size").click();
     h.run_steps(2);
-    h.get_by_label("130% · Larger").click();
+    h.get_by_label("14").click();
     h.run_steps(3);
-    assert_eq!(saved.lock().unwrap().last().map(String::as_str), Some("Segoe UI|130|bold|"));
+    assert_eq!(saved.lock().unwrap().last().map(String::as_str), Some("Segoe UI|14|bold|"));
     assert!(h.query_by_label("File").is_some(), "still drawn");
 }
 

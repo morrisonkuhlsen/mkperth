@@ -70,10 +70,11 @@ Read it before re-scheduling a plan with a new version.
   start picked moves the activity there (it starts on or after it), a finish stretches it to
   that day, as dragging its bar does, each one undo. Activities not yet begun only; Esc or a
   click elsewhere leaves it as it was.
-- The toolbar's Font group (also View > Font), as spreadsheets have it: the interface's typeface (MK Perth's own, Ubuntu Light, or one the system has:
-  Segoe UI, Arial, Calibri, Verdana and others where they are installed), its size (small,
-  normal, large, larger, every text scaled) and, for a system family, bold and italic; kept
-  for the next run. A font file that doesn't read is left out, egui's own staying.
+- The font in the toolbar, as spreadsheets have it: the typeface as a drop-down ("Default" for
+  MK Perth's own, Ubuntu Light, or one the system has), and the size in points between a minus
+  and a plus (10 the usual; typed, or picked from the usual ones); View > Font also has bold
+  and italic for a system typeface. Kept for the next run; a size kept in percent before reads
+  as its tenth. A font file that doesn't read is left out, egui's own staying.
 - Presentation mode (the screen icon in the header, View > Presentation mode, F5): the
   project's name over the activities and the chart, full screen, the menus, toolbar, rail and
   panes away; Esc, F5 or Leave the presentation ends it.
