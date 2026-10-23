@@ -279,6 +279,7 @@ undo-delete-assignment = remove an assignment from { $activity }
 undo-add-activity = add activity { $id }
 undo-edit-activity = edit activity { $id }
 undo-delete-activity = delete activity { $id }
+undo-delete-activities = delete { $n } activities
 undo-add-relationship = relate { $predecessor } → { $successor }
 undo-delete-relationship = remove { $predecessor } → { $successor }
 new-activity = New activity

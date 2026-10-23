@@ -538,6 +538,20 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Several activities deleted as one change: one undo brings them all back.
+    #[test]
+    fn activities_are_deleted_together() {
+        let mut s = Session::default();
+        let n = s.project.activities.len();
+        s.run("activity.delete", &json!({"ids": ["A10", "A20", "B10"]})).unwrap();
+        assert_eq!(s.project.activities.len(), n - 3);
+        assert_eq!(s.undo_label(), Some("delete 3 activities"));
+        assert!(s.run("activity.delete", &json!({"ids": ["A30", "ZZ"]})).is_err(), "all or nothing");
+        assert_eq!(s.project.activities.len(), n - 3);
+        s.run("edit.undo", &Value::Null).unwrap();
+        assert_eq!(s.project.activities.len(), n);
+    }
+
     /// A new project is empty, from its start, with nothing to undo or save.
     #[test]
     fn a_new_project_starts_empty() {

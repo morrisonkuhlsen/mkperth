@@ -279,6 +279,7 @@ undo-delete-assignment = remover uma alocação de { $activity }
 undo-add-activity = incluir a atividade { $id }
 undo-edit-activity = editar a atividade { $id }
 undo-delete-activity = excluir a atividade { $id }
+undo-delete-activities = excluir { $n } atividades
 undo-add-relationship = vincular { $predecessor } → { $successor }
 undo-delete-relationship = remover { $predecessor } → { $successor }
 new-activity = Nova atividade

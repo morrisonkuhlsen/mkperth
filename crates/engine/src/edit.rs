@@ -499,20 +499,34 @@ impl Session {
         })
     }
 
+    /// Deletes the activity `id`, or every one of `ids` as one change (one undo).
     fn delete_activity(&mut self, params: &Value) -> Result<(), EngineError> {
         const C: &str = "activity.delete";
-        let id = required(text(params, C, "id")?, C, "id")?;
-        let label = tr!("undo-delete-activity", id = id.as_str());
+        let ids: Vec<String> = match params.get("ids") {
+            None | Some(Value::Null) => vec![required(text(params, C, "id")?, C, "id")?],
+            Some(Value::Array(items)) if !items.is_empty() && items.len() <= 100_000 => items
+                .iter()
+                .map(|i| i.as_str().filter(|s| !s.trim().is_empty()).map(str::to_string))
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| EngineError::Value(C.into(), "ids".into()))?,
+            Some(_) => return Err(EngineError::Value(C.into(), "ids".into())),
+        };
+        let label = match ids.as_slice() {
+            [one] => tr!("undo-delete-activity", id = one.as_str()),
+            many => tr!("undo-delete-activities", n = many.len()),
+        };
         self.change(label, |p| {
-            let k = find(p, &id)?;
-            let removed = p.activities.remove(k);
-            // Its relationships and assignments go with it; its children move up to its parent.
-            p.relationships.retain(|r| r.predecessor != id && r.successor != id);
-            p.assignments.retain(|a| a.activity != id);
-            p.comments.retain(|c| c.activity != id);
-            for a in &mut p.activities {
-                if a.parent.as_deref() == Some(id.as_str()) {
-                    a.parent = removed.parent.clone();
+            for id in &ids {
+                let k = find(p, id)?;
+                let removed = p.activities.remove(k);
+                // Its relationships and assignments go with it; its children move up to its parent.
+                p.relationships.retain(|r| r.predecessor != *id && r.successor != *id);
+                p.assignments.retain(|a| a.activity != *id);
+                p.comments.retain(|c| c.activity != *id);
+                for a in &mut p.activities {
+                    if a.parent.as_deref() == Some(id.as_str()) {
+                        a.parent = removed.parent.clone();
+                    }
                 }
             }
             Ok(())
