@@ -42,6 +42,8 @@ pub(crate) enum Action {
     CriticalOnly,
     LateBars,
     Links,
+    /// `project.options`' parameters.
+    Options(serde_json::Value),
     /// Wider (1), narrower (-1) or fitted (0).
     TimeScale(i8),
     View(View),
@@ -58,6 +60,8 @@ pub(crate) struct State<'a> {
     pub critical_only: bool,
     pub late_bars: bool,
     pub links: bool,
+    pub float_kind: mkperth_engine::core::FloatKind,
+    pub critical_by: mkperth_engine::core::CriticalBy,
     /// The time scale fits the whole project.
     pub fitted: bool,
     pub view: View,
@@ -271,6 +275,10 @@ fn buttons(ui: &mut egui::Ui, tab: Tab, state: &State) -> Option<Action> {
             go(ui, Icon::Critical, &tr!("critical-only"), &tr!("critical-only-tip"), true, state.critical_only, Action::CriticalOnly);
             go(ui, Icon::Gantt, &tr!("late-bars"), &tr!("late-bars-tip"), true, state.late_bars, Action::LateBars);
             go(ui, Icon::Network, &tr!("links"), &tr!("links-tip"), true, state.links, Action::Links);
+            divider(ui);
+            if let Some(params) = scheduling_options(ui, state) {
+                action = Some(Action::Options(params));
+            }
         }
         Tab::View => {
             go(
@@ -293,6 +301,55 @@ fn buttons(ui: &mut egui::Ui, tab: Tab, state: &State) -> Option<Action> {
         }
     }
     action
+}
+
+/// How total float is measured and what is critical.
+fn scheduling_options(ui: &mut egui::Ui, state: &State) -> Option<serde_json::Value> {
+    use mkperth_engine::core::{CriticalBy, FloatKind};
+    let t = Tokens::get(ui.ctx());
+    let mut chosen = None;
+    ui.vertical(|ui| {
+        ui.set_width(170.0);
+        ui.add_space(6.0);
+        ui.label(egui::RichText::new(tr!("option-float")).size(12.0).color(t.text_dim));
+        let name = |k: FloatKind| match k {
+            FloatKind::Finish => tr!("float-finish"),
+            FloatKind::Start => tr!("float-start"),
+            FloatKind::Smallest => tr!("float-smallest"),
+        };
+        egui::ComboBox::from_id_salt("float-kind").selected_text(name(state.float_kind)).width(160.0).show_ui(ui, |ui| {
+            for (k, code) in [(FloatKind::Finish, "finish"), (FloatKind::Start, "start"), (FloatKind::Smallest, "smallest")] {
+                if ui.selectable_label(k == state.float_kind, name(k)).clicked() {
+                    chosen = Some(serde_json::json!({ "float": code }));
+                }
+            }
+        });
+    });
+    ui.vertical(|ui| {
+        ui.set_width(190.0);
+        ui.add_space(6.0);
+        ui.label(egui::RichText::new(tr!("option-critical")).size(12.0).color(t.text_dim));
+        let longest = state.critical_by == CriticalBy::LongestPath;
+        ui.horizontal(|ui| {
+            let selected = if longest { tr!("critical-longest-path") } else { tr!("critical-float") };
+            egui::ComboBox::from_id_salt("critical-by").selected_text(selected).width(130.0).show_ui(ui, |ui| {
+                if ui.selectable_label(!longest, tr!("critical-float")).clicked() && longest {
+                    chosen = Some(serde_json::json!({ "critical": "float", "threshold": 0 }));
+                }
+                if ui.selectable_label(longest, tr!("critical-longest-path")).clicked() && !longest {
+                    chosen = Some(serde_json::json!({ "critical": "longest-path" }));
+                }
+            });
+            if let CriticalBy::TotalFloat(threshold) = state.critical_by {
+                let mut value = threshold;
+                let response = ui.add(egui::DragValue::new(&mut value).range(-999..=999).prefix("≤ ")).on_hover_text(tr!("critical-threshold-tip"));
+                if response.changed() && value != threshold {
+                    chosen = Some(serde_json::json!({ "critical": "float", "threshold": value }));
+                }
+            }
+        });
+    });
+    chosen
 }
 
 /// The interface's language.

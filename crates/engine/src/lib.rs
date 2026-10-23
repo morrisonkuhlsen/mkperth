@@ -55,7 +55,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 11] = [
+pub const COMMANDS: [&str; 12] = [
     "project.open",
     "project.save",
     "project.sample",
@@ -65,6 +65,7 @@ pub const COMMANDS: [&str; 11] = [
     "activity.delete",
     "relationship.add",
     "relationship.delete",
+    "project.options",
     "edit.undo",
     "edit.redo",
 ];
@@ -212,6 +213,22 @@ mod tests {
         }
         assert_eq!(s.project, end);
         assert_eq!(s.run("edit.redo", &Value::Null), Err(EngineError::NothingToRedo));
+    }
+
+    #[test]
+    fn scheduling_options_with_undo() {
+        let mut s = Session::default();
+        let critical = |s: &Session| s.schedule.as_ref().map(|x| x.activities.iter().filter(|a| a.critical).count()).unwrap_or(0);
+        let before = critical(&s);
+        s.run("project.options", &json!({"critical": "float", "threshold": 25})).unwrap();
+        assert!(critical(&s) > before, "B10's float of 19 is under 25");
+        s.run("project.options", &json!({"critical": "longest-path", "float": "smallest"})).unwrap();
+        assert_eq!(s.project.critical_by, mkperth_core::CriticalBy::LongestPath);
+        assert_eq!(s.project.float_kind, mkperth_core::FloatKind::Smallest);
+        assert!(matches!(s.run("project.options", &json!({"float": "sideways"})), Err(EngineError::Value(..))));
+        s.run("edit.undo", &Value::Null).unwrap();
+        s.run("edit.undo", &Value::Null).unwrap();
+        assert_eq!(critical(&s), before);
     }
 
     #[test]

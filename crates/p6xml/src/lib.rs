@@ -307,6 +307,8 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             calendar: project_calendar.clone(),
             calendars: calendars.into_iter().map(|(_, c, _)| c).filter(|c| c.name != project_calendar.name).collect(),
             lag_calendar: Default::default(),
+            float_kind: Default::default(),
+            critical_by: Default::default(),
             must_finish_by: p.text_of("MustFinishByDate").and_then(date_of),
             activities,
             relationships,

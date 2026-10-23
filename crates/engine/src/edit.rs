@@ -2,7 +2,7 @@
 //! kept only if it holds together (no loop of relationships, no repeated ID); the project before
 //! it goes on the undo stack.
 
-use mkperth_core::{Activity, ActivityKind, Constraint, Date, Project, Relationship, RelationshipType};
+use mkperth_core::{Activity, ActivityKind, Constraint, CriticalBy, Date, FloatKind, Project, Relationship, RelationshipType};
 use mkperth_i18n::tr;
 use mkperth_sched::ScheduleError;
 use serde_json::Value;
@@ -141,9 +141,44 @@ impl Session {
             "activity.delete" => self.delete_activity(params),
             "relationship.add" => self.add_relationship(params),
             "relationship.delete" => self.delete_relationship(params),
+            "project.options" => self.set_options(params),
             "edit.undo" => self.undo_change(),
             "edit.redo" => self.redo_change(),
             _ => return None,
+        })
+    }
+
+    /// The scheduling options: how total float is measured (`float`: finish, start, smallest)
+    /// and what is critical (`critical`: float, with `threshold` working days, or longest-path).
+    fn set_options(&mut self, params: &Value) -> Result<(), EngineError> {
+        const C: &str = "project.options";
+        let bad = |name: &str| EngineError::Value(C.into(), name.into());
+        let float = text(params, C, "float")?
+            .map(|f| match f.as_str() {
+                "finish" => Ok(FloatKind::Finish),
+                "start" => Ok(FloatKind::Start),
+                "smallest" => Ok(FloatKind::Smallest),
+                _ => Err(bad("float")),
+            })
+            .transpose()?;
+        let threshold = number(params, C, "threshold", -mkperth_sched::MAX_SPAN..=mkperth_sched::MAX_SPAN)?;
+        let critical = text(params, C, "critical")?
+            .map(|c| match c.as_str() {
+                "float" => Ok(CriticalBy::TotalFloat(threshold.unwrap_or(0))),
+                "longest-path" => Ok(CriticalBy::LongestPath),
+                _ => Err(bad("critical")),
+            })
+            .transpose()?;
+        self.change(tr!("undo-options"), |p| {
+            if let Some(f) = float {
+                p.float_kind = f;
+            }
+            match (critical, threshold) {
+                (Some(c), _) => p.critical_by = c,
+                (None, Some(t)) => p.critical_by = CriticalBy::TotalFloat(t),
+                (None, None) => {}
+            }
+            Ok(())
         })
     }
 

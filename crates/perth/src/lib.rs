@@ -268,6 +268,8 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             calendar,
             calendars: Vec::new(),
             lag_calendar: Default::default(),
+            float_kind: Default::default(),
+            critical_by: Default::default(),
             must_finish_by: None,
             activities,
             relationships,

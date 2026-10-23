@@ -31,7 +31,7 @@ mod explain;
 
 use std::collections::{HashMap, VecDeque};
 
-use mkperth_core::{ActivityKind, Calendar, CalendarError, Constraint, Date, LagCalendar, Project, RelationshipType};
+use mkperth_core::{ActivityKind, Calendar, CalendarError, Constraint, CriticalBy, Date, FloatKind, LagCalendar, Project, RelationshipType};
 use mkperth_i18n::tr;
 use thiserror::Error;
 
@@ -88,7 +88,11 @@ pub struct Scheduled {
     /// In working days of the activity's calendar.
     pub total_float: i64,
     pub free_float: i64,
+    /// By the project's rule: total float at or below its threshold, or on the longest path.
     pub critical: bool,
+    /// On the longest path, whatever the rule: a chain of driving relationships back from the
+    /// activities that finish the project.
+    pub longest_path: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -507,11 +511,53 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         ActivityKind::Task if dur(i) > 0 => date(t - 1),
         _ => date(t),
     };
+    // The longest path: from the activities that finish the project, back along driving
+    // relationships (the ones that set their successor's early start), successors first.
+    let mut longest = vec![false; n];
+    for i in 0..n {
+        if !is_summary(i)
+            && ef.get(i) == Some(&finish)
+            && let Some(slot) = longest.get_mut(i)
+        {
+            *slot = true;
+        }
+    }
+    for &i in order.iter().rev() {
+        if longest.get(i) != Some(&true) {
+            continue;
+        }
+        let at = es.get(i).copied().unwrap_or(origin);
+        for &k in incoming.get(i).map_or(&[][..], Vec::as_slice) {
+            let Some(t) = ties.get(k) else { continue };
+            let bound = forward_bound(t, es.get(t.from).copied().unwrap_or(origin), ef.get(t.from).copied().unwrap_or(origin))?;
+            let candidate = match t.kind {
+                RelationshipType::FinishToStart | RelationshipType::StartToStart => bound,
+                RelationshipType::FinishToFinish | RelationshipType::StartToFinish => start_for_finish(i, bound)?,
+            };
+            if place_start(i, candidate)? == at
+                && let Some(slot) = longest.get_mut(t.from)
+            {
+                *slot = true;
+            }
+        }
+    }
+    let critical = |total: i64, longest: bool| match project.critical_by {
+        CriticalBy::TotalFloat(threshold) => total <= threshold,
+        CriticalBy::LongestPath => longest,
+    };
+
     let mut out = Vec::with_capacity(n);
     for (i, a) in acts.iter().enumerate() {
         let (e_s, e_f) = (es.get(i).copied().unwrap_or(origin), ef.get(i).copied().unwrap_or(origin));
         let (l_s, l_f) = (ls.get(i).copied().unwrap_or(end), lf.get(i).copied().unwrap_or(end));
-        let total = between(cal_of(i), e_f, l_f)?;
+        let finish_float = between(cal_of(i), e_f, l_f)?;
+        let start_float = between(cal_of(i), e_s, l_s)?;
+        let total = match project.float_kind {
+            FloatKind::Finish => finish_float,
+            FloatKind::Start => start_float,
+            FloatKind::Smallest => finish_float.min(start_float),
+        };
+        let on_longest = longest.get(i).copied().unwrap_or(false);
         let early_finish = finish_date(i, e_f)?;
         out.push(Scheduled {
             id: a.id.clone(),
@@ -521,7 +567,8 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             late_finish: finish_date(i, l_f)?,
             total_float: total,
             free_float: free.get(i).copied().unwrap_or(0),
-            critical: total <= 0,
+            critical: critical(total, on_longest),
+            longest_path: on_longest,
         });
     }
     // Summaries: from their children's dates, deepest first so a summary under a summary is
@@ -555,6 +602,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         let e = children.iter().filter_map(|&c| bounds.get(c).copied().flatten()).map(|b| b.0).max().unwrap_or(origin);
         let l = children.iter().filter_map(|&c| bounds.get(c).copied().flatten()).map(|b| b.1).max().unwrap_or(end);
         let total = between(cal_of(s), e, l)?;
+        let on_longest = children.iter().any(|&c| out.get(c).is_some_and(|x| x.longest_path));
         if let Some(slot) = bounds.get_mut(s) {
             *slot = Some((e, l));
         }
@@ -565,7 +613,8 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             a.late_finish = lf_d;
             a.total_float = total;
             a.free_float = 0;
-            a.critical = total <= 0;
+            a.longest_path = on_longest;
+            a.critical = critical(total, on_longest);
         }
     }
     let last = out.iter().map(|a| a.early_finish).max().unwrap_or(project.start).max(project.start);

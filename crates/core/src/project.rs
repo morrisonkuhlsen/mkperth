@@ -139,6 +139,33 @@ pub enum LagCalendar {
     Project,
 }
 
+/// How total float is measured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum FloatKind {
+    /// Late finish minus early finish.
+    #[default]
+    Finish,
+    /// Late start minus early start.
+    Start,
+    /// The smaller of the two.
+    Smallest,
+}
+
+/// What makes an activity critical.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CriticalBy {
+    /// Total float at or below this many working days.
+    TotalFloat(i64),
+    /// On the longest path: the chain of driving relationships back from the project's finish.
+    LongestPath,
+}
+
+impl Default for CriticalBy {
+    fn default() -> Self {
+        CriticalBy::TotalFloat(0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
     pub name: String,
@@ -148,6 +175,8 @@ pub struct Project {
     /// Other calendars activities may name.
     pub calendars: Vec<Calendar>,
     pub lag_calendar: LagCalendar,
+    pub float_kind: FloatKind,
+    pub critical_by: CriticalBy,
     /// The evening the project must finish by: the late dates count back from it instead of
     /// from the latest early finish.
     pub must_finish_by: Option<Date>,

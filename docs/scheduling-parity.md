@@ -17,9 +17,9 @@ ideas.
 | Durations | in hours, shown in days by hours per day | next (days for now) |
 | Milestones | start and finish milestones | done |
 | Float | total float as finish float (LF − EF) | done |
-| Float | total float as start float or as the smaller of the two | next |
-| Critical | total float ≤ 0 (or a chosen threshold) | done (≤ 0) |
-| Critical | the longest path | next |
+| Float | total float as start float or as the smaller of the two | done (they differ once progress exists, #19) |
+| Critical | total float ≤ a chosen threshold | done |
+| Critical | the longest path (driving relationships back from the project's finish) | done |
 | Open ends | activities with no successor finish by the project's finish | done |
 | Constraints | start/finish on, on or after, on or before; mandatory start/finish; as late as possible | done |
 | Constraints | a secondary constraint beside the primary | done (both hold; the allowed pairs are #4) |

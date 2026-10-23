@@ -26,6 +26,8 @@ Read it before re-scheduling a plan with a new version.
   along.
 - Perth.jl as the parity oracle: 43 networks scheduled by Perth.jl 0.16.1 agree with MK Perth on
   every date and total float.
+- Scheduling options (Project tab): total float as finish float, start float or the smaller;
+  critical activities by a total-float threshold or the longest path.
 - Primavera P6 XML, read and written: WBS, activities, relationships, constraints and calendars;
   durations and lags in hours become working days; Open and Save choose by the extension.
 - Brazil's national holidays, computed from their rules (Easter by the Gregorian computus), for

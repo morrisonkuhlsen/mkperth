@@ -48,6 +48,8 @@ pub(crate) fn project() -> Project {
         calendar: Calendar { name: "Brazil".into(), region: Some(Region::Brazil), ..Calendar::default() },
         calendars: vec![Calendar { name: "Seven days".into(), week: [true; 7], ..Calendar::default() }],
         lag_calendar: Default::default(),
+        float_kind: Default::default(),
+        critical_by: Default::default(),
         must_finish_by: None,
         activities,
         relationships: vec![

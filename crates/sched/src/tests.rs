@@ -16,6 +16,8 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
         calendar: Calendar::default(),
         calendars: Vec::new(),
         lag_calendar: LagCalendar::default(),
+        float_kind: Default::default(),
+        critical_by: Default::default(),
         must_finish_by: None,
         activities: activities
             .iter()
@@ -443,5 +445,46 @@ fn the_explanation_is_the_calculation() {
             assert_eq!(least, a.free_float, "{}: free float", a.id);
             assert!(!e.lines(&|d: Date| d.to_string()).is_empty());
         }
+    }
+}
+
+#[test]
+fn critical_by_a_float_threshold() {
+    // A(3) → B(2) finish on Friday the 9th; C(1) on its own has 4 days of float.
+    let mut p = project(&[("A", 3), ("B", 2), ("C", 1)], &[("A", "B", FS, 0)]);
+    assert!(!get(&schedule(&p).unwrap(), "C").critical);
+    p.critical_by = mkperth_core::CriticalBy::TotalFloat(4);
+    let s = schedule(&p).unwrap();
+    assert_eq!(get(&s, "C").total_float, 4);
+    assert!(get(&s, "C").critical, "4 is at the threshold");
+}
+
+#[test]
+fn the_longest_path() {
+    // A(3) → B(2) make the project's finish, Friday the 9th. C(2) must finish by Tuesday the
+    // 6th's evening: its float is 0, so it is critical by float, but it doesn't drive the finish.
+    let mut p = project(&[("A", 3), ("B", 2), ("C", 2)], &[("A", "B", FS, 0)]);
+    p.activities[2].constraint = Some(Constraint::FinishOnOrBefore(day(2026, 10, 6)));
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "C").total_float, get(&s, "C").critical, get(&s, "C").longest_path), (0, true, false));
+    assert!(get(&s, "A").longest_path && get(&s, "B").longest_path);
+    p.critical_by = mkperth_core::CriticalBy::LongestPath;
+    let s = schedule(&p).unwrap();
+    assert!(!get(&s, "C").critical && get(&s, "A").critical && get(&s, "B").critical);
+    // A start on or after Monday the 12th takes the drive from A: the path is B alone.
+    p.activities[1].constraint = Some(Constraint::StartOnOrAfter(day(2026, 10, 12)));
+    let s = schedule(&p).unwrap();
+    assert!(get(&s, "B").longest_path && !get(&s, "A").longest_path);
+    assert!(!get(&s, "A").critical, "A has float now");
+}
+
+#[test]
+fn start_float_and_the_smallest() {
+    // Without progress a task's start and finish float count the same days; the options choose.
+    let mut p = project(&[("A", 3), ("B", 2), ("C", 1)], &[("A", "B", FS, 0)]);
+    let finish = get(&schedule(&p).unwrap(), "C").total_float;
+    for kind in [mkperth_core::FloatKind::Start, mkperth_core::FloatKind::Smallest] {
+        p.float_kind = kind;
+        assert_eq!(get(&schedule(&p).unwrap(), "C").total_float, finish, "{kind:?}");
     }
 }

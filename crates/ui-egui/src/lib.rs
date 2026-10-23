@@ -199,6 +199,7 @@ impl PerthApp {
             Action::CriticalOnly => self.options.critical_only = !self.options.critical_only,
             Action::LateBars => self.options.late_bars = !self.options.late_bars,
             Action::Links => self.options.links = !self.options.links,
+            Action::Options(params) => self.run("project.options", params),
             Action::TimeScale(step) => self.time_scale(step),
             Action::View(view) => self.view = view,
             Action::Theme(preference) => ctx.set_theme(preference),
@@ -327,6 +328,8 @@ impl PerthApp {
             critical_only: self.options.critical_only,
             late_bars: self.options.late_bars,
             links: self.options.links,
+            float_kind: self.session.project.float_kind,
+            critical_by: self.session.project.critical_by,
             fitted: self.options.scale.is_none(),
             view: self.view,
             undo: self.session.undo_label(),
@@ -539,6 +542,9 @@ impl PerthApp {
                 fact(ui, tr!("col-free-float"), s.free_float.to_string());
                 if s.critical {
                     ui.label(egui::RichText::new(tr!("detail-critical")).size(12.5).color(t.red));
+                }
+                if s.longest_path {
+                    ui.label(egui::RichText::new(tr!("detail-longest-path")).size(12.5).color(t.text));
                 }
             }
             let lag = |l: i64| if l == 0 { String::new() } else { format!(" {l:+}") };

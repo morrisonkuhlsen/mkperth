@@ -20,8 +20,10 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   A calendar per activity, and the calendar lags count on (the predecessor's by default, the
   successor's, 24 hours or the project's): the scheduler's clock runs in calendar days and each
   activity snaps to its own working days.
-- **Next:** durations in hours with hours per day (#2); float and critical options (#3); every
-  date with its calculation (#5).
+  Float and critical options: total float as finish float, start float or the smaller; critical
+  at a total-float threshold or on the longest path (the driving relationships back from the
+  activities that finish the project), the longest path marked on every activity either way.
+- **Next:** durations in hours with hours per day (#2); the rest of #4 and #5.
 
 ## M1 — data in and out
 - *Done:* Perth.jl's project JSON (`mkperth-perth`), read and written back byte for byte: a
