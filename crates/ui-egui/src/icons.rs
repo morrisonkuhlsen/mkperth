@@ -76,6 +76,8 @@ pub enum Icon {
     Locate,
     /// A bell curve over its axis, the mean marked: PERT's spread.
     Pert,
+    /// Rows, every other one tinted: a striped table.
+    Stripes,
     /// A screen on its stand with a play mark: presenting.
     Present,
     ChevronUp,
@@ -491,6 +493,17 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, t: &Tokens) {
             }
             painter.circle_filled(p(8.0, 8.0), 1.6 * s, t.accent);
         }
+        Icon::Stripes => {
+            frame(r(1.5, 2.0, 14.5, 14.0), t.text);
+            for (k, y) in [2.0, 5.0, 8.0, 11.0].into_iter().enumerate() {
+                if k % 2 == 1 {
+                    painter.rect_filled(r(1.5, y, 14.5, y + 3.0), 0.0, t.accent.gamma_multiply(0.45));
+                }
+            }
+            line((1.5, 5.0), (14.5, 5.0), Stroke::new(w * 0.7, t.text_dim));
+            line((1.5, 8.0), (14.5, 8.0), Stroke::new(w * 0.7, t.text_dim));
+            line((1.5, 11.0), (14.5, 11.0), Stroke::new(w * 0.7, t.text_dim));
+        }
         Icon::Pert => {
             let curve: Vec<(f32, f32)> = (0..=24)
                 .map(|k| {
@@ -540,7 +553,7 @@ pub fn show(ui: &mut egui::Ui, icon: Icon, size: f32) -> egui::Response {
 
 /// For tests: every icon stays inside its square.
 #[cfg(test)]
-pub(crate) const ALL: [Icon; 63] = [
+pub(crate) const ALL: [Icon; 64] = [
     Icon::Dashboard,
     Icon::Mark,
     Icon::Gantt,
@@ -604,6 +617,7 @@ pub(crate) const ALL: [Icon; 63] = [
     Icon::Today,
     Icon::Locate,
     Icon::Pert,
+    Icon::Stripes,
 ];
 
 #[cfg(test)]

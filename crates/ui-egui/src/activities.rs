@@ -142,6 +142,8 @@ pub struct Options {
     pub hidden: [bool; 14],
     /// The baseline in use as thin bars under the schedule's.
     pub baseline_bars: bool,
+    /// Every other row tinted, as spreadsheets band them.
+    pub striped: bool,
     /// The whole table hidden: the chart takes its width, the names beside the bars.
     pub table_hidden: bool,
     /// Today, drawn as a line on the chart.
@@ -472,7 +474,10 @@ pub(crate) fn show(
         // names over them.
         let mut first_top = None;
         let mut placed = Vec::with_capacity(range.len());
-        for &(i, depth) in rows.iter().skip(range.start).take(range.len()) {
+        // A row's own background: every other one tinted when striped.
+        let plain = |n: usize| if options.striped && n % 2 == 1 { t.grid_bg.lerp_to_gamma(t.header_bg, 0.6) } else { t.grid_bg };
+        for (k, &(i, depth)) in rows.iter().skip(range.start).take(range.len()).enumerate() {
+            let n = range.start + k;
             let (rect, response) = ui.allocate_exact_size(vec2(full.width(), ROW), Sense::click_and_drag());
             first_top.get_or_insert(rect.top());
             // A press on a bar drags the bar; anywhere else, a rectangle to choose rows. Both
@@ -576,7 +581,7 @@ pub(crate) fn show(
                 }
             }
             let chosen = selected == Some(i) || marked.contains(&i) || banded.last() == Some(&i);
-            painter.rect_filled(rect, 0.0, if chosen { t.accent_soft } else { t.grid_bg });
+            painter.rect_filled(rect, 0.0, if chosen { t.accent_soft } else { plain(n) });
             // Non-working days of the project's calendar, shaded, when they're wide enough.
             if scale >= 8.0 {
                 for k in first_day.max(0)..last_day.min(days) {
@@ -612,7 +617,7 @@ pub(crate) fn show(
                     painter.vline(xd, rect.y_range(), Stroke::new(1.5, t.green.gamma_multiply(0.7)));
                 }
             }
-            placed.push((i, depth, rect));
+            placed.push((i, depth, rect, n));
         }
         // The names of bands and markers, turned along their lines, over the rows in view.
         let view = ui.clip_rect().intersect(Rect::from_min_max(pos2(chart_left, ui.clip_rect().top()), full.max));
@@ -671,7 +676,7 @@ pub(crate) fn show(
                 link(&painter, (x0, y0), (x1, y1), from_finish, to_start, color);
             }
         }
-        for (i, depth, rect) in placed {
+        for (i, depth, rect, n) in placed {
             let (Some(a), Some(s)) = (acts.get(i), schedule.activities.get(i)) else { continue };
             let painter = ui.painter_at(rect);
             let summary = is_summary(i);
@@ -794,7 +799,7 @@ pub(crate) fn show(
             let chart = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, rect.top()), rect.max));
             painter.hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, t.gridline));
             let chosen = selected == Some(i) || marked.contains(&i) || banded.contains(&i);
-            let background = if chosen { t.accent_soft } else { t.grid_bg };
+            let background = if chosen { t.accent_soft } else { plain(n) };
             let look = Look { summary, selected: chosen, float: options.late_bars, background, data_date };
             // The baseline's bar, thin, under the schedule's.
             if options.baseline_bars

@@ -741,3 +741,16 @@ fn baselines_are_assigned_in_their_pane() {
     h.run_steps(2);
     assert_eq!(h.state().session.project.baseline_in_use, None);
 }
+
+/// Striped rows, from the toolbar and back: every other row tinted, the table still drawn.
+#[test]
+fn the_table_is_striped_on_asking() {
+    let mut h = harness(PerthApp::default());
+    assert!(!h.state().options.striped);
+    h.get_by_label("Striped rows").click();
+    h.run_steps(2);
+    assert!(h.state().options.striped);
+    h.get_by_label("Striped rows").click();
+    h.run_steps(2);
+    assert!(!h.state().options.striped && h.query_by_label("File").is_some());
+}

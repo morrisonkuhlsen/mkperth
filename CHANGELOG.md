@@ -51,6 +51,8 @@ Read it before re-scheduling a plan with a new version.
   pane shows the finish planned and expected (each estimated activity at (O + 4M + P) / 6, on a
   copy), its σ, the chance of finishing by a day and the days for 50, 80, 90 and 95%, and the
   expected path. The schedule keeps its planned durations: no date changes.
+- Striped rows (the toolbar's Show group, or View > Striped rows): every other row of the
+  table and chart tinted, as spreadsheets band a table.
 - More in the toolbar: the zoom as a drop-down beside undo; Link and Unlink (the chosen rows
   tied in their order, finish to start, or every tie between them taken away, one undo each:
   `relationship.add` and `relationship.delete` take `activities`); Indent and Outdent (under

@@ -54,6 +54,8 @@ pub(crate) enum Action {
     Baselines,
     /// The baseline's bars under the schedule's.
     BaselineBars,
+    /// Every other row of the table tinted.
+    Stripes,
     /// The selected activity's comments.
     Comment,
     /// The schedule alone, full screen.
@@ -79,6 +81,7 @@ pub(crate) struct State<'a> {
     pub critical_only: bool,
     pub late_bars: bool,
     pub baseline_bars: bool,
+    pub striped: bool,
     pub links: bool,
     pub table_hidden: bool,
     pub float_kind: FloatKind,
@@ -381,6 +384,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         if check(ui, state.baseline_bars, &tr!("baseline-bars")) {
             set(Action::BaselineBars);
         }
+        if check(ui, state.striped, &tr!("stripes")) {
+            set(Action::Stripes);
+        }
         ui.separator();
         if item(ui, &tr!("time-wider"), None, true) {
             set(Action::TimeScale(1));
@@ -675,6 +681,7 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         go(&mut row, Icon::Critical, &tr!("critical-only"), &tr!("critical-only-tip"), true, state.critical_only, Action::CriticalOnly);
         go(&mut row, Icon::Gantt, &tr!("late-bars"), &tr!("late-bars-tip"), true, state.late_bars, Action::LateBars);
         go(&mut row, Icon::Network, &tr!("links"), &tr!("links-tip"), true, state.links, Action::Links);
+        go(&mut row, Icon::Stripes, &tr!("stripes"), &tr!("stripes-tip"), true, state.striped, Action::Stripes);
         divider(&mut row);
         group(&mut row, 4);
         go(&mut row, Icon::Minus, &tr!("time-narrower"), &tr!("time-narrower-tip"), true, false, Action::TimeScale(-1));
