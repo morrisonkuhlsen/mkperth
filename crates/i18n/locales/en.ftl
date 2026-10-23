@@ -277,3 +277,10 @@ details-relationships = Relationships
 details-notes = Notes
 details-notes-hint = Notes on this activity
 filter-columns = Columns
+cli-finish = Finishes { $date }; { $n } critical activities (*).
+cli-usage = usage: mkperth-cli schedule [--in project.json|project.xml] [--out file] [--format table|json|csv]
+    mkperth-cli run [--in file] --cmd 'command=JSON' [--cmd …] [--out file] [--format …]
+    mkperth-cli explain [--in file] --activity ID [--tex calculation.tex]
+cli-error = error: { $text }
+cli-warning = warning: { $text }
+cli-bad-params = The parameters of { $command } aren't JSON: { $detail }

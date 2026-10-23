@@ -25,6 +25,8 @@ Read it before re-scheduling a plan with a new version.
   XML; typed in Details and on the Project tab, drawn on the Gantt chart, explained in the
   calculation.
 - The ribbon's groups carry their names underneath.
+- `mkperth-cli`: `schedule` (a table, JSON or CSV), `run` (commands, then `--out` saves),
+  `explain` (the calculation, `--tex` for LaTeX); exit codes 0, 1, 2; messages in the locale.
 - The table's columns chosen in Filters (the ID and the name stay); today drawn on the chart.
 - The Details pane in tabs: General, Status, Relationships and Notes; notes per activity, kept
   in Perth.jl's `notes` (P6 XML says they aren't written).

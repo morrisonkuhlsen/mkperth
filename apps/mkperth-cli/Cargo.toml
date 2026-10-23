@@ -1,0 +1,18 @@
+[package]
+name = "mkperth-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "MK Perth command-line interface: schedule, change and explain projects from scripts"
+
+[lints]
+workspace = true
+
+[dependencies]
+mkperth-engine = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "mkperth-cli"
+path = "src/main.rs"

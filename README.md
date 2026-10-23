@@ -86,6 +86,9 @@ The plan and the progress log: [`docs/roadmap.md`](docs/roadmap.md).
 ```sh
 cargo run --release -p mkperth                         # the window, with the sample project
 cargo run --release -p mkperth -- project.json         # a Perth.jl project
+cargo run -p mkperth-cli -- schedule --in project.json --format csv     # the schedule for scripts
+cargo run -p mkperth-cli -- run --in p.xml --cmd 'activity.add={"name": "Survey"}' --out p.xml
+cargo run -p mkperth-cli -- explain --in project.json --activity A100 --tex a100.tex
 cargo xtask ci                                         # fmt, clippy, tests, assets, layers, panics, wasm
 ```
 

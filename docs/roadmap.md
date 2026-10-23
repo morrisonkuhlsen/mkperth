@@ -81,9 +81,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   every command fuzzed with empty and hostile parameters; `project.save`; the sample project built in code (a small building on Brazil's calendar,
   with a WBS, every kind of relationship, a lag and a lead, milestones, a constraint and a
   seven-day cure).
-- **Next:** `mkperth-engine`: the project as the session's state, every change a command (ids
-  after P6's menus: `project.schedule`, `activity.add`, `relationship.add`, `baseline.assign`),
-  undo; `mkperth-cli` (schedule a file, print or write the result); `mkperth-mcp`.
+  `mkperth-cli` (#13): `schedule` prints the schedule as a table in the person's language, JSON
+  or CSV; `run` applies commands (`--cmd 'id=JSON'`) and `--out` saves the project, all or
+  nothing and only when every command held; `explain` says an activity's calculation and writes
+  it as LaTeX; exit codes 0, 1 and 2; integration tests run the binary on files built in code.
+- **Next:** `mkperth-mcp` (#14); the Perth.jl bridge (#15) on the CLI.
 
 ## M3 — the Activities window
 - *Started:* the house's layout (MK Sigma's): a title row (the mark, AutoSave, Save, Undo and

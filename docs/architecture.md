@@ -12,7 +12,7 @@ A Cargo workspace; `cargo xtask layers` holds each crate to its layer.
 | L2 | `mkperth-engine` | the session: the project, its schedule, `run(command, params)`; the sample project |
 | L3 | `mkperth-ui-egui` | the Activities window: the table beside the Gantt chart |
 | L3 | `mkperth-mcp` | *(next)* the MCP server |
-| L4 | `apps/mkperth` | the desktop app; the command line next |
+| L4 | `apps/mkperth`, `apps/mkperth-cli` | the desktop app; the command line (schedule, run commands, explain) |
 
 ## The scheduler's time
 Time runs in minutes from midnight on 1 January 1970 (`crates/sched/src/clock.rs`). Each
