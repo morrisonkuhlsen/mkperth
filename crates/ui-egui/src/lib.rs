@@ -10,6 +10,7 @@ pub mod backstage;
 mod calendars;
 mod chrome;
 mod comments_ui;
+mod datepick;
 pub mod fonts;
 pub mod icons;
 mod levelling_ui;
@@ -646,6 +647,26 @@ impl PerthApp {
                     return;
                 }
             },
+            // A day picked or typed: the start moves the activity (it starts on or after it),
+            // the finish stretches it, as dragging its bar does.
+            Column::Start | Column::Finish => {
+                let Some(d) = read_date(&text) else {
+                    self.status = Some(Status::Error(tr!("err-not-a-date", text = text.as_str())));
+                    return;
+                };
+                let Some(s) = self.session.schedule.as_ref().ok().and_then(|s| s.activities.get(index)) else { return };
+                let stretches = column == Column::Finish && a.kind == ActivityKind::Task && a.working_days() > 0;
+                let edit = if stretches {
+                    activities::BarEdit { index, mode: activities::BarMode::Finish, start: s.early_start, finish: d.max(s.early_start) }
+                } else {
+                    activities::BarEdit { index, mode: activities::BarMode::Move, start: d, finish: d }
+                };
+                let now = if column == Column::Start { s.early_start } else { s.early_finish };
+                if d != now {
+                    self.edit_bar(edit);
+                }
+                return;
+            }
             _ => return,
         };
         self.run("activity.edit", params);

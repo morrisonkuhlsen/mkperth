@@ -32,6 +32,9 @@ pub enum Column {
     Id,
     Name,
     Duration,
+    /// The start and the finish, picked from a month of days or typed.
+    Start,
+    Finish,
 }
 
 /// The cell being edited: the activity's index, the column, the text so far.
@@ -251,6 +254,7 @@ pub(crate) fn show(
     let Ok(schedule) = &session.schedule else { return events };
     let rows = visible(session, options);
     let acts = &session.project.activities;
+    let s_of = |i: usize| schedule.activities.get(i);
     let columns = if options.table_hidden { Vec::new() } else { options.columns() };
     let table_width: f32 = columns.iter().map(|(_, _, w)| w).sum();
     // Where a column starts, if shown.
@@ -508,6 +512,8 @@ pub(crate) fn show(
                     Some(0) => Some((i, Column::Id)),
                     Some(1) => Some((i, Column::Name)),
                     Some(2) => Some((i, Column::Duration)),
+                    Some(3) => Some((i, Column::Start)),
+                    Some(4) => Some((i, Column::Finish)),
                     _ => None,
                 };
                 // On the chart: a bar opens its activity; anywhere else, a band from that day.
@@ -678,12 +684,14 @@ pub(crate) fn show(
                 x += w;
                 painter.vline(x, rect.y_range(), Stroke::new(1.0, t.gridline));
             }
-            // The cell being edited: a text box over it.
+            // The cell being edited: a text box over it; a date, a month of days under it.
             if let Some(e) = editing.as_mut().filter(|e| e.index == i) {
                 let k = match e.column {
                     Column::Id => 0,
                     Column::Name => 1,
                     Column::Duration => 2,
+                    Column::Start => 3,
+                    Column::Finish => 4,
                 };
                 // A hidden column isn't edited.
                 let (Some(left), Some(width)) = (left_of(k), COLUMNS.get(k).map(|c| c.1)) else {
@@ -691,6 +699,45 @@ pub(crate) fn show(
                     continue;
                 };
                 let cell = Rect::from_min_size(pos2(rect.left() + left, rect.top() + 1.0), vec2(width, ROW - 2.0));
+                if matches!(e.column, Column::Start | Column::Finish) {
+                    let start = e.column == Column::Start;
+                    ui.painter().rect_stroke(cell, 2.0, Stroke::new(1.5, t.accent), StrokeKind::Inside);
+                    let current = s_of(i).map(|s| if start { s.early_start } else { s.early_finish });
+                    let shown = crate::read_date(&e.text).or(current);
+                    let pick = egui::Id::unique("date-pick").with((i, start));
+                    let mut chosen = None;
+                    let area =
+                        egui::Area::new(pick).order(egui::Order::Foreground).fixed_pos(cell.left_bottom() + vec2(0.0, 2.0)).show(ui.ctx(), |ui| {
+                            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                                let label = ui.label(egui::RichText::new(tr!("date-type")).size(11.5).color(t.text_dim));
+                                let field = ui
+                                    .add(egui::TextEdit::singleline(&mut e.text).id_salt(("date-text", i)).desired_width(150.0))
+                                    .labelled_by(label.id);
+                                if field.lost_focus() && ui.input(|inp| inp.key_pressed(egui::Key::Enter)) {
+                                    chosen = Some(e.text.clone());
+                                }
+                                ui.add_space(4.0);
+                                if let Some(d) = shown.and_then(|d| crate::datepick::month_grid(ui, pick, d, options.today)) {
+                                    chosen = Some(d.to_string());
+                                }
+                            });
+                        });
+                    // Esc, or a press anywhere but on it and its cell, closes it as it was.
+                    let away = ui.input(|inp| {
+                        inp.key_pressed(egui::Key::Escape)
+                            || (inp.pointer.any_pressed()
+                                && inp.pointer.interact_pos().is_some_and(|p| !area.response.rect.contains(p) && !cell.contains(p)))
+                    });
+                    let done = away || chosen.is_some();
+                    if let Some(text) = chosen {
+                        events.commit = Some((e.index, e.column, text));
+                    }
+                    if done {
+                        *editing = None;
+                        crate::datepick::forget(ui.ctx(), pick);
+                    }
+                    continue;
+                }
                 let edit = ui.put(cell, egui::TextEdit::singleline(&mut e.text).id_salt(("cell", i)).margin(vec2(4.0, 2.0)));
                 if !edit.has_focus() && !edit.lost_focus() {
                     edit.request_focus();
@@ -761,7 +808,11 @@ pub(crate) fn show(
     }
     if let Some((i, column)) = double {
         let summary = is_summary(i);
-        if let Some(a) = acts.get(i).filter(|_| !(summary && column == Column::Duration)) {
+        // Dates are a summary's children's, and what happened once begun: only those not begun
+        // are picked.
+        let dated = matches!(column, Column::Start | Column::Finish);
+        let open = !(summary && (column == Column::Duration || dated)) && !(dated && s_of(i).is_none_or(|s| s.status != Status::NotStarted));
+        if let Some(a) = acts.get(i).filter(|_| open) {
             let text = match column {
                 Column::Id => a.id.clone(),
                 Column::Name => a.name.clone(),
@@ -769,6 +820,8 @@ pub(crate) fn show(
                     let day = session.project.calendar.day_minutes();
                     crate::days_text(a.working_minutes(day), day)
                 }
+                Column::Start => s_of(i).map(|s| show_date(s.early_start)).unwrap_or_default(),
+                Column::Finish => s_of(i).map(|s| show_date(s.early_finish)).unwrap_or_default(),
             };
             *editing = Some(Editing { index: i, column, text });
         }

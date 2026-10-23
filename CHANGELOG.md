@@ -41,6 +41,11 @@ Read it before re-scheduling a plan with a new version.
   finish; a ghost bar with the new days follows the pointer, the cursor says move or resize,
   and the dates, floats and calculation follow on release, one undo each. Summaries and
   activities already begun don't drag.
+- Dates picked in the activity table: a double click on a start or finish cell opens a month
+  of days under it (arrows for other months, today in the accent) and a field to type one; a
+  start picked moves the activity there (it starts on or after it), a finish stretches it to
+  that day, as dragging its bar does, each one undo. Activities not yet begun only; Esc or a
+  click elsewhere leaves it as it was.
 - The toolbar's Font group (also View > Font), as spreadsheets have it: the interface's typeface (MK Perth's own, Ubuntu Light, or one the system has:
   Segoe UI, Arial, Calibri, Verdana and others where they are installed), its size (small,
   normal, large, larger, every text scaled) and, for a system family, bold and italic; kept

@@ -624,3 +624,36 @@ fn resources_are_levelled_in_their_pane() {
     h.run_steps(2);
     assert!(held(&h).is_empty());
 }
+
+// A10's start and finish cells, from the table's left edge: ID, name and duration before them.
+const A10_START: f32 = 440.0;
+const A10_FINISH: f32 = 520.0;
+
+/// A double click on a start or finish cell opens a month of days over it: a day picked for
+/// the start moves A10 there (on or after), one for the finish stretches it; each one undo.
+#[test]
+fn dates_are_picked_in_the_table() {
+    let mut h = quick(PerthApp::default());
+    let a10 = |h: &Harness<'static, PerthApp>| {
+        let s = h.state().session.schedule.as_ref().unwrap();
+        let k = h.state().session.project.activities.iter().position(|a| a.id == "A10").unwrap();
+        (s.activities[k].early_start.to_string(), s.activities[k].early_finish.to_string(), h.state().session.project.activities[k].duration)
+    };
+    assert_eq!(a10(&h).0, "2026-11-03");
+    double_click(&mut h, egui::pos2(A10_START, ROW_A10));
+    assert!(h.query_by_label("Type a date or pick a day").is_some(), "the month opens");
+    h.get_by_label("10").click();
+    h.run_steps(3);
+    assert_eq!(a10(&h), ("2026-11-10".into(), "2026-11-16".into(), 5));
+    assert!(h.query_by_label("Type a date or pick a day").is_none(), "and closes");
+    // The finish on Thursday the 19th: the 10th to the 19th are 8 working days. (Half a second
+    // first, or the clicks would count on from the last as a triple click.)
+    h.run_steps(50);
+    double_click(&mut h, egui::pos2(A10_FINISH, ROW_A10));
+    h.get_by_label("19").click();
+    h.run_steps(3);
+    assert_eq!(a10(&h), ("2026-11-10".into(), "2026-11-19".into(), 8));
+    h.state_mut().run("edit.undo", serde_json::Value::Null);
+    h.run_steps(2);
+    assert_eq!(a10(&h).2, 5);
+}
