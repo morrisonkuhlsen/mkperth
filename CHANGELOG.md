@@ -22,9 +22,8 @@ Read it before re-scheduling a plan with a new version.
 
 - Progress: a data date, actual start and finish dates, the work left of an activity under way,
   out-of-sequence progress by retained logic or by progress override; read and written in P6
-  XML; typed in Details and on the Project tab, drawn on the Gantt chart, explained in the
+  XML; typed in Details and in the toolbar, drawn on the Gantt chart, explained in the
   calculation.
-- The ribbon's groups carry their names underneath.
 - `mkperth-mcp`: agents open a project, read its schedule, change it with any engine command,
   ask how a date came about, save it and export the calculation, over the Model Context Protocol.
 - Chart notes from Perth.jl: bands (a stretch shaded behind the bars), markers (a named day as a
@@ -83,6 +82,15 @@ Read it before re-scheduling a plan with a new version.
 - Every date with its calculation: the bounds of each pass, the winner, the calendar's placing,
   the floats.
 - Messages in English and Brazilian Portuguese.
+
+### Changed
+
+- The top of the window is quieter, as in an online spreadsheet: the project's name with whether
+  it is saved, the File, Edit, Project and View menus under it (each item with its shortcut),
+  Schedule as one button on the right, and one slim toolbar of small icons in place of the
+  ribbon's tabs and large buttons. The scheduling options are in the Project menu; the theme,
+  the language and hiding the toolbar (Ctrl+F1) in the View menu; AutoSave in the File menu.
+  The toolbar has no band or edge of its own; hidden, its arrow waits in the header.
 
 ### Fixed
 

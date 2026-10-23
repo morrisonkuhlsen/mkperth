@@ -2,8 +2,10 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang CODE]
-//!  [--select N] [--side details|filters|notes] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--tab home|project|view] [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1)
+//!  [--select N] [--side details|filters|notes] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
+//!  `--click` clicks what has that accessible name, in order: `--click View --click Theme` opens a submenu)
 
+use egui_kittest::kittest::Queryable as _;
 use mkperth_ui_egui::PerthApp;
 
 fn main() -> Result<(), String> {
@@ -12,6 +14,7 @@ fn main() -> Result<(), String> {
     let mut size = (1360.0f32, 820.0f32);
     let mut out = "snapshot.png".to_string();
     let mut dark = false;
+    let mut clicks = Vec::new();
     let mut i = 0;
     while let Some(arg) = args.get(i) {
         match arg.as_str() {
@@ -20,15 +23,7 @@ fn main() -> Result<(), String> {
                 app.open(std::path::Path::new(args.get(i).ok_or("--in needs a path")?));
             }
             "--dark" => dark = true,
-            "--tab" => {
-                i += 1;
-                app.tab = match args.get(i).map(String::as_str) {
-                    Some("home") => mkperth_ui_egui::Tab::Home,
-                    Some("project") => mkperth_ui_egui::Tab::Project,
-                    Some("view") => mkperth_ui_egui::Tab::View,
-                    _ => return Err("--tab home|project|view".into()),
-                };
-            }
+            "--toolbar-hidden" => app.toolbar_hidden = true,
             "--scale" => {
                 i += 1;
                 app.options.scale = Some(args.get(i).and_then(|n| n.parse().ok()).ok_or("--scale needs points per day")?);
@@ -62,6 +57,10 @@ fn main() -> Result<(), String> {
                 let code = args.get(i).ok_or("--lang needs a code")?;
                 mkperth_ui_egui::i18n::set(mkperth_ui_egui::i18n::Lang::from_code(code).ok_or("--lang: en or pt-BR")?);
             }
+            "--click" => {
+                i += 1;
+                clicks.push(args.get(i).ok_or("--click needs a label")?.clone());
+            }
             "--select" => {
                 i += 1;
                 app.selected = args.get(i).and_then(|n| n.parse::<usize>().ok()).and_then(|n| n.checked_sub(1));
@@ -84,6 +83,14 @@ fn main() -> Result<(), String> {
         harness.ctx.set_theme(egui::Theme::Dark);
     }
     harness.run_steps(4);
+    for label in &clicks {
+        harness
+            .query_by_label(label)
+            .or_else(|| harness.query_by_label_contains(label))
+            .ok_or(format!("--click: nothing is named {label:?}"))?
+            .click();
+        harness.run_steps(3);
+    }
     let image = harness.render().map_err(|e| e.to_string())?;
     image.save(&out).map_err(|e| e.to_string())?;
     println!("{out}");

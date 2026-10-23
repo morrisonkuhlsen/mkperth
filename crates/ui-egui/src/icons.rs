@@ -1,5 +1,5 @@
 //! MK Perth's icons (the house's set, from MK Sigma, and the scheduler's own), drawn in code on a 16×16 design grid (original artwork, nothing bundled).
-//! Small icons go in the title row and buttons; the ribbon draws the same shapes at 32×32.
+//! They are drawn at any size: 16 points in the toolbar and on buttons, larger for the mark.
 
 use egui::epaint::PathShape;
 use egui::{Color32, Painter, Pos2, Rect, Stroke, vec2};

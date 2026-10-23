@@ -1,6 +1,6 @@
 //! Design tokens: the colours every part of the window is painted with, light and dark. The
-//! layout follows modern desktop office suites (a title row, a ribbon of tabs, a grid with
-//! headers, tabs and a status bar at the bottom); the palette is the house's own (MK Sigma's),
+//! layout follows online spreadsheets (a quiet header with the menus, one slim toolbar, a grid
+//! with headers, tabs and a status bar at the bottom); the palette is the house's own (MK Sigma's),
 //! accented with Morrison Kühlsen's blue until MK Perth's brand is chosen (#18).
 
 use egui::{Color32, Stroke, Visuals};
@@ -8,9 +8,9 @@ use egui::{Color32, Stroke, Visuals};
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tokens {
     pub dark: bool,
-    /// Behind everything: the title row, the tab bar, the status bar.
+    /// Behind everything, the toolbar's band and the status bar.
     pub window: Color32,
-    /// The ribbon's panel and the cards (syntax, steps, Output).
+    /// The header and the cards (syntax, steps, Output).
     pub ribbon: Color32,
     pub border: Color32,
     pub text: Color32,

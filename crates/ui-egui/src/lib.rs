@@ -1,13 +1,13 @@
-//! MK Perth's window, in the house's layout (MK Sigma's): a title row and a ribbon of tabs; a
-//! rail of views on the left; the Activities view (the table beside the Gantt chart) with the
+//! MK Perth's window: a quiet header (the name, the menus) over one slim toolbar; a rail of
+//! views on the left; the Activities view (the table beside the Gantt chart) with the
 //! selected activity's calculation under it; its details on the right; a Filters strip at the
 //! edge; a status bar with the zoom. The UI only reads the session and acts through
 //! `Session::run`.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod activities;
+mod chrome;
 pub mod icons;
-mod ribbon;
 pub mod theme;
 
 use std::path::{Path, PathBuf};
@@ -21,7 +21,6 @@ use serde_json::json;
 pub use activities::{Column, Editing, Options};
 pub use mkperth_engine::core::Date;
 pub use mkperth_engine::i18n;
-pub use ribbon::Tab;
 pub use theme::Tokens;
 
 use icons::Icon;
@@ -101,8 +100,8 @@ pub struct PerthApp {
     /// The activity selected, by index in the project.
     pub selected: Option<usize>,
     pub status: Option<Status>,
-    pub tab: Tab,
-    pub ribbon_collapsed: bool,
+    /// The toolbar under the menus is hidden (Ctrl+F1).
+    pub toolbar_hidden: bool,
     pub view: View,
     pub options: Options,
     /// The pane open beside the strip at the right edge, if any.
@@ -197,8 +196,7 @@ impl PerthApp {
             services,
             selected: None,
             status: None,
-            tab: Tab::default(),
-            ribbon_collapsed: false,
+            toolbar_hidden: false,
             view: View::default(),
             options: Options { late_bars: true, links: true, ..Options::default() },
             side: None,
@@ -270,8 +268,8 @@ impl PerthApp {
         }
     }
 
-    fn act(&mut self, ctx: &egui::Context, action: ribbon::Action) {
-        use ribbon::Action;
+    fn act(&mut self, ctx: &egui::Context, action: chrome::Action) {
+        use chrome::Action;
         match action {
             Action::Open => self.pick_and_open(),
             Action::Save => self.save(),
@@ -290,6 +288,7 @@ impl PerthApp {
             Action::View(view) => self.view = view,
             Action::Theme(preference) => ctx.set_theme(preference),
             Action::ToggleAutoSave => self.autosave = !self.autosave,
+            Action::ToggleToolbar => self.toolbar_hidden = !self.toolbar_hidden,
             Action::Search => self.side = Some(Side::Filters),
             Action::Language(lang) => {
                 i18n::set(lang);
@@ -394,8 +393,8 @@ impl PerthApp {
         if shortcut(egui::Modifiers::COMMAND, egui::Key::O) {
             self.pick_and_open();
         }
-        if shortcut(egui::Modifiers::COMMAND, egui::Key::F1) {
-            self.ribbon_collapsed = !self.ribbon_collapsed;
+        if ctx.input_mut(|i| i.consume_shortcut(&chrome::TOGGLE_TOOLBAR)) {
+            self.toolbar_hidden = !self.toolbar_hidden;
         }
         if shortcut(egui::Modifiers::NONE, egui::Key::F9) {
             self.run("project.schedule", json!(null));
@@ -424,12 +423,13 @@ impl PerthApp {
         let t = Tokens::get(ui.ctx());
         let whole = ui.max_rect().expand(8.0);
         ui.painter().rect_filled(whole, 0.0, t.window);
-        // The chrome — title row, tabs and ribbon — is one surface, painted once its height is
-        // known.
+        // The chrome — header and toolbar — is one surface, painted once its height is known.
         let chrome = ui.painter().add(egui::Shape::Noop);
         ui.spacing_mut().item_spacing.y = 0.0;
-        let state = ribbon::State {
-            title: &document,
+        let state = chrome::State {
+            name: &name,
+            modified: self.session.modified,
+            has_file: self.session.path.is_some(),
             autosave: self.autosave,
             critical_only: self.options.critical_only,
             late_bars: self.options.late_bars,
@@ -443,13 +443,13 @@ impl PerthApp {
             undo: self.session.undo_label(),
             redo: self.session.redo_label(),
             selected: self.selected.is_some(),
+            toolbar_hidden: self.toolbar_hidden,
         };
         let mut actions = Vec::new();
-        actions.extend(ribbon::title_bar(ui, &state));
-        actions.extend(ribbon::ribbon(ui, &mut self.tab, &mut self.ribbon_collapsed, &state));
+        actions.extend(chrome::header(ui, &state));
+        actions.extend(chrome::toolbar(ui, &state));
         let bottom = ui.cursor().top();
         ui.painter().set(chrome, egui::Shape::rect_filled(egui::Rect::from_min_max(whole.min, egui::pos2(whole.right(), bottom)), 0.0, t.ribbon));
-        ui.painter().hline(whole.x_range(), bottom, egui::Stroke::new(1.0, t.border));
         for action in actions {
             self.act(ui.ctx(), action);
         }
@@ -558,7 +558,7 @@ impl PerthApp {
         theme::card(&t).show(ui, |ui| {
             ui.set_min_size(egui::vec2(ui.available_width(), ui.available_height()));
             schedule = theme::pane_header(ui, Icon::List, &tr!("pane-calculation"), &tr!("pane-calculation-tip"), |ui| {
-                let run = ribbon::accent_button(ui, Icon::Run, &tr!("schedule")).on_hover_text(tr!("schedule-tip")).clicked();
+                let run = chrome::accent_button(ui, Icon::Run, &tr!("schedule")).on_hover_text(tr!("schedule-tip")).clicked();
                 if self.selected.is_some() {
                     ui.add_space(6.0);
                     export = ui.button(tr!("export-tex")).on_hover_text(tr!("export-tex-tip")).clicked();

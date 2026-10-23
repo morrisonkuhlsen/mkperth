@@ -96,9 +96,10 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   bridge; resources (M4).
 
 ## M3 — the Activities window
-- *Started:* the house's layout (MK Sigma's): a title row (the mark, AutoSave, Save, Undo and
-  Redo, the project's name, theme and search), File and the Home, Project and View tabs with the
-  ribbon's large buttons, the rail of views, the Calculation pane under the activities (the
+- *Started:* a quiet header as in an online spreadsheet (the mark, the project's name and
+  whether it is saved, the File, Edit, Project and View menus under it, search, theme and the
+  Schedule button) over one slim toolbar of small icons (undo and redo, add and delete, what the
+  chart shows, the time scale, the data date), the rail of views, the Calculation pane under the activities (the
   selected activity's dates step by step, #5) with a Schedule button, the Details pane on the
   right (facts, constraints, dates and floats, predecessors and successors), the Filters strip
   (find by ID or name, critical only, late bars) and the status bar with the zoom; Save and Save

@@ -18,7 +18,7 @@ fn opens_on_the_sample_scheduled() {
     let mut h = harness(PerthApp::default());
     let s = h.state().session.schedule.as_ref().unwrap();
     assert!(s.activities.iter().any(|a| a.critical));
-    assert!(h.query_all_by_label("Schedule").next().is_some() && h.query_by_label("Open").is_some());
+    assert!(h.query_all_by_label("Schedule").next().is_some() && h.query_by_label("File").is_some());
     // Details and Filters wait folded in the strip; a click opens one beside it, another closes it.
     assert!(h.state().side.is_none());
     h.get_by_label("Details").click();
@@ -53,7 +53,9 @@ fn f9_schedules_and_open_uses_the_dialog() {
     h.key_press(egui::Key::F9);
     h.run_steps(2);
     assert_eq!(h.state().status, Some(mkperth_ui_egui::Status::Info("Scheduled".into())));
-    h.get_by_label("Open").click();
+    h.get_by_label("File").click();
+    h.run_steps(2);
+    h.get_by_label_contains("Open…").click();
     h.run_steps(3);
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(asked.get(), 1);
@@ -96,12 +98,10 @@ fn add_edit_in_place_undo_and_delete() {
 }
 
 #[test]
-fn progress_is_typed_in_details_and_the_ribbon() {
+fn progress_is_typed_in_details_and_the_toolbar() {
     use egui::accesskit::Role;
     let mut h = harness(PerthApp::default());
-    // The data date on the Project tab, typed as it's shown.
-    h.get_by_label("Project").click();
-    h.run_steps(2);
+    // The data date in the toolbar, typed as it's shown.
     h.get_by_role_and_label(Role::TextInput, "Data date").click();
     h.run_steps(1);
     h.get_by_role_and_label(Role::TextInput, "Data date").type_text("10-Nov-26");
@@ -228,4 +228,18 @@ fn a_band_is_added_and_deleted_in_chart_notes() {
     h.query_all_by_label("Delete this note").next().unwrap().click();
     h.run_steps(2);
     assert_eq!(h.state().session.project.bands.len(), before);
+}
+
+#[test]
+fn the_toolbar_hides_and_comes_back() {
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Hide the toolbar").click();
+    h.run_steps(2);
+    assert!(h.state().toolbar_hidden);
+    assert!(h.query_by_label("Data date").is_none(), "the toolbar is gone");
+    // Its arrow waits in the header to bring it back.
+    h.get_by_label("Show the toolbar").click();
+    h.run_steps(2);
+    assert!(!h.state().toolbar_hidden);
+    assert!(h.query_by_label("Data date").is_some());
 }

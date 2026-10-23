@@ -50,7 +50,7 @@ pub(crate) struct Events {
     pub commit: Option<(usize, Column, String)>,
 }
 
-/// What the view shows, from the ribbon and the Filters pane.
+/// What the view shows, from the toolbar, the View menu and the Filters pane.
 #[derive(Debug, Clone, Default)]
 pub struct Options {
     pub critical_only: bool,
