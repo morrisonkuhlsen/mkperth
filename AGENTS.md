@@ -44,7 +44,7 @@ People trust MK Perth with their plans; a crash loses their work. **This outrank
 The Julia package (`../julia/packages/Perth.jl`, MIT, the user's own) is a sibling, never a dependency: no FFI, no Julia at run time.
 - **Format:** its project JSON is a first-class format here, read and written without loss; what only MK Perth's model has travels in a preserved `extra` field.
 - **Oracle:** networks both can express (finish-to-start, start-to-start and finish-to-finish with lags, business-day calendars, PERT) are scheduled by Perth.jl and its dates re-typed as test constants; a disagreement is an issue in one repository or the other.
-- **Bridge:** Perth.jl reaches MK Perth through its CLI or MCP server (a package extension running a subprocess), for XER and P6 XML and the P6-style scheduling options.
+- **Bridge:** Perth.jl reaches MK Perth through `mkperth-cli` (plain functions in Perth.jl's `src/mkperth.jl` running a subprocess, no dependency): `import_p6xml`, `export_p6xml`, `schedule_p6`. The CLI's verbs, its `--format json` keys and its exit codes are a contract: change them only with the bridge.
 
 ## Roadmap
 [`docs/roadmap.md`](docs/roadmap.md) is the plan and the progress log; [`docs/scheduling-parity.md`](docs/scheduling-parity.md) lists P6's scheduling options and where each stands. Update them whenever work lands.

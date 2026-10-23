@@ -89,7 +89,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   get_schedule, run_command with every engine command, explain_activity, save_project,
   export_latex); JSON-RPC's error codes, batches, lines that aren't UTF-8 or JSON or are too
   long answered and survived; a test drives the binary end to end.
-- **Next:** the Perth.jl bridge (#15) on the CLI.
+  The Perth.jl bridge (#15), in Perth.jl: `import_p6xml`, `export_p6xml` and `schedule_p6`
+  run `mkperth-cli` (on PATH or `ENV["MKPERTH_CLI"]`), no FFI and no dependency; Perth.jl's
+  tests hold MK Perth's dates and float against its own `schedule!` and `slack`.
+- **Next:** the CLI's contract (verbs, `--format json` keys, exit codes) kept stable for the
+  bridge; resources (M4).
 
 ## M3 — the Activities window
 - *Started:* the house's layout (MK Sigma's): a title row (the mark, AutoSave, Save, Undo and
