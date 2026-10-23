@@ -76,6 +76,8 @@ pub enum DetailsTab {
     Notes,
     /// Threads of comments on the activity.
     Comments,
+    /// The resources assigned to the activity.
+    Resources,
 }
 
 /// The panes the strip at the right edge opens.
@@ -846,6 +848,7 @@ impl PerthApp {
                 (DetailsTab::Status, tr!("details-status")),
                 (DetailsTab::Relationships, tr!("details-relationships")),
                 (DetailsTab::Notes, tr!("details-notes")),
+                (DetailsTab::Resources, tr!("details-resources")),
                 (DetailsTab::Comments, tr!("details-comments")),
             ] {
                 ui.selectable_value(&mut tab, k, name);
@@ -998,6 +1001,12 @@ impl PerthApp {
                     }
                     if let Some((p, s)) = remove {
                         pending = Some(("relationship.delete", json!({"predecessor": p, "successor": s})));
+                    }
+                }
+                DetailsTab::Resources => {
+                    let asked = resources_view::activity_assignments(ui, &t, project, &a.id, &mut self.resource_form);
+                    if let Some(p) = asked.into_iter().next() {
+                        pending = Some(p);
                     }
                 }
                 DetailsTab::Comments => {

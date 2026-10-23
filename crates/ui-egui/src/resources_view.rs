@@ -19,8 +19,91 @@ pub struct ResourceForm {
     pub kind: ResourceKind,
     pub role: String,
     pub activity: String,
+    /// The resource Details' Resources tab is about to assign.
+    pub resource: String,
     /// Fields being typed for the selected resource or its assignments: (key, text).
     typing: Vec<(String, String)>,
+}
+
+/// Details' Resources tab: the assignments on `activity` (who, or which role, and the work
+/// budgeted, done and left, typed in place), each removed, and a resource assigned from a list.
+/// The commands to run.
+pub(crate) fn activity_assignments(
+    ui: &mut egui::Ui,
+    t: &Tokens,
+    project: &Project,
+    activity: &str,
+    form: &mut ResourceForm,
+) -> Vec<(&'static str, Value)> {
+    let mut pending = Vec::new();
+    if project.activities.iter().any(|a| a.parent.as_deref() == Some(activity)) {
+        ui.label(egui::RichText::new(tr!("details-resources-summary")).size(12.0).color(t.text_dim));
+        return pending;
+    }
+    let on: Vec<_> = project.assignments.iter().filter(|a| a.activity == activity).collect();
+    if on.is_empty() {
+        ui.label(egui::RichText::new(tr!("details-resources-none")).size(12.0).color(t.text_dim));
+    } else {
+        egui::Grid::new("activity-assignments").striped(true).num_columns(5).spacing(egui::vec2(8.0, 6.0)).show(ui, |ui| {
+            for head in ["assignment-who", "assignment-planned", "assignment-actual", "assignment-remaining"] {
+                ui.label(egui::RichText::new(tr!(head)).size(11.5).color(t.header_text).strong());
+            }
+            ui.label("");
+            ui.end_row();
+            for a in on {
+                let resource = a.resource.as_deref().and_then(|id| project.resources.iter().find(|r| r.id == id));
+                let who = match (resource, &a.role) {
+                    (Some(r), _) => {
+                        let unit = if r.kind == ResourceKind::Material { r.unit.clone() } else { "h".to_string() };
+                        format!("{} ({unit})", r.name)
+                    }
+                    (None, Some(role)) => {
+                        let name = project.roles.iter().find(|r| r.id == *role).map_or(role.as_str(), |r| r.name.as_str());
+                        tr!("assignment-role-only", role = name)
+                    }
+                    (None, None) => String::new(),
+                };
+                let l = ui.label(egui::RichText::new(who).size(12.0)).id;
+                let target = match &a.resource {
+                    Some(r) => json!({"activity": activity, "resource": r}),
+                    None => json!({"activity": activity, "role": a.role}),
+                };
+                let key = |what: &str| format!("{activity}:{}:{what}", a.resource.clone().or(a.role.clone()).unwrap_or_default());
+                for (what, value) in [("planned", a.planned), ("actual", a.actual), ("remaining", a.remaining_units())] {
+                    if let Some(v) = field(ui, &mut form.typing, &key(what), units_text(value), l, 52.0) {
+                        let mut params = target.clone();
+                        if let Some(map) = params.as_object_mut() {
+                            map.insert(what.into(), read_units(&v).map_or(json!("unreadable"), |u| json!(u)));
+                        }
+                        pending.push(("assignment.edit", params));
+                    }
+                }
+                if crate::icon_button(ui, Icon::Close, &tr!("assignment-delete", activity = activity)) {
+                    pending.push(("assignment.delete", target.clone()));
+                }
+                ui.end_row();
+            }
+        });
+    }
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        let l = ui.label(egui::RichText::new(tr!("details-resources-add")).size(12.0).color(t.text_dim)).id;
+        let shown = project.resources.iter().find(|r| r.id == form.resource).map_or_else(|| tr!("details-resources-pick"), |r| r.name.clone());
+        let combo = egui::ComboBox::from_id_salt("details-assign").selected_text(shown).width(170.0).show_ui(ui, |ui| {
+            for r in &project.resources {
+                ui.selectable_value(&mut form.resource, r.id.clone(), format!("{} · {}", r.id, r.name));
+            }
+        });
+        combo.response.labelled_by(l);
+        if ui.add_enabled(!form.resource.is_empty(), egui::Button::new(tr!("assignment-add"))).clicked() {
+            pending.push(("assignment.add", json!({"activity": activity, "resource": form.resource})));
+            form.resource.clear();
+        }
+    });
+    if project.resources.is_empty() {
+        ui.label(egui::RichText::new(tr!("details-resources-go")).size(11.5).color(t.text_dim));
+    }
+    pending
 }
 
 /// Hundredths of a unit as text: `40`, `12.5`.

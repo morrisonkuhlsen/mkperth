@@ -370,3 +370,27 @@ fn comments_are_written_and_resolved_in_details() {
     h.run_steps(3);
     assert!(h.state().session.project.comments[0].resolved);
 }
+
+/// Details' Resources tab: a resource assigned to the selected activity, its work typed in place.
+#[test]
+fn an_activity_takes_resources_in_details() {
+    use egui::accesskit::Role;
+    let mut h = harness(PerthApp::default());
+    h.state_mut().run("resource.add", serde_json::json!({"name": "Ana"}));
+    h.state_mut().selected = Some(2);
+    h.state_mut().side = Some(mkperth_ui_egui::Side::Details);
+    h.state_mut().details_tab = mkperth_ui_egui::DetailsTab::Resources;
+    h.state_mut().resource_form.resource = "R1".into();
+    h.run_steps(2);
+    h.get_by_label("Assign").click();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project.assignments.len(), 1);
+    assert_eq!(h.state().session.project.assignments[0].activity, "A10");
+    // Hours done, typed where they show: the second field on Ana's row (budgeted, actual, left).
+    h.get_all_by_role_and_label(Role::TextInput, "Ana (h)").nth(1).unwrap().click();
+    h.run_steps(1);
+    h.get_all_by_role_and_label(Role::TextInput, "Ana (h)").nth(1).unwrap().type_text("6");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(h.state().session.project.assignments[0].actual, 600);
+}

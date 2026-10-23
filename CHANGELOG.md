@@ -20,6 +20,9 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Details' Resources tab: the resources (and roles still to staff) on the selected activity,
+  their budgeted, actual and remaining work typed in place, removed, and a resource assigned
+  from a list.
 - A resource's work by week (#20): its assignments' budgets spread over their activities'
   working days, as bars under its assignments in the Resources view, red in a week it has more
   work than it can do, what it can do as a dashed line (its units an hour over its calendar's
