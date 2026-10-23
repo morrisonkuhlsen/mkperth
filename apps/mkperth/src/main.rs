@@ -26,6 +26,29 @@ impl eframe::App for App {
     }
 }
 
+/// A file in the platform's per-user configuration folder, under `mkperth`.
+#[allow(clippy::disallowed_methods)] // the desktop app is native only
+fn settings_file(name: &str) -> Option<std::path::PathBuf> {
+    let base = if cfg!(target_os = "windows") {
+        std::env::var_os("APPDATA").map(std::path::PathBuf::from)
+    } else if cfg!(target_os = "macos") {
+        std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Library/Application Support"))
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
+    };
+    base.map(|b| b.join("mkperth").join(name))
+}
+
+/// The recent projects kept by earlier runs, newest first.
+fn load_recent() -> Vec<std::path::PathBuf> {
+    settings_file("recent.txt")
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .map(|text| text.lines().filter(|l| !l.trim().is_empty()).take(mkperth_ui_egui::backstage::RECENT).map(std::path::PathBuf::from).collect())
+        .unwrap_or_default()
+}
+
 /// The interface's language: the system's.
 #[allow(clippy::disallowed_methods)] // the desktop app is native only
 fn language() -> mkperth_ui_egui::i18n::Lang {
@@ -84,6 +107,19 @@ fn main() -> eframe::Result {
             };
             dialog.set_file_name(suggested).save_file()
         })),
+        save_recent: Some(Box::new(|files: &[std::path::PathBuf]| {
+            if let Some(file) = settings_file("recent.txt") {
+                let text: Vec<String> = files.iter().map(|p| p.display().to_string()).collect();
+                let _ = file.parent().map(std::fs::create_dir_all);
+                let _ = std::fs::write(
+                    file,
+                    text.join(
+                        "
+",
+                    ),
+                );
+            }
+        })),
         today: Some(Box::new(|| {
             use chrono::Datelike as _;
             let d = chrono::Local::now().date_naive();
@@ -91,6 +127,7 @@ fn main() -> eframe::Result {
         })),
     };
     let mut app = PerthApp::new(services);
+    app.recent = load_recent();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(path) = args.iter().find(|a| !a.starts_with("--")) {
         app.open(std::path::Path::new(path));

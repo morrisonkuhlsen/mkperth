@@ -77,10 +77,11 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 29] = [
+pub const COMMANDS: [&str; 30] = [
     "project.new",
     "project.open",
     "project.save",
+    "project.export",
     "project.sample",
     "project.schedule",
     "activity.export-tex",
@@ -174,6 +175,14 @@ impl Session {
                     None => self.path.clone().ok_or_else(|| EngineError::Param(id.to_string(), "path".to_string()))?,
                 };
                 self.save(&path)
+            }
+            // A copy in the format of `path`'s extension: the project stays where it was, as it was.
+            "project.export" => {
+                let path = Path::new(param("path")?);
+                let (text, warnings) = if is_p6(path) { mkperth_p6xml::write(&self.project) } else { mkperth_perth::write(&self.project) };
+                write_atomic(path, text.as_bytes()).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
+                self.warnings = warnings;
+                Ok(())
             }
             "project.sample" => {
                 *self = Session::default();
@@ -498,6 +507,22 @@ mod tests {
         // The session goes on: undo still takes back the edit before.
         s.run("edit.undo", &Value::Null).unwrap();
         assert_ne!(s.project, project);
+    }
+
+    /// An export writes a copy in the extension's format and leaves the project where it was.
+    #[test]
+    fn an_export_is_a_copy() {
+        let dir = std::env::temp_dir().join(format!("mkperth-export-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut s = Session::default();
+        s.run("activity.edit", &json!({"id": "A10", "name": "Survey"})).unwrap();
+        for name in ["copy.xml", "copy.json"] {
+            let path = dir.join(name);
+            s.run("project.export", &json!({"path": path.display().to_string()})).unwrap();
+            assert!(std::fs::read_to_string(&path).unwrap().contains("Survey"));
+        }
+        assert!(s.path.is_none() && s.modified, "still unsaved, still nowhere");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// A new project is empty, from its start, with nothing to undo or save.

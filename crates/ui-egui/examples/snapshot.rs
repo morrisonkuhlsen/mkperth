@@ -2,7 +2,7 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang CODE]
-//!  [--select N] [--side details|filters|notes|calendars] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--splash] [--view activities|resources] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
+//!  [--select N] [--side details|filters|notes|calendars] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--splash] [--backstage home|new|open|info|export|about] [--view activities|resources] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
 //!  `--click` clicks what has that accessible name, in order: `--click View --click Theme` opens a submenu)
 
 use egui_kittest::kittest::Queryable as _;
@@ -26,6 +26,19 @@ fn main() -> Result<(), String> {
             "--dark" => dark = true,
             "--toolbar-hidden" => app.toolbar_hidden = true,
             "--splash" => splash = true,
+            "--backstage" => {
+                i += 1;
+                use mkperth_ui_egui::backstage::Page;
+                app.backstage = Some(match args.get(i).map(String::as_str) {
+                    Some("home") => Page::Home,
+                    Some("new") => Page::New,
+                    Some("open") => Page::Open,
+                    Some("info") => Page::Info,
+                    Some("export") => Page::Export,
+                    Some("about") => Page::About,
+                    _ => return Err("--backstage home|new|open|info|export|about".into()),
+                });
+            }
             "--view" => {
                 i += 1;
                 app.view = match args.get(i).map(String::as_str) {

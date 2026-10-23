@@ -20,6 +20,13 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- The File backstage, as MK Sigma's and MK aeGIS's: File in the header opens a page over the
+  window, a column in Morrison Kühlsen's ink (Home, New, Open; Info, Save, Save As, Export;
+  About, Exit) beside the place's page: cards to start a new project, the sample or open one,
+  the recent projects (kept between runs), the project's facts and AutoSave, and Export as P6
+  XML, Perth.jl JSON or the selected activity's calculation in LaTeX. Esc or Back returns.
+- `project.export`: a copy as P6 XML or Perth JSON by the path's extension; the open project
+  keeps its file and its unsaved changes.
 - The Resources view, second on the rail (and View > Resources): the resources in a table (type,
   unit, units an hour, calendar, roles, hours budgeted), added and deleted there, the roles they
   fill, and the selected resource's details and assignments (budgeted, actual and remaining

@@ -6,6 +6,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod activities;
+pub mod backstage;
 mod calendars;
 mod chrome;
 pub mod icons;
@@ -35,6 +36,8 @@ pub type PickOpen = Box<dyn Fn() -> Option<PathBuf>>;
 /// Shows a save-file dialog suggesting a file name; `None` when cancelled.
 pub type PickSave = Box<dyn Fn(&str) -> Option<PathBuf>>;
 pub type Today = Box<dyn Fn() -> Option<Date>>;
+/// Keeps the recent projects, newest first, for the next run.
+pub type SaveRecent = Box<dyn Fn(&[PathBuf])>;
 
 /// What the platform provides: dialogs come in from the app, so the UI stays testable.
 #[derive(Default)]
@@ -43,6 +46,7 @@ pub struct Services {
     pub pick_save: Option<PickSave>,
     /// Today where the person is, for the chart's line.
     pub today: Option<Today>,
+    pub save_recent: Option<SaveRecent>,
 }
 
 /// The views the rail switches between.
@@ -111,6 +115,10 @@ pub struct PerthApp {
     pub status: Option<Status>,
     /// The toolbar under the menus is hidden (Ctrl+F1).
     pub toolbar_hidden: bool,
+    /// The File backstage, when it is open, and the page it shows.
+    pub backstage: Option<backstage::Page>,
+    /// The projects opened or saved lately, newest first.
+    pub recent: Vec<PathBuf>,
     pub view: View,
     pub options: Options,
     /// The pane open beside the strip at the right edge, if any.
@@ -211,6 +219,8 @@ impl PerthApp {
             selected: None,
             status: None,
             toolbar_hidden: false,
+            backstage: None,
+            recent: Vec::new(),
             view: View::default(),
             options: Options { late_bars: true, links: true, ..Options::default() },
             side: None,
@@ -251,6 +261,9 @@ impl PerthApp {
             },
             Err(e) => Status::Error(e.to_string()),
         });
+        if matches!(id, "project.open" | "project.save") && matches!(self.status, Some(Status::Info(_) | Status::Warning(_))) {
+            self.remember();
+        }
         if matches!(id, "project.new" | "project.open" | "project.sample") {
             self.selected = None;
         }
@@ -259,6 +272,65 @@ impl PerthApp {
             self.selected = None;
         }
         self.calculation = None;
+    }
+
+    /// Puts the open project's file first among the recent ones, and keeps the list.
+    fn remember(&mut self) {
+        let Some(path) = self.session.path.clone() else { return };
+        self.recent.retain(|p| *p != path);
+        self.recent.insert(0, path);
+        self.recent.truncate(backstage::RECENT);
+        if let Some(save) = &self.services.save_recent {
+            save(&self.recent);
+        }
+    }
+
+    /// A copy of the project as `extension` (`xml` for P6, `json` for Perth), where the person
+    /// picks; the open project stays as it was.
+    pub fn export(&mut self, extension: &str) {
+        let suggested = format!("{}.{extension}", self.session.project.name.replace(['/', '\\'], "-"));
+        if let Some(path) = self.services.pick_save.as_ref().and_then(|pick| pick(&suggested)) {
+            self.run("project.export", json!({"path": path.display().to_string()}));
+        }
+    }
+
+    /// What the File backstage asked for.
+    fn backstage_act(&mut self, ctx: &egui::Context, action: backstage::Action) {
+        use backstage::Action;
+        let close = |app: &mut Self| {
+            if matches!(app.status, Some(Status::Info(_) | Status::Warning(_))) {
+                app.backstage = None;
+            }
+        };
+        match action {
+            Action::Back => self.backstage = None,
+            Action::Page(page) => self.backstage = Some(page),
+            Action::Blank => {
+                self.new_project();
+                close(self);
+            }
+            Action::Sample => {
+                self.run("project.sample", json!(null));
+                close(self);
+            }
+            Action::Open(path) => {
+                self.open(&path);
+                close(self);
+            }
+            Action::Browse => {
+                let before = self.session.path.clone();
+                self.pick_and_open();
+                if self.session.path != before {
+                    close(self);
+                }
+            }
+            Action::Save => self.save(),
+            Action::SaveAs => self.save_as(),
+            Action::Export(extension) => self.export(extension),
+            Action::Latex => self.export_latex(),
+            Action::ToggleAutoSave => self.autosave = !self.autosave,
+            Action::Exit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+        }
     }
 
     /// A new, empty project from today (or, without a clock, from the open project's start).
@@ -295,11 +367,7 @@ impl PerthApp {
     fn act(&mut self, ctx: &egui::Context, action: chrome::Action) {
         use chrome::Action;
         match action {
-            Action::New => self.new_project(),
-            Action::Open => self.pick_and_open(),
-            Action::Save => self.save(),
-            Action::SaveAs => self.save_as(),
-            Action::Sample => self.run("project.sample", json!(null)),
+            Action::Backstage => self.backstage = Some(backstage::Page::Home),
             Action::Schedule => self.run("project.schedule", json!(null)),
             Action::Undo => self.run("edit.undo", json!(null)),
             Action::Redo => self.run("edit.redo", json!(null)),
@@ -313,7 +381,6 @@ impl PerthApp {
             Action::TimeScale(step) => self.time_scale(step),
             Action::View(view) => self.view = view,
             Action::Theme(preference) => ctx.set_theme(preference),
-            Action::ToggleAutoSave => self.autosave = !self.autosave,
             Action::ToggleToolbar => self.toolbar_hidden = !self.toolbar_hidden,
             Action::Search => self.side = Some(Side::Filters),
             Action::Calendars => self.side = Some(Side::Calendars),
@@ -461,6 +528,7 @@ impl PerthApp {
             modified: self.session.modified,
             has_file: self.session.path.is_some(),
             autosave: self.autosave,
+            backstage: self.backstage.is_some(),
             critical_only: self.options.critical_only,
             late_bars: self.options.late_bars,
             links: self.options.links,
@@ -478,6 +546,39 @@ impl PerthApp {
         };
         let mut actions = Vec::new();
         actions.extend(chrome::header(ui, &state));
+        // The File backstage covers everything under the header.
+        if let Some(page) = self.backstage {
+            let bottom = ui.cursor().top();
+            ui.painter().set(chrome, egui::Shape::rect_filled(egui::Rect::from_min_max(whole.min, egui::pos2(whole.right(), bottom)), 0.0, t.ribbon));
+            for action in actions {
+                self.act(ui.ctx(), action);
+            }
+            let schedule = self.session.schedule.as_ref().ok();
+            let finish = schedule.map(|s| show_date(s.finish));
+            let selected = self.selected.and_then(|i| self.session.project.activities.get(i)).map(|a| a.id.clone());
+            let p = &self.session.project;
+            let view = backstage::View {
+                page,
+                recent: &self.recent,
+                name: &name,
+                file_path: self.session.path.as_deref(),
+                modified: self.session.modified,
+                autosave: self.autosave,
+                activities: p.activities.len(),
+                relationships: p.relationships.len(),
+                resources: p.resources.len(),
+                calendars: 1 + p.calendars.len(),
+                finish,
+                selected: selected.as_deref(),
+            };
+            if let Some(action) = backstage::show(ui, &view) {
+                self.backstage_act(ui.ctx(), action);
+            }
+            if self.autosave && self.session.modified && self.session.path.is_some() {
+                self.run("project.save", json!(null));
+            }
+            return;
+        }
         actions.extend(chrome::toolbar(ui, &state));
         let bottom = ui.cursor().top();
         ui.painter().set(chrome, egui::Shape::rect_filled(egui::Rect::from_min_max(whole.min, egui::pos2(whole.right(), bottom)), 0.0, t.ribbon));

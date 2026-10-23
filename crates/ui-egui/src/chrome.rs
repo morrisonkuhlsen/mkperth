@@ -13,11 +13,8 @@ use mkperth_engine::i18n::{self, Lang, tr};
 /// What was asked for in the header, a menu or the toolbar this frame.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Action {
-    New,
-    Open,
-    Save,
-    SaveAs,
-    Sample,
+    /// The File backstage.
+    Backstage,
     Schedule,
     Undo,
     Redo,
@@ -33,7 +30,6 @@ pub(crate) enum Action {
     TimeScale(i8),
     View(View),
     Theme(egui::ThemePreference),
-    ToggleAutoSave,
     ToggleToolbar,
     Search,
     Calendars,
@@ -48,6 +44,8 @@ pub(crate) struct State<'a> {
     /// The project has a file to be saved to.
     pub has_file: bool,
     pub autosave: bool,
+    /// The File backstage is open.
+    pub backstage: bool,
     pub critical_only: bool,
     pub late_bars: bool,
     pub links: bool,
@@ -234,30 +232,12 @@ fn check(ui: &mut egui::Ui, on: bool, text: &str) -> bool {
 fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     let mut action = None;
     let mut set = |a: Action| action = Some(a);
-    menu(ui, &tr!("file"), |ui| {
-        if item(ui, &tr!("new-menu"), Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::N)), true) {
-            set(Action::New);
-        }
-        if item(ui, &tr!("open-menu"), Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::O)), true) {
-            set(Action::Open);
-        }
-        if item(ui, &tr!("save-menu"), Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::S)), true) {
-            set(Action::Save);
-        }
-        if item(ui, &tr!("save-as-menu"), Some(KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::S)), true) {
-            set(Action::SaveAs);
-        }
-        ui.separator();
-        if item(ui, &tr!("sample-menu"), None, true) {
-            set(Action::Sample);
-        }
-        ui.separator();
-        let tip = if state.autosave { tr!("autosave-on-tip") } else { tr!("autosave-off-tip") };
-        let mut on = state.autosave;
-        if ui.checkbox(&mut on, tr!("autosave")).on_hover_text(tip).clicked() {
-            set(Action::ToggleAutoSave);
-        }
-    });
+    // File opens the backstage, as office suites do; its items live there.
+    let t = Tokens::get(ui.ctx());
+    let file = egui::Button::new(egui::RichText::new(tr!("file")).size(13.5).color(t.text)).frame_when_inactive(false).selected(state.backstage);
+    if ui.add(file).clicked() {
+        set(Action::Backstage);
+    }
     menu(ui, &tr!("menu-edit"), |ui| {
         let undo = state.undo.map_or_else(|| tr!("undo"), |l| tr!("undo-named", what = l));
         if item(ui, &undo, Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Z)), state.undo.is_some()) {

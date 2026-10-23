@@ -23,16 +23,16 @@ const MORRISON_KUHLSEN: &[u8] = include_bytes!("../../../docs/brand/morrison-kuh
 /// The largest image side decoded, against a corrupt header.
 const MAX_SIDE: usize = 4096;
 /// Morrison Kühlsen's ink, and the text on it.
-const INK: Color32 = Color32::from_rgb(0x14, 0x16, 0x1C);
-const ON_INK: Color32 = Color32::from_rgb(0xFF, 0xFF, 0xFF);
-const ON_INK_SOFT: Color32 = Color32::from_rgba_premultiplied(184, 184, 184, 184);
+pub(crate) const INK: Color32 = Color32::from_rgb(0x14, 0x16, 0x1C);
+pub(crate) const ON_INK: Color32 = Color32::from_rgb(0xFF, 0xFF, 0xFF);
+pub(crate) const ON_INK_SOFT: Color32 = Color32::from_rgba_premultiplied(184, 184, 184, 184);
 /// MK Perth's colour: lilac.
 pub const BRAND: Color32 = Color32::from_rgb(0xB7, 0x9C, 0xED);
 /// The artwork's lighter and deeper lilacs.
 const LILAC_LIGHT: Color32 = Color32::from_rgb(0xDD, 0xCD, 0xFA);
 const LILAC_DEEP: Color32 = Color32::from_rgb(0x7E, 0x5B, 0xC9);
-const NAME: &str = "MK Perth";
-const MOTTO: &str = "Festina lente";
+pub(crate) const NAME: &str = "MK Perth";
+pub(crate) const MOTTO: &str = "Festina lente";
 
 /// The program's parts, named in turn as the bar fills.
 fn components() -> [String; 12] {
@@ -136,7 +136,7 @@ fn paint(painter: &egui::Painter, ctx: &egui::Context, rect: Rect, progress: f32
 
 /// The artwork, drawn in code: on a violet dusk, a schedule's bars cascade down to a milestone,
 /// their relationships drawn as elbows, the critical ones in the brightest lilac.
-fn artwork(painter: &egui::Painter, art: Rect, k: f32) {
+pub(crate) fn artwork(painter: &egui::Painter, art: Rect, k: f32) {
     // The dusk: deep violet at the top left, lilac at the bottom right.
     let mut mesh = Mesh::default();
     for (pos, color) in [
@@ -215,7 +215,7 @@ fn artwork(painter: &egui::Painter, art: Rect, k: f32) {
 }
 
 /// The Morrison Kühlsen wordmark, white on clear, as a texture, loaded once per context.
-fn wordmark(ctx: &egui::Context) -> Option<TextureHandle> {
+pub(crate) fn wordmark(ctx: &egui::Context) -> Option<TextureHandle> {
     let id = egui::Id::unique("splash-morrison-kuhlsen");
     if let Some(texture) = ctx.data(|d| d.get_temp::<TextureHandle>(id)) {
         return Some(texture);

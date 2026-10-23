@@ -53,9 +53,11 @@ fn f9_schedules_and_open_uses_the_dialog() {
     h.key_press(egui::Key::F9);
     h.run_steps(2);
     assert_eq!(h.state().status, Some(mkperth_ui_egui::Status::Info("Scheduled".into())));
+    // File opens the backstage; its Open a project card the dialog.
     h.get_by_label("File").click();
     h.run_steps(2);
-    h.get_by_label_contains("Open…").click();
+    assert_eq!(h.state().backstage, Some(mkperth_ui_egui::backstage::Page::Home));
+    h.get_by_label("Open a project").click();
     h.run_steps(3);
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(asked.get(), 1);
@@ -256,16 +258,14 @@ fn the_rail_hides_and_shows_the_table() {
     assert!(!h.state().options.table_hidden);
 }
 
-/// File > New: an empty project from the day the app is told is today.
+/// File > New project: an empty project from the day the app is told is today.
 #[test]
 fn a_new_project_from_the_file_menu() {
     let services = Services { today: Some(Box::new(|| mkperth_ui_egui::Date::from_ymd(2026, 11, 6))), ..Services::default() };
     let mut h = harness(PerthApp::new(services));
-    // The toolbar's New activity would match too.
-    h.state_mut().toolbar_hidden = true;
     h.get_by_label("File").click();
     h.run_steps(2);
-    h.get_by_label_contains("New").click();
+    h.get_by_label("New project").click();
     h.run_steps(3);
     assert!(h.state().session.project.activities.is_empty());
     assert_eq!(h.state().session.project.start.to_string(), "2026-11-06");
@@ -317,4 +317,25 @@ fn resources_are_added_and_assigned_in_their_view() {
     let a = &h.state().session.project.assignments;
     assert_eq!(a.len(), 1);
     assert_eq!((a[0].activity.as_str(), a[0].planned), ("A10", 4000), "A10's 40 hours");
+}
+
+/// The backstage: its pages from the column, Esc back to the project; Back too.
+#[test]
+fn the_backstage_opens_its_pages_and_closes() {
+    use mkperth_ui_egui::backstage::Page;
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("File").click();
+    h.run_steps(2);
+    h.get_by_label("Info").click();
+    h.run_steps(2);
+    assert_eq!(h.state().backstage, Some(Page::Info));
+    assert!(h.query_by_label("AutoSave").is_some(), "AutoSave lives on Info");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    assert_eq!(h.state().backstage, None);
+    h.get_by_label("File").click();
+    h.run_steps(2);
+    h.get_by_label("Back to the project").click();
+    h.run_steps(2);
+    assert_eq!(h.state().backstage, None);
 }
