@@ -120,6 +120,8 @@ fn main() -> eframe::Result {
                 );
             }
         })),
+        user: Some(Box::new(|| ["USERNAME", "USER"].iter().find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty())).unwrap_or_default())),
+        now: Some(Box::new(|| chrono::Local::now().format("%Y-%m-%d %H:%M").to_string())),
         today: Some(Box::new(|| {
             use chrono::Datelike as _;
             let d = chrono::Local::now().date_naive();

@@ -9,6 +9,7 @@ mod activities;
 pub mod backstage;
 mod calendars;
 mod chrome;
+mod comments_ui;
 pub mod icons;
 mod resources_view;
 pub mod splash;
@@ -24,6 +25,7 @@ use serde_json::json;
 
 pub use activities::{Column, Editing, Options};
 pub use calendars::{CalendarForm, periods_text, read_periods};
+pub use comments_ui::CommentForm;
 pub use mkperth_engine::core::Date;
 pub use mkperth_engine::i18n;
 pub use resources_view::ResourceForm;
@@ -36,6 +38,8 @@ pub type PickOpen = Box<dyn Fn() -> Option<PathBuf>>;
 /// Shows a save-file dialog suggesting a file name; `None` when cancelled.
 pub type PickSave = Box<dyn Fn(&str) -> Option<PathBuf>>;
 pub type Today = Box<dyn Fn() -> Option<Date>>;
+/// Who is using the app (signs comments), and the time now as comments show it.
+pub type Who = Box<dyn Fn() -> String>;
 /// Keeps the recent projects, newest first, for the next run.
 pub type SaveRecent = Box<dyn Fn(&[PathBuf])>;
 
@@ -47,6 +51,10 @@ pub struct Services {
     /// Today where the person is, for the chart's line.
     pub today: Option<Today>,
     pub save_recent: Option<SaveRecent>,
+    /// The person's name, for the comments they write.
+    pub user: Option<Who>,
+    /// The time now (`2026-10-23 14:05`), for the comments written.
+    pub now: Option<Who>,
 }
 
 /// The views the rail switches between.
@@ -66,6 +74,8 @@ pub enum DetailsTab {
     Status,
     Relationships,
     Notes,
+    /// Threads of comments on the activity.
+    Comments,
 }
 
 /// The panes the strip at the right edge opens.
@@ -140,6 +150,8 @@ pub struct PerthApp {
     /// The resource selected in the Resources view, by index, and what that view is typing.
     pub resource_selected: Option<usize>,
     pub resource_form: ResourceForm,
+    /// What the Comments tab is typing.
+    pub comment_form: CommentForm,
     /// The selected activity's calculation, in words: (its index, the lines).
     calculation: Option<(usize, Vec<String>)>,
     themed: bool,
@@ -233,6 +245,7 @@ impl PerthApp {
             calendar_form: CalendarForm::default(),
             resource_selected: None,
             resource_form: ResourceForm::default(),
+            comment_form: CommentForm::default(),
             calculation: None,
             themed: false,
             title: String::new(),
@@ -384,6 +397,12 @@ impl PerthApp {
             Action::ToggleToolbar => self.toolbar_hidden = !self.toolbar_hidden,
             Action::Search => self.side = Some(Side::Filters),
             Action::Calendars => self.side = Some(Side::Calendars),
+            Action::Comment => {
+                if self.selected.is_some() {
+                    self.side = Some(Side::Details);
+                    self.details_tab = DetailsTab::Comments;
+                }
+            }
             Action::Language(lang) => {
                 i18n::set(lang);
                 self.calculation = None;
@@ -489,6 +508,10 @@ impl PerthApp {
         }
         if shortcut(egui::Modifiers::COMMAND, egui::Key::N) {
             self.new_project();
+        }
+        if ctx.input_mut(|i| i.consume_shortcut(&chrome::COMMENT)) && self.selected.is_some() {
+            self.side = Some(Side::Details);
+            self.details_tab = DetailsTab::Comments;
         }
         if ctx.input_mut(|i| i.consume_shortcut(&chrome::TOGGLE_TOOLBAR)) {
             self.toolbar_hidden = !self.toolbar_hidden;
@@ -810,16 +833,20 @@ impl PerthApp {
         };
         let mut pending: Option<(&str, serde_json::Value)> = None;
         let day = self.day_minutes_of(i);
+        let author = self.services.user.as_ref().map(|f| f()).unwrap_or_default();
+        let at = self.services.now.as_ref().map(|f| f()).unwrap_or_default();
         ui.label(egui::RichText::new(&a.name).size(15.0).color(t.text).strong());
         ui.add_space(4.0);
-        // General, Status, Relationships and Notes, one at a time.
+        // General, Status, Relationships, Notes and Comments, one at a time.
         let mut tab = self.details_tab;
-        ui.horizontal(|ui| {
+        // Wrapped: five tabs are wider than the pane in some languages.
+        ui.horizontal_wrapped(|ui| {
             for (k, name) in [
                 (DetailsTab::General, tr!("details-general")),
                 (DetailsTab::Status, tr!("details-status")),
                 (DetailsTab::Relationships, tr!("details-relationships")),
                 (DetailsTab::Notes, tr!("details-notes")),
+                (DetailsTab::Comments, tr!("details-comments")),
             ] {
                 ui.selectable_value(&mut tab, k, name);
             }
@@ -973,6 +1000,11 @@ impl PerthApp {
                         pending = Some(("relationship.delete", json!({"predecessor": p, "successor": s})));
                     }
                 }
+                DetailsTab::Comments => {
+                    if let Some(p) = comments_ui::comments_tab(ui, &t, project, &a.id, &mut self.comment_form, &author, &at) {
+                        pending = Some(p);
+                    }
+                }
                 DetailsTab::Notes => {
                     // Kept as typed, saved when the box is left or the tab changes.
                     let id = egui::Id::unique(("notes", i));
@@ -1001,8 +1033,18 @@ impl PerthApp {
         if let Some((command, params)) = pending {
             let added = command == "relationship.add";
             self.run(command, params);
-            if added && matches!(self.status, Some(Status::Info(_))) {
+            let done = matches!(self.status, Some(Status::Info(_)));
+            if added && done {
                 self.link = (String::new(), RelationshipType::FinishToStart, 0);
+            }
+            // A comment sent clears its box; a reply closes its own.
+            match command {
+                "comment.add" if done => self.comment_form.text.clear(),
+                "comment.reply" if done => {
+                    self.comment_form.reply_to = None;
+                    self.comment_form.reply.clear();
+                }
+                _ => {}
             }
         }
     }

@@ -25,6 +25,7 @@ pub(crate) fn empty(name: String, start: Date) -> Project {
         resources: Vec::new(),
         roles: Vec::new(),
         assignments: Vec::new(),
+        comments: Vec::new(),
         extra: Default::default(),
     }
 }
@@ -101,6 +102,7 @@ pub(crate) fn project() -> Project {
         resources: Vec::new(),
         roles: Vec::new(),
         assignments: Vec::new(),
+        comments: Vec::new(),
         activities,
         relationships: vec![
             tie("M0", "A10", FinishToStart, 0),

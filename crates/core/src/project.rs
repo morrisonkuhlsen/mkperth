@@ -282,6 +282,24 @@ impl Assignment {
     }
 }
 
+/// A remark on an activity, as a spreadsheet's comments: who wrote it and when, in threads of
+/// replies, the thread resolved once its point is dealt with.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Comment {
+    /// Unique in the project: `C1`, `C2`…
+    pub id: String,
+    /// The activity's ID.
+    pub activity: String,
+    pub author: String,
+    /// When it was written, as the app that wrote it saw the time (`2026-10-23 14:05`).
+    pub at: String,
+    pub text: String,
+    /// The comment that opened the thread it answers; `None` opens one.
+    pub reply_to: Option<String>,
+    /// A thread's dealt with (said on its first comment).
+    pub resolved: bool,
+}
+
 /// Which calendar a relationship's lag counts its working days on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LagCalendar {
@@ -363,6 +381,8 @@ pub struct Project {
     pub resources: Vec<Resource>,
     pub roles: Vec<Role>,
     pub assignments: Vec<Assignment>,
+    /// Remarks on activities, in the order they were written.
+    pub comments: Vec<Comment>,
     pub extra: Extra,
 }
 

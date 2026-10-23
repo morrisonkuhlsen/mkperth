@@ -306,6 +306,9 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
     let row_of: std::collections::HashMap<usize, usize> = rows.iter().enumerate().map(|(n, &(i, _))| (i, n)).collect();
     let index_of: std::collections::HashMap<&str, usize> = acts.iter().enumerate().map(|(i, a)| (a.id.as_str(), i)).collect();
     let summary_of = summaries(acts);
+    // Activities with a thread of comments still open: a mark in their ID's corner.
+    let commented: std::collections::HashSet<&str> =
+        session.project.comments.iter().filter(|c| c.reply_to.is_none() && !c.resolved).map(|c| c.activity.as_str()).collect();
     let is_summary = |i: usize| summary_of.get(i).copied().unwrap_or(false);
     let mut clicked = None;
     let mut double = None;
@@ -470,6 +473,14 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
                 if summary {
                     // Bold by drawing twice: the built-in fonts have no bold face.
                     painter.text(pos2(x + 6.5 + indent, rect.center().y), Align2::LEFT_CENTER, &text, FontId::proportional(12.5), color);
+                }
+                if k == 0 && acts.get(i).is_some_and(|a| commented.contains(a.id.as_str())) {
+                    let corner = pos2(x + w - 1.0, rect.top() + 1.0);
+                    painter.add(egui::Shape::convex_polygon(
+                        vec![corner, pos2(corner.x, corner.y + 8.0), pos2(corner.x - 8.0, corner.y)],
+                        t.orange,
+                        Stroke::NONE,
+                    ));
                 }
                 x += w;
                 painter.vline(x, rect.y_range(), Stroke::new(1.0, t.gridline));

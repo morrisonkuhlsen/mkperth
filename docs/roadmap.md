@@ -106,7 +106,8 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   Schedule button) over one slim toolbar of small icons (undo and redo, add and delete, what the
   chart shows, the time scale, the data date), the rail of views (with the activity table's
   switch), a splash screen in MK Perth's lilac (#18), the File backstage (start, open, recent
-  projects, info, save, export), the Calculation pane under the activities (the
+  projects, info, save, export), comments on activities in threads (Details' Comments tab, a
+  mark on commented rows), the Calculation pane under the activities (the
   selected activity's dates step by step, #5) with a Schedule button, the Details pane on the
   right (facts, constraints, dates and floats, predecessors and successors), the Filters strip
   (find by ID or name, critical only, late bars) and the status bar with the zoom; Save and Save

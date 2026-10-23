@@ -13,8 +13,8 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use mkperth_core::{
-    Activity, ActivityKind, Assignment, Band, Calendar, Constraint, Date, Extra, Marker, MonthMark, Project, Region, Relationship, RelationshipType,
-    Resource, UNIT,
+    Activity, ActivityKind, Assignment, Band, Calendar, Comment, Constraint, Date, Extra, Marker, MonthMark, Project, Region, Relationship,
+    RelationshipType, Resource, UNIT,
 };
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
@@ -77,7 +77,10 @@ const PROJECT_FIELDS: [&str; 12] =
     ["id", "name", "tasks", "calendar", "people", "bands", "markers", "month_marks", "file_path", "baseline_at", "created_at", "updated_at"];
 /// The fields the model holds itself; the rest go to `extra`.
 const TASK_MAPPED: [&str; 10] = ["id", "name", "start", "duration", "dependencies", "milestone", "deadline", "parent", "notes", "assignee"];
-const PROJECT_MAPPED: [&str; 6] = ["name", "tasks", "calendar", "bands", "markers", "month_marks"];
+const PROJECT_MAPPED: [&str; 7] = ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS];
+/// MK Perth's comments, which Perth has no field for: a field of their own, written only when
+/// there are some, so a file without them is written back as it was.
+const COMMENTS: &str = "mkperth_comments";
 /// The most bands, markers or marked months a project may have.
 pub const MAX_ANNOTATIONS: usize = 10_000;
 const PREFIX: &str = "perth.";
@@ -311,6 +314,18 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         Some(Marker { name: t("name")?, date: date(t, "date")?, color: t("color")?, label_at })
     })?;
     let month_marks = notes(&root, "month_marks", |t| Some(MonthMark { month: date(t, "month")?, name: t("name")?, color: t("color")? }))?;
+    let comments = notes(&root, COMMENTS, |t| {
+        let reply_to = t("reply_to").filter(|r| !r.is_empty());
+        Some(Comment {
+            id: t("id")?,
+            activity: t("activity")?,
+            author: t("author")?,
+            at: t("at")?,
+            text: t("text")?,
+            reply_to,
+            resolved: t("resolved").as_deref() == Some("true"),
+        })
+    })?;
     // An assignee is a resource named as written (one for each name), assigned for the task's
     // effort, else its working hours at one an hour.
     let mut resources: Vec<Resource> = Vec::new();
@@ -341,6 +356,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             resources,
             roles: Vec::new(),
             assignments,
+            comments,
             activities,
             relationships,
             extra,
@@ -475,6 +491,17 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         .collect();
     let months: Vec<Value> =
         project.month_marks.iter().map(|m| serde_json::json!({"month": m.month.to_string(), "name": m.name, "color": m.color})).collect();
+    let comments: Vec<Value> = project
+        .comments
+        .iter()
+        .map(|c| {
+            serde_json::json!({"id": c.id, "activity": c.activity, "author": c.author, "at": c.at, "text": c.text,
+                "reply_to": c.reply_to.clone().unwrap_or_default(), "resolved": if c.resolved { "true" } else { "" }})
+        })
+        .collect();
+    if !comments.is_empty() {
+        fields.push((COMMENTS.into(), Value::Array(comments)));
+    }
     for (field, list) in [("bands", bands), ("markers", markers), ("month_marks", months)] {
         if !list.is_empty() || had(field) {
             fields.push((field.into(), Value::Array(list)));

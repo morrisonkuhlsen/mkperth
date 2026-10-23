@@ -339,3 +339,31 @@ fn the_backstage_opens_its_pages_and_closes() {
     h.run_steps(2);
     assert_eq!(h.state().backstage, None);
 }
+
+/// Ctrl+Alt+M on an activity: its Comments tab; a comment signed by the app's user at its time,
+/// then resolved.
+#[test]
+fn comments_are_written_and_resolved_in_details() {
+    use egui::accesskit::Role;
+    let services =
+        Services { user: Some(Box::new(|| "Ana".to_string())), now: Some(Box::new(|| "2026-10-23 09:00".to_string())), ..Services::default() };
+    let mut h = harness(PerthApp::new(services));
+    h.state_mut().selected = Some(2);
+    h.run_steps(1);
+    h.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::ALT, egui::Key::M);
+    h.run_steps(2);
+    assert_eq!(h.state().details_tab, mkperth_ui_egui::DetailsTab::Comments);
+    h.get_by_role_and_label(Role::MultilineTextInput, "New comment").click();
+    h.run_steps(1);
+    h.get_by_role_and_label(Role::MultilineTextInput, "New comment").type_text("Booked?");
+    h.run_steps(1);
+    h.get_by_label("Comment").click();
+    h.run_steps(3);
+    let c = &h.state().session.project.comments;
+    assert_eq!(c.len(), 1);
+    assert_eq!((c[0].activity.as_str(), c[0].author.as_str(), c[0].at.as_str(), c[0].text.as_str()), ("A10", "Ana", "2026-10-23 09:00", "Booked?"));
+    assert!(h.state().comment_form.text.is_empty(), "the box is cleared");
+    h.get_by_label("Resolve").click();
+    h.run_steps(3);
+    assert!(h.state().session.project.comments[0].resolved);
+}

@@ -41,7 +41,7 @@ fn tools() -> Value {
             "description": format!("Run one of the engine's commands on the open project, then reschedule: {commands}. Parameters are a JSON object, e.g. activity.add {{\"name\": \"Survey\", \"duration\": 5, \"after\": \"A10\"}}, activity.edit {{\"id\": \"A10\", \"duration\": 7, \"constraint\": {{\"type\": \"start-on-or-after\", \"date\": \"2026-11-09\"}}}}, relationship.add {{\"predecessor\": \"A10\", \"successor\": \"A20\", \"kind\": \"FS\", \"lag\": 2}}, project.options {{\"data_date\": \"2026-11-10\"}}, band.add {{\"name\": \"Rains\", \"from\": \"2026-12-01\", \"to\": \"2027-01-31\"}}. Edits can be undone with edit.undo. A change that would make a loop is refused and the project stays as it was."),
             "inputSchema": {
                 "type": "object",
-                "properties": {"command": {"type": "string", "enum": COMMANDS}, "params": {"type": "object"}},
+                "properties": {"command": {"type": "string", "enum": COMMANDS.as_slice()}, "params": {"type": "object"}},
                 "required": ["command"]
             }
         },

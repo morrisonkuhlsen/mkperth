@@ -20,6 +20,11 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Comments on activities, as a spreadsheet keeps them: threads with replies, resolved and
+  reopened, signed with the person's name and the time (`comment.add`, `.reply`, `.edit`,
+  `.resolve`, `.delete`, with undo). In Details' Comments tab (Edit > Comment, Ctrl+Alt+M); an
+  activity with an open thread is marked in its ID's corner. Saved in Perth JSON in a field of
+  their own (`mkperth_comments`); P6 XML has no place for them and says so.
 - The File backstage, as MK Sigma's and MK aeGIS's: File in the header opens a page over the
   window, a column in Morrison Kühlsen's ink (Home, New, Open; Info, Save, Save As, Export;
   About, Exit) beside the place's page: cards to start a new project, the sample or open one,

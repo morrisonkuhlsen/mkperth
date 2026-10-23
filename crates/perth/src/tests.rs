@@ -283,3 +283,30 @@ fn an_assignee_is_a_resource_assigned() {
     assert!(text.contains("\"assignee\":\"Ana, Bia\""), "{text}");
     assert_eq!(warnings.len(), 1);
 }
+
+/// Comments travel in a field of MK Perth's own, a thread with its replies and resolution.
+#[test]
+fn comments_are_written_and_read_back() {
+    let mut p = read(&full().to_string()).unwrap().project;
+    p.comments.push(Comment {
+        id: "C1".into(),
+        activity: "a".into(),
+        author: "Ana".into(),
+        at: "2026-10-23 09:00".into(),
+        text: "Booked?".into(),
+        reply_to: None,
+        resolved: true,
+    });
+    p.comments.push(Comment {
+        id: "C2".into(),
+        activity: "a".into(),
+        author: "Bia".into(),
+        at: String::new(),
+        text: "Yes \"today\"".into(),
+        reply_to: Some("C1".into()),
+        resolved: false,
+    });
+    let (text, warnings) = write(&p);
+    assert!(warnings.is_empty() && text.contains("\"mkperth_comments\""));
+    assert_eq!(read(&text).unwrap().project.comments, p.comments);
+}

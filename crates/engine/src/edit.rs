@@ -404,6 +404,9 @@ impl Session {
                 for a in p.assignments.iter_mut().filter(|a| a.activity == id) {
                     a.activity = new.to_string();
                 }
+                for c in p.comments.iter_mut().filter(|c| c.activity == id) {
+                    c.activity = new.to_string();
+                }
             }
             let Some(a) = p.activities.get_mut(k) else { return Err(EngineError::UnknownActivity(id.clone())) };
             if let Some(new) = new_id.filter(|n| !n.is_empty()) {
@@ -483,6 +486,7 @@ impl Session {
             // Its relationships and assignments go with it; its children move up to its parent.
             p.relationships.retain(|r| r.predecessor != id && r.successor != id);
             p.assignments.retain(|a| a.activity != id);
+            p.comments.retain(|c| c.activity != id);
             for a in &mut p.activities {
                 if a.parent.as_deref() == Some(id.as_str()) {
                     a.parent = removed.parent.clone();

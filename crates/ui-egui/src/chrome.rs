@@ -33,6 +33,8 @@ pub(crate) enum Action {
     ToggleToolbar,
     Search,
     Calendars,
+    /// The selected activity's comments.
+    Comment,
     Language(Lang),
 }
 
@@ -69,6 +71,8 @@ const TOOLBAR_HEIGHT: f32 = 36.0;
 /// Corners of the hover tints on the menus and the toolbar's buttons.
 const ROUND: f32 = 4.0;
 
+/// A comment on the selected activity, as spreadsheets have it.
+pub(crate) const COMMENT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::M);
 pub(crate) const TOGGLE_TOOLBAR: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::F1);
 
 /// A small square icon button with an accessible name and a tip; clicks count only when enabled.
@@ -253,6 +257,10 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         }
         if item(ui, &tr!("delete-activity-menu"), Some(KeyboardShortcut::new(Modifiers::NONE, Key::Delete)), state.selected) {
             set(Action::DeleteActivity);
+        }
+        ui.separator();
+        if item(ui, &tr!("comment-menu"), Some(COMMENT), state.selected) {
+            set(Action::Comment);
         }
     });
     menu(ui, &tr!("menu-project"), |ui| {

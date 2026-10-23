@@ -3,6 +3,7 @@
 //! parameters, so they all behave the same.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod comments;
 mod edit;
 mod notes;
 mod report;
@@ -52,6 +53,8 @@ pub enum EngineError {
     NothingToUndo,
     #[error("{}", tr!("err-nothing-to-redo"))]
     NothingToRedo,
+    #[error("{}", tr!("err-no-comment", id = .0.as_str()))]
+    UnknownComment(String),
     #[error("{}", tr!("err-no-resource", id = .0.as_str()))]
     UnknownResource(String),
     #[error("{}", tr!("err-resource-taken", id = .0.as_str()))]
@@ -77,7 +80,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 30] = [
+pub const COMMANDS: [&str; 35] = [
     "project.new",
     "project.open",
     "project.save",
@@ -100,6 +103,11 @@ pub const COMMANDS: [&str; 30] = [
     "assignment.add",
     "assignment.edit",
     "assignment.delete",
+    "comment.add",
+    "comment.reply",
+    "comment.edit",
+    "comment.resolve",
+    "comment.delete",
     "edit.undo",
     "edit.redo",
     "band.add",
@@ -163,7 +171,12 @@ impl Session {
 
     fn run_command(&mut self, id: &str, params: &Value) -> Result<(), EngineError> {
         let param = |name: &str| params.get(name).and_then(Value::as_str).ok_or_else(|| EngineError::Param(id.to_string(), name.to_string()));
-        if let Some(result) = self.run_edit(id, params).or_else(|| self.note_command(id, params)).or_else(|| self.resource_command(id, params)) {
+        if let Some(result) = self
+            .run_edit(id, params)
+            .or_else(|| self.note_command(id, params))
+            .or_else(|| self.resource_command(id, params))
+            .or_else(|| self.comment_command(id, params))
+        {
             return result;
         }
         match id {

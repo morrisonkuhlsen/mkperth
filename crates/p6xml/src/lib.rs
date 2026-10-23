@@ -450,6 +450,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             resources,
             roles,
             assignments,
+            comments: Vec::new(),
             activities,
             relationships,
             extra,
@@ -492,6 +493,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     let noted = project.activities.iter().filter(|a| !a.notes.trim().is_empty()).count();
     if noted > 0 {
         warnings.push(tr!("warn-p6-notes", n = noted));
+    }
+    if !project.comments.is_empty() {
+        warnings.push(tr!("warn-p6-comments", n = project.comments.len()));
     }
     if !(project.bands.is_empty() && project.markers.is_empty() && project.month_marks.is_empty()) {
         warnings.push(tr!("warn-p6-chart-notes"));

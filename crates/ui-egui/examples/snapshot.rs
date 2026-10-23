@@ -2,7 +2,7 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang CODE]
-//!  [--select N] [--side details|filters|notes|calendars] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--splash] [--backstage home|new|open|info|export|about] [--view activities|resources] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
+//!  [--select N] [--side details|filters|notes|calendars] [--details general|status|relationships|notes|comments] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--splash] [--backstage home|new|open|info|export|about] [--view activities|resources] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
 //!  `--click` clicks what has that accessible name, in order: `--click View --click Theme` opens a submenu)
 
 use egui_kittest::kittest::Queryable as _;
@@ -79,7 +79,8 @@ fn main() -> Result<(), String> {
                     Some("status") => mkperth_ui_egui::DetailsTab::Status,
                     Some("relationships") => mkperth_ui_egui::DetailsTab::Relationships,
                     Some("notes") => mkperth_ui_egui::DetailsTab::Notes,
-                    _ => return Err("--details general|status|relationships|notes".into()),
+                    Some("comments") => mkperth_ui_egui::DetailsTab::Comments,
+                    _ => return Err("--details general|status|relationships|notes|comments".into()),
                 };
             }
             "--lang" => {
