@@ -115,10 +115,10 @@ An engine-first Cargo workspace with enforced layering (`cargo xtask layers`):
 | Layer | Crates |
 |-------|--------|
 | L0    | `i18n` (message catalogs) · `core` (dates, calendars, the project) |
-| L1    | `sched` (the critical path method) · `perth` (Perth.jl's JSON) |
+| L1    | `sched` (the critical path method) · `perth` (Perth.jl's JSON) · `p6xml` (Primavera P6's XML) |
 | L2    | `engine` (the session and its commands) |
-| L3    | `ui-egui` (the Activities window) · `mcp` *(next)* |
-| L4    | `apps/mkperth` |
+| L3    | `ui-egui` (the Activities window) |
+| L4    | `apps/mkperth` (desktop) · `apps/mkperth-cli` (command line) · `apps/mkperth-mcp` (MCP server) |
 
 More in [`docs/architecture.md`](docs/architecture.md).
 

@@ -38,7 +38,7 @@ mod tests {
     use super::*;
 
     fn folder(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("mksigma-write-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mkperth-write-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

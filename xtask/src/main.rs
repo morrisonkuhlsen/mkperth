@@ -1,7 +1,7 @@
 //! MK Perth's project tasks, run with `cargo xtask <task>`:
 //!
 //! - `ci`: every quality gate before a commit: fmt, clippy (warnings are errors), tests,
-//!   assets, layers, wasm. Stops at the first that fails.
+//!   assets, layers, panics, wasm. Stops at the first that fails.
 //! - `layers`: each crate depends only on crates at its layer or below, and nothing below the
 //!   UI layer on egui, eframe, winit or rfd.
 //! - `assets`: every asset file has its row in `ATTRIBUTION.md`.
@@ -67,7 +67,8 @@ fn layers() -> Result<(), String> {
     let root = root();
     let mut problems = Vec::new();
     for group in ["crates", "apps"] {
-        let Ok(entries) = std::fs::read_dir(root.join(group)) else { continue };
+        // Without the folder nothing would be checked: that's a failure, not a pass.
+        let entries = std::fs::read_dir(root.join(group)).map_err(|e| format!("{group}: {e}"))?;
         for entry in entries.flatten() {
             let path = entry.path().join("Cargo.toml");
             if !path.exists() {
@@ -116,7 +117,7 @@ fn panics() -> Result<(), String> {
     let root = root();
     let mut missing = Vec::new();
     for (group, file) in [("crates", "src/lib.rs"), ("apps", "src/main.rs")] {
-        let Ok(entries) = std::fs::read_dir(root.join(group)) else { continue };
+        let entries = std::fs::read_dir(root.join(group)).map_err(|e| format!("{group}: {e}"))?;
         for entry in entries.flatten() {
             let path = entry.path().join(file);
             let Ok(source) = std::fs::read_to_string(&path) else { continue };

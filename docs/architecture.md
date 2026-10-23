@@ -10,8 +10,7 @@ A Cargo workspace; `cargo xtask layers` holds each crate to its layer.
 | L1 | `mkperth-p6xml` | Primavera P6's XML: `read` and `write` (calendars, WBS, activities, relationships) |
 | L1 | `mkperth-perth` | Perth.jl's project JSON: `read` and `write`, lossless through `extra` |
 | L2 | `mkperth-engine` | the session: the project, its schedule, `run(command, params)`; the sample project |
-| L3 | `mkperth-ui-egui` | the Activities window: the table beside the Gantt chart |
-| L3 | `mkperth-mcp` | *(next)* the MCP server |
+| L3 | `mkperth-ui-egui` | the window: the header and toolbar, the table beside the Gantt chart, the splash screen |
 | L4 | `apps/mkperth`, `apps/mkperth-cli`, `apps/mkperth-mcp` | the desktop app; the command line (schedule, run commands, explain); the MCP server for agents |
 
 ## The scheduler's time

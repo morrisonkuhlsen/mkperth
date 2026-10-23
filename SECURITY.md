@@ -23,7 +23,11 @@ harm:
   crashes the program, hangs it, exhausts memory, or writes outside the paths the person chose;
 - a network or a calendar built to make the scheduler loop or overflow (loops of relationships or
   of parents, calendars with no working day, dates at the ends of time);
-- the MCP server, when it comes, doing more than the commands it exposes.
+- the MCP server (`mkperth-mcp`) doing more than the commands it exposes.
+
+By design, the MCP server runs the commands an agent sends it, with the rights of the user who
+started it: it opens and saves the files it is asked to, where it is asked to. Release binaries,
+when they come, are not code-signed yet.
 
 A crash on a hostile input is a bug we treat as a security issue (the project's "never crash"
 rule): report it privately if you think it can be exploited, as a normal issue otherwise.
