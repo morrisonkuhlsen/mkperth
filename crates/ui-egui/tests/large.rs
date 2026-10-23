@@ -47,6 +47,7 @@ fn large(n: usize) -> Project {
 
 #[test]
 #[ignore = "a timing, for release builds"]
+#[allow(clippy::disallowed_methods, reason = "a native timing test, never built for wasm")]
 fn ten_thousand_activities_scroll() {
     let mut app = PerthApp::default();
     app.session.project = large(10_000);
