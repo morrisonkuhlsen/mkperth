@@ -112,6 +112,25 @@ pub(crate) fn accent_button(ui: &mut egui::Ui, icon: Icon, text: &str) -> egui::
     accent(ui, icon, text, 26.0, 0.0)
 }
 
+/// A quiet button for the header: a hairline round it, its icon in the accent, the text in the
+/// text's colour, a tint only under the pointer.
+fn outlined(ui: &mut egui::Ui, icon: Icon, text: &str) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(13.0), t.text);
+    let (height, pad) = (30.0, 14.0);
+    let size = egui::vec2(galley.size().x + 2.0 * pad + 18.0, height);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text));
+    if response.hovered() {
+        ui.painter().rect_filled(rect, height / 2.0, if response.is_pointer_button_down_on() { t.pressed } else { t.hover });
+    }
+    ui.painter().rect_stroke(rect, height / 2.0, egui::Stroke::new(1.0, t.header_line), egui::StrokeKind::Inside);
+    let icon_center = egui::pos2(rect.left() + pad + 5.0, rect.center().y);
+    icons::paint(ui.painter(), egui::Rect::from_center_size(icon_center, egui::vec2(12.0, 12.0)), icon, &t);
+    ui.painter().galley(egui::pos2(rect.left() + pad + 18.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
+    response
+}
+
 /// The accent button at `height` with corners of `round`.
 fn accent(ui: &mut egui::Ui, icon: Icon, text: &str, height: f32, round: f32) -> egui::Response {
     let t = Tokens::get(ui.ctx());
@@ -181,7 +200,7 @@ pub(crate) fn header(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     });
     row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        if accent(ui, Icon::Run, &tr!("schedule"), 32.0, 16.0).on_hover_text(tr!("schedule-tip")).clicked() {
+        if outlined(ui, Icon::Run, &tr!("schedule")).on_hover_text(tr!("schedule-tip")).clicked() {
             action = Some(Action::Schedule);
         }
         ui.add_space(6.0);

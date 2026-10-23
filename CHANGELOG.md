@@ -140,7 +140,8 @@ Read it before re-scheduling a plan with a new version.
   Schedule as one button on the right, and one slim toolbar of small icons in place of the
   ribbon's tabs and large buttons. The scheduling options are in the Project menu; the theme,
   the language and hiding the toolbar (Ctrl+F1) in the View menu; AutoSave in the File menu.
-  The toolbar has no band or edge of its own; hidden, its arrow waits in the header.
+  The toolbar has no band or edge of its own; hidden, its arrow waits in the header. Schedule is
+  an outlined button, quiet beside the menus.
 
 ### Fixed
 
