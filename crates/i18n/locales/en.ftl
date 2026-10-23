@@ -307,3 +307,4 @@ notes-month-of = Month of
 notes-color = Colour
 notes-color-default = The default colour
 notes-add = Add
+warn-perth-calendar-near = The calendar { $name } is written as Perth.jl's { $perth }, the nearest it has: its own working days, holidays or hours aren't kept.

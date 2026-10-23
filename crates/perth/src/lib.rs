@@ -192,7 +192,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         Calendar { name: String::new(), ..Calendar::every_day() }
     } else {
         let region = Region::named(&calendar_name);
-        if region.is_none() {
+        if region.is_none() && calendar_name != "WeekendsOnly" {
             warnings.push(tr!("warn-perth-calendar", name = calendar_name.as_str()));
         }
         Calendar { name: calendar_name, region, ..Calendar::default() }
@@ -325,6 +325,28 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
     })
 }
 
+/// The calendar as Perth.jl names it: empty for calendar days, a BusinessDays.jl name for working
+/// days ("Brazil" with its holidays, "WeekendsOnly" without). A calendar those can't say (other
+/// working weekdays, its own holidays or hours) is written as the nearest, with a warning.
+fn calendar_name(c: &Calendar, warnings: &mut Vec<String>) -> String {
+    let weekdays = [true, true, true, true, true, false, false];
+    let plain = c.holidays.is_empty() && c.extra_days.is_empty() && c.exceptions.is_empty();
+    let (name, exact) = match c.region {
+        Some(Region::Brazil) => ("Brazil".to_string(), c.week == weekdays && plain),
+        None if c.week == [true; 7] => (String::new(), plain),
+        None => ("WeekendsOnly".to_string(), c.week == weekdays && plain),
+    };
+    // A region's other name Perth.jl knows is kept as it was written (BRSettlement, say).
+    let name = match c.region {
+        Some(r) if Region::named(&c.name) == Some(r) => c.name.clone(),
+        _ => name,
+    };
+    if !exact {
+        warnings.push(tr!("warn-perth-calendar-near", name = c.name.as_str(), perth = if name.is_empty() { "\"\"" } else { name.as_str() }));
+    }
+    name
+}
+
 /// A field kept as JSON text, back as a value (`null` if it no longer parses).
 fn kept(text: &str) -> Value {
     serde_json::from_str(text).unwrap_or(Value::Null)
@@ -401,7 +423,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     }
     let mut fields: Vec<(String, Value)> = vec![("name".into(), Value::String(project.name.clone())), ("tasks".into(), Value::Array(tasks))];
     if !project.extra.contains_key("perth.~no-calendar") {
-        fields.push(("calendar".into(), Value::String(project.calendar.name.clone())));
+        fields.push(("calendar".into(), Value::String(calendar_name(&project.calendar, &mut warnings))));
     }
     // The chart's notes, in Perth's order of keys: when there are some, or the file had the field.
     let had = |field: &str| project.extra.get(ORDER).is_some_and(|o| o.split('\u{1f}').any(|k| k == field));

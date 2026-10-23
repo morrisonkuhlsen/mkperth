@@ -86,6 +86,10 @@ Read it before re-scheduling a plan with a new version.
 
 ### Fixed
 
+- A project read from P6 XML was written to Perth.jl's JSON with its calendar's P6 name
+  ("Standard", "Calendar"), which Perth.jl takes for an unknown BusinessDays calendar; it is now
+  written as Perth.jl names it (`""`, `"WeekendsOnly"`, `"Brazil"`), with a warning when that is only
+  the nearest. A calendar with no name is written to P6 XML with one.
 - A month starting just after the chart's left edge kept its name hidden behind the edge's.
 - A project of 10 000 activities scrolls at about 3 ms a frame (it took 300: which rows are
   summaries was worked out against every activity, for every activity, every frame).

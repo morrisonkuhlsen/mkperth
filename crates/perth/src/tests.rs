@@ -209,3 +209,30 @@ fn chart_notes_that_are_not_notes_are_errors() {
     let (text, _) = write(&made);
     assert!(text.contains(r#""markers":[{"name":"x","date":"2026-09-15","color":"","label_at":100}]"#), "{text}");
 }
+
+#[test]
+fn calendars_are_written_as_perth_names_them() {
+    let mut p = read(&full().to_string()).unwrap().project;
+    p.extra = Extra::new();
+    let name = |p: &Project| {
+        let (text, warnings) = write(p);
+        let v: Value = serde_json::from_str(&text).unwrap();
+        (v["calendar"].as_str().unwrap().to_string(), warnings.len())
+    };
+    assert_eq!(name(&p), ("Brazil".into(), 0));
+    // From P6: a five-day calendar with no region is WeekendsOnly; seven days, calendar days.
+    p.calendar = Calendar { name: "Standard".into(), ..Calendar::default() };
+    assert_eq!(name(&p), ("WeekendsOnly".into(), 0));
+    p.calendar = Calendar { name: "Calendar".into(), ..Calendar::every_day() };
+    assert_eq!(name(&p), (String::new(), 0));
+    // Its own holidays can't be said: the nearest, with a warning.
+    p.calendar = Calendar { name: "Site".into(), ..Calendar::default() };
+    p.calendar.holidays.insert(day(2026, 12, 24));
+    assert_eq!(name(&p), ("WeekendsOnly".into(), 1));
+    // WeekendsOnly reads back as Monday to Friday, without a warning.
+    let mut v = full();
+    v["calendar"] = json!("WeekendsOnly");
+    let back = read(&v.to_string()).unwrap();
+    assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+    assert_eq!(back.project.calendar.week, [true, true, true, true, true, false, false]);
+}

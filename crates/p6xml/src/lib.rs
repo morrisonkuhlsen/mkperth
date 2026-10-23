@@ -412,7 +412,12 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         out.push_str(&format!(
             "  <Calendar>\n    <ObjectId>{}</ObjectId>\n    <Name>{}</Name>\n    <HoursPerDay>{}</HoursPerDay>\n    <StandardWorkWeek>\n",
             k + 1,
-            esc(&c.name),
+            // P6 names every calendar.
+            esc(match c.name.as_str() {
+                "" if c.week == [true; 7] => "Calendar days",
+                "" => "Standard",
+                name => name,
+            }),
             hours(c.day_minutes())
         ));
         for w in Weekday::ALL {

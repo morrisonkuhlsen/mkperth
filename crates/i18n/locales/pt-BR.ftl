@@ -307,3 +307,4 @@ notes-month-of = Mês de
 notes-color = Cor
 notes-color-default = A cor padrão
 notes-add = Adicionar
+warn-perth-calendar-near = O calendário { $name } é gravado como { $perth } do Perth.jl, o mais próximo que ele tem: seus próprios dias úteis, feriados ou horários não são mantidos.
