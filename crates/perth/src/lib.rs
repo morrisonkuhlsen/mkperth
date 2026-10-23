@@ -12,7 +12,9 @@
 //! (the user's own package, MIT).
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
-use mkperth_core::{Activity, ActivityKind, Calendar, Constraint, Date, Extra, Project, Region, Relationship, RelationshipType};
+use mkperth_core::{
+    Activity, ActivityKind, Band, Calendar, Constraint, Date, Extra, Marker, MonthMark, Project, Region, Relationship, RelationshipType,
+};
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -74,7 +76,9 @@ const PROJECT_FIELDS: [&str; 12] =
     ["id", "name", "tasks", "calendar", "people", "bands", "markers", "month_marks", "file_path", "baseline_at", "created_at", "updated_at"];
 /// The fields the model holds itself; the rest go to `extra`.
 const TASK_MAPPED: [&str; 9] = ["id", "name", "start", "duration", "dependencies", "milestone", "deadline", "parent", "notes"];
-const PROJECT_MAPPED: [&str; 3] = ["name", "tasks", "calendar"];
+const PROJECT_MAPPED: [&str; 6] = ["name", "tasks", "calendar", "bands", "markers", "month_marks"];
+/// The most bands, markers or marked months a project may have.
+pub const MAX_ANNOTATIONS: usize = 10_000;
 const PREFIX: &str = "perth.";
 /// Keeps, in `extra`, where the project's order of keys came from, so unknown keys keep their
 /// place.
@@ -124,6 +128,29 @@ fn date_field(v: &Value, task: &str, field: &str) -> Result<Option<Date>, PerthE
         Value::Null => Ok(None),
         Value::String(s) => Date::parse(s).map(Some).ok_or_else(|| PerthError::Field(task.into(), field.into())),
         _ => Err(PerthError::Field(task.into(), field.into())),
+    }
+}
+
+/// One of the chart's notes (`bands`, `markers`, `month_marks`): a list of objects, each read by
+/// `one` from its text and date fields.
+fn notes<T>(root: &Map<String, Value>, field: &str, one: impl Fn(&dyn Fn(&str) -> Option<String>) -> Option<T>) -> Result<Vec<T>, PerthError> {
+    let bad = || PerthError::Field(String::new(), field.into());
+    match root.get(field) {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(items)) if items.len() <= MAX_ANNOTATIONS => items
+            .iter()
+            .map(|item| {
+                let Value::Object(o) = item else { return Err(bad()) };
+                let text = |k: &str| match o.get(k) {
+                    None => Some(String::new()),
+                    Some(Value::String(s)) => Some(s.clone()),
+                    Some(Value::Number(n)) => Some(n.to_string()),
+                    Some(_) => None,
+                };
+                one(&text).ok_or_else(bad)
+            })
+            .collect(),
+        Some(_) => Err(bad()),
     }
 }
 
@@ -267,6 +294,14 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         _ => None,
     });
     let start = start.min().or_else(|| Date::from_ymd(1970, 1, 1)).ok_or(PerthError::NotAProject)?;
+    let date = |t: &dyn Fn(&str) -> Option<String>, k: &str| t(k).as_deref().and_then(Date::parse);
+    let bands = notes(&root, "bands", |t| Some(Band { name: t("name")?, from: date(t, "from")?, to: date(t, "to")?, color: t("color")? }))?;
+    let markers = notes(&root, "markers", |t| {
+        let at = t("label_at")?;
+        let label_at = if at.is_empty() { 0 } else { at.parse::<f64>().ok()?.clamp(0.0, 100.0) as u8 };
+        Some(Marker { name: t("name")?, date: date(t, "date")?, color: t("color")?, label_at })
+    })?;
+    let month_marks = notes(&root, "month_marks", |t| Some(MonthMark { month: date(t, "month")?, name: t("name")?, color: t("color")? }))?;
     Ok(Read {
         project: Project {
             name,
@@ -279,6 +314,9 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             data_date: None,
             progress_mode: Default::default(),
             must_finish_by: None,
+            bands,
+            markers,
+            month_marks,
             activities,
             relationships,
             extra,
@@ -364,6 +402,25 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     let mut fields: Vec<(String, Value)> = vec![("name".into(), Value::String(project.name.clone())), ("tasks".into(), Value::Array(tasks))];
     if !project.extra.contains_key("perth.~no-calendar") {
         fields.push(("calendar".into(), Value::String(project.calendar.name.clone())));
+    }
+    // The chart's notes, in Perth's order of keys: when there are some, or the file had the field.
+    let had = |field: &str| project.extra.get(ORDER).is_some_and(|o| o.split('\u{1f}').any(|k| k == field));
+    let bands: Vec<Value> = project
+        .bands
+        .iter()
+        .map(|b| serde_json::json!({"name": b.name, "from": b.from.to_string(), "to": b.to.to_string(), "color": b.color}))
+        .collect();
+    let markers: Vec<Value> = project
+        .markers
+        .iter()
+        .map(|m| serde_json::json!({"name": m.name, "date": m.date.to_string(), "color": m.color, "label_at": m.label_at}))
+        .collect();
+    let months: Vec<Value> =
+        project.month_marks.iter().map(|m| serde_json::json!({"month": m.month.to_string(), "name": m.name, "color": m.color})).collect();
+    for (field, list) in [("bands", bands), ("markers", markers), ("month_marks", months)] {
+        if !list.is_empty() || had(field) {
+            fields.push((field.into(), Value::Array(list)));
+        }
     }
     for (key, value) in &project.extra {
         if let Some(field) = key.strip_prefix(PREFIX)

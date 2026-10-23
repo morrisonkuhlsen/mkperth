@@ -97,7 +97,11 @@ fn what_maps_to_the_model() {
             ("c", "d", RelationshipType::FinishToStart, 0),
         ]
     );
-    assert!(p.extra.contains_key("perth.people") && p.extra.contains_key("perth.bands"));
+    assert!(p.extra.contains_key("perth.people") && !p.extra.contains_key("perth.bands"));
+    // The chart's notes, in the model.
+    assert_eq!(p.bands, [Band { name: "Chuvas".into(), from: day(2026, 10, 1), to: day(2026, 10, 31), color: String::new() }]);
+    assert_eq!((p.markers[0].name.as_str(), p.markers[0].date, p.markers[0].label_at), ("Visita", day(2026, 9, 15), 0));
+    assert_eq!((p.month_marks[0].month, p.month_marks[0].name.as_str()), (day(2026, 9, 1), "Férias"));
     let older = read(&older().to_string()).unwrap().project;
     assert_eq!(older.calendar.week, [true; 7], "an empty calendar: calendar days");
 }
@@ -183,4 +187,25 @@ fn what_perth_cannot_hold_is_reported_on_writing() {
     let (text, _) = write(&made);
     let back = read(&text).unwrap().project;
     assert_eq!(back.activities.len(), 2);
+}
+
+#[test]
+fn chart_notes_that_are_not_notes_are_errors() {
+    let with = |field: &str, value: Value| {
+        let mut v = full();
+        v[field] = value;
+        read(&v.to_string())
+    };
+    assert!(with("bands", json!("rain")).is_err());
+    assert!(with("bands", json!([{"name": "x", "from": "2026-13-01", "to": "2026-10-31"}])).is_err());
+    assert!(with("markers", json!([{"name": "x", "date": "2026-09-15", "label_at": "high"}])).is_err());
+    assert!(with("month_marks", json!([7])).is_err());
+    let many: Vec<Value> = (0..=MAX_ANNOTATIONS).map(|_| json!({"name": "x", "date": "2026-09-15"})).collect();
+    assert!(with("markers", Value::Array(many)).is_err());
+    // A label far down is held at the bottom; a project made here writes its notes.
+    let p = with("markers", json!([{"name": "x", "date": "2026-09-15", "color": "", "label_at": 250}])).unwrap().project;
+    assert_eq!(p.markers[0].label_at, 100);
+    let made = Project { extra: Extra::new(), ..p };
+    let (text, _) = write(&made);
+    assert!(text.contains(r#""markers":[{"name":"x","date":"2026-09-15","color":"","label_at":100}]"#), "{text}");
 }

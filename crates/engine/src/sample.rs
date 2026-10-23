@@ -2,7 +2,7 @@
 //! with a WBS, every kind of relationship, a lag and a lead, milestones, a constraint, and work on
 //! Brazil's calendar, so the window has something real to show.
 
-use mkperth_core::{Activity, ActivityKind, Calendar, Constraint, Date, Project, Region, Relationship, RelationshipType};
+use mkperth_core::{Activity, ActivityKind, Band, Calendar, Constraint, Date, Marker, MonthMark, Project, Region, Relationship, RelationshipType};
 
 pub(crate) fn project() -> Project {
     use RelationshipType::*;
@@ -59,6 +59,20 @@ pub(crate) fn project() -> Project {
         data_date: None,
         progress_mode: Default::default(),
         must_finish_by: None,
+        // The year-end recess, the council's inspection and the holiday month, as notes.
+        bands: vec![Band {
+            name: "Year-end recess".into(),
+            from: Date::from_ymd(2026, 12, 21).unwrap_or(start),
+            to: Date::from_ymd(2027, 1, 3).unwrap_or(start),
+            color: String::new(),
+        }],
+        markers: vec![Marker {
+            name: "Council inspection".into(),
+            date: Date::from_ymd(2027, 2, 15).unwrap_or(start),
+            color: String::new(),
+            label_at: 0,
+        }],
+        month_marks: vec![MonthMark { month: Date::from_ymd(2027, 1, 1).unwrap_or(start), name: "holidays".into(), color: String::new() }],
         activities,
         relationships: vec![
             tie("M0", "A10", FinishToStart, 0),

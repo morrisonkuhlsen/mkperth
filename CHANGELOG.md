@@ -25,6 +25,9 @@ Read it before re-scheduling a plan with a new version.
   XML; typed in Details and on the Project tab, drawn on the Gantt chart, explained in the
   calculation.
 - The ribbon's groups carry their names underneath.
+- Chart notes from Perth.jl: bands (a stretch shaded behind the bars), markers (a named day as a
+  dashed line) and marked months (painted in the ruler); in the Chart notes pane, by command,
+  and in Perth.jl's JSON. P6 XML has no place for them and says so when written.
 - `mkperth-cli`: `schedule` (a table, JSON or CSV), `run` (commands, then `--out` saves),
   `explain` (the calculation, `--tex` for LaTeX); exit codes 0, 1, 2; messages in the locale.
 - The table's columns chosen in Filters (the ID and the name stay); today drawn on the chart.
@@ -81,5 +84,6 @@ Read it before re-scheduling a plan with a new version.
 
 ### Fixed
 
+- A month starting just after the chart's left edge kept its name hidden behind the edge's.
 - A project of 10 000 activities scrolls at about 3 ms a frame (it took 300: which rows are
   summaries was worked out against every activity, for every activity, every frame).

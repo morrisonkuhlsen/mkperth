@@ -116,7 +116,7 @@ impl Session {
 
     /// Makes a change on a copy of the project; keeps it, with the old project on the undo stack,
     /// if `change` succeeds and leaves no loop of relationships or of parents.
-    fn change(&mut self, label: String, change: impl FnOnce(&mut Project) -> Result<(), EngineError>) -> Result<(), EngineError> {
+    pub(crate) fn change(&mut self, label: String, change: impl FnOnce(&mut Project) -> Result<(), EngineError>) -> Result<(), EngineError> {
         let mut project = self.project.clone();
         change(&mut project)?;
         let schedule = mkperth_sched::schedule(&project);

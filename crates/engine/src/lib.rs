@@ -4,6 +4,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod edit;
+mod notes;
 mod report;
 mod sample;
 mod write;
@@ -59,7 +60,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 13] = [
+pub const COMMANDS: [&str; 19] = [
     "project.open",
     "project.save",
     "project.sample",
@@ -73,6 +74,12 @@ pub const COMMANDS: [&str; 13] = [
     "project.options",
     "edit.undo",
     "edit.redo",
+    "band.add",
+    "band.delete",
+    "marker.add",
+    "marker.delete",
+    "month-mark.add",
+    "month-mark.delete",
 ];
 
 #[derive(Debug, Clone)]
@@ -109,7 +116,7 @@ impl Session {
     /// Runs a command by id with its parameters (a JSON object; `null` for none).
     pub fn run(&mut self, id: &str, params: &Value) -> Result<(), EngineError> {
         let param = |name: &str| params.get(name).and_then(Value::as_str).ok_or_else(|| EngineError::Param(id.to_string(), name.to_string()));
-        if let Some(result) = self.run_edit(id, params) {
+        if let Some(result) = self.run_edit(id, params).or_else(|| self.note_command(id, params)) {
             return result;
         }
         match id {
@@ -264,6 +271,43 @@ mod tests {
         assert!(matches!(s.run("activity.export-tex", &json!({"id": "nope", "path": path.display().to_string()})), Err(EngineError::Schedule(_))));
         assert!(matches!(s.run("activity.export-tex", &json!({"id": "A10"})), Err(EngineError::Param(..))));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_charts_notes_by_command() {
+        let mut s = Session::default();
+        let (bands, markers, months) = (s.project.bands.len(), s.project.markers.len(), s.project.month_marks.len());
+        // Ends the wrong way round are turned; the list stays in date order.
+        s.run("band.add", &json!({"name": "  Rainy   season ", "from": "2026-12-31", "to": "2026-10-01", "color": "#4a90d9"})).unwrap();
+        let b = &s.project.bands[0];
+        assert_eq!((b.name.as_str(), b.from.to_string(), b.to.to_string()), ("Rainy season", "2026-10-01".into(), "2026-12-31".into()));
+        s.run("marker.add", &json!({"name": "Audit", "date": "2026-11-20", "label_at": 40})).unwrap();
+        assert_eq!(s.project.markers[0].label_at, 40);
+        // One mark a month: the new one replaces the old.
+        s.run("month-mark.add", &json!({"month": "2027-01-15", "name": "recess"})).unwrap();
+        assert_eq!(s.project.month_marks.len(), months);
+        assert_eq!(s.project.month_marks[0].name, "recess");
+        assert_eq!(s.project.month_marks[0].month.to_string(), "2027-01-01");
+        for bad in [
+            ("band.add", json!({"name": "", "from": "2026-10-01", "to": "2026-10-02"})),
+            ("band.add", json!({"name": "x", "from": "2026-10-01", "to": "2026-10-02", "color": "blue"})),
+            ("band.add", json!({"name": "x", "from": "2026-10-01"})),
+            ("marker.add", json!({"name": "x", "date": "2026-10-01", "label_at": 101})),
+            ("marker.add", json!({"name": "x".repeat(201), "date": "2026-10-01"})),
+            ("band.delete", json!({"index": 99})),
+            ("marker.delete", json!({"index": -1})),
+            ("month-mark.delete", json!({})),
+        ] {
+            assert!(s.run(bad.0, &bad.1).is_err(), "{bad:?}");
+        }
+        s.run("band.delete", &json!({"index": 0})).unwrap();
+        assert_eq!(s.project.bands.len(), bands);
+        // Undo walks them all back.
+        for _ in 0..4 {
+            s.run("edit.undo", &Value::Null).unwrap();
+        }
+        assert_eq!((s.project.bands.len(), s.project.markers.len()), (bands, markers));
+        assert_eq!(s.project.month_marks[0].name, "holidays");
     }
 
     #[test]

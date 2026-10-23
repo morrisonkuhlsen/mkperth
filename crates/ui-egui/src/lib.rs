@@ -63,7 +63,23 @@ pub enum DetailsTab {
 pub enum Side {
     Details,
     Filters,
+    /// The chart's notes: bands, markers, marked months.
+    Notes,
 }
+
+/// The note the Notes pane is making: its kind (0 a band, 1 a marker, 2 a month), name, dates
+/// and colour (`#rrggbb`, empty for the default).
+#[derive(Debug, Clone, Default)]
+pub struct NoteForm {
+    pub kind: u8,
+    pub name: String,
+    pub from: Option<Date>,
+    pub to: Option<Date>,
+    pub color: String,
+}
+
+/// The colours a note can take besides its default: original picks, readable in both themes.
+const NOTE_COLORS: [&str; 6] = ["#4a7fd4", "#3a9a5b", "#d08a2b", "#c4473f", "#8a5cc7", "#6b7280"];
 
 /// What the last action said, for the status bar.
 #[derive(Debug, Clone, PartialEq)]
@@ -101,6 +117,8 @@ pub struct PerthApp {
     link: (String, RelationshipType, i64),
     /// The Details pane's tab.
     pub details_tab: DetailsTab,
+    /// The Notes pane's new note.
+    pub note_form: NoteForm,
     /// The selected activity's calculation, in words: (its index, the lines).
     calculation: Option<(usize, Vec<String>)>,
     themed: bool,
@@ -189,6 +207,7 @@ impl PerthApp {
             editing: None,
             link: (String::new(), RelationshipType::FinishToStart, 0),
             details_tab: DetailsTab::default(),
+            note_form: NoteForm::default(),
             calculation: None,
             themed: false,
             title: String::new(),
@@ -459,6 +478,7 @@ impl PerthApp {
                         match side {
                             Side::Details => self.details(ui),
                             Side::Filters => self.filters(ui),
+                            Side::Notes => self.notes_pane(ui),
                         }
                     });
                 });
@@ -834,8 +854,13 @@ impl PerthApp {
         ui.painter().vline(rect.left(), rect.y_range(), egui::Stroke::new(1.0, t.border));
         let count = usize::from(self.options.critical_only) + usize::from(!self.options.search.trim().is_empty());
         let mut top = rect.top() + 4.0;
-        for (k, (side, icon, name, badge)) in
-            [(Side::Details, Icon::Info, tr!("pane-details"), 0), (Side::Filters, Icon::Filter, tr!("filters"), count)].into_iter().enumerate()
+        for (k, (side, icon, name, badge)) in [
+            (Side::Details, Icon::Info, tr!("pane-details"), 0),
+            (Side::Filters, Icon::Filter, tr!("filters"), count),
+            (Side::Notes, Icon::Calendar, tr!("pane-notes"), 0),
+        ]
+        .into_iter()
+        .enumerate()
         {
             let painter = ui.painter();
             let galley = painter.layout_no_wrap(name.clone(), egui::FontId::proportional(13.0), t.text);
@@ -903,6 +928,138 @@ impl PerthApp {
                 if ui.checkbox(&mut shown, tr!(id)).changed() {
                     *hidden = !shown;
                 }
+            }
+        }
+    }
+
+    /// The chart's notes: each kind listed with a button to delete it, and a form for a new one.
+    fn notes_pane(&mut self, ui: &mut egui::Ui) {
+        let t = Tokens::get(ui.ctx());
+        if theme::pane_header(ui, Icon::Calendar, &tr!("pane-notes"), &tr!("pane-notes-tip"), |ui| {
+            icon_button(ui, Icon::ChevronRight, &tr!("pane-close"))
+        }) {
+            self.side = None;
+        }
+        let p = &self.session.project;
+        let mut pending: Option<(&str, serde_json::Value)> = None;
+        let swatch = |ui: &mut egui::Ui, color: egui::Color32| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+            ui.painter().rect_filled(r, 2.0, color);
+        };
+        let hex = |h: &str, fallback: egui::Color32| activities::note_color(h, fallback);
+        egui::ScrollArea::vertical().id_salt("notes-pane").auto_shrink(false).show(ui, |ui| {
+            let heading = |ui: &mut egui::Ui, text: String| {
+                ui.add_space(6.0);
+                ui.label(egui::RichText::new(text).size(12.5).color(t.text).strong());
+            };
+            heading(ui, tr!("notes-bands"));
+            if p.bands.is_empty() {
+                ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+            }
+            for (k, b) in p.bands.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    swatch(ui, hex(&b.color, t.blue));
+                    ui.label(egui::RichText::new(format!("{}  {} – {}", b.name, show_date(b.from), show_date(b.to))).size(12.0).color(t.text));
+                    if icon_button(ui, Icon::Close, &tr!("notes-delete")) {
+                        pending = Some(("band.delete", json!({"index": k})));
+                    }
+                });
+            }
+            heading(ui, tr!("notes-markers"));
+            if p.markers.is_empty() {
+                ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+            }
+            for (k, m) in p.markers.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    swatch(ui, hex(&m.color, t.orange));
+                    ui.label(egui::RichText::new(format!("{}  {}", m.name, show_date(m.date))).size(12.0).color(t.text));
+                    if icon_button(ui, Icon::Close, &tr!("notes-delete")) {
+                        pending = Some(("marker.delete", json!({"index": k})));
+                    }
+                });
+            }
+            heading(ui, tr!("notes-months"));
+            if p.month_marks.is_empty() {
+                ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+            }
+            for (k, m) in p.month_marks.iter().enumerate() {
+                let (y, month, _) = m.month.ymd();
+                ui.horizontal(|ui| {
+                    swatch(ui, hex(&m.color, t.red));
+                    let name = if m.name.is_empty() { String::new() } else { format!(" · {}", m.name) };
+                    ui.label(egui::RichText::new(format!("{} {y}{name}", tr!(&format!("month-{month}")))).size(12.0).color(t.text));
+                    if icon_button(ui, Icon::Close, &tr!("notes-delete")) {
+                        pending = Some(("month-mark.delete", json!({"index": k})));
+                    }
+                });
+            }
+            // A new note.
+            ui.add_space(10.0);
+            ui.separator();
+            ui.label(egui::RichText::new(tr!("notes-new")).size(12.5).color(t.text).strong());
+            let f = &mut self.note_form;
+            ui.horizontal(|ui| {
+                for (k, name) in [(0u8, tr!("notes-band")), (1, tr!("notes-marker")), (2, tr!("notes-month"))] {
+                    ui.selectable_value(&mut f.kind, k, name);
+                }
+            });
+            let row = |ui: &mut egui::Ui, name: String| {
+                ui.add_sized(egui::vec2(70.0, 18.0), egui::Label::new(egui::RichText::new(name).size(12.0).color(t.text_dim))).id
+            };
+            ui.horizontal(|ui| {
+                let label = row(ui, tr!("notes-name"));
+                ui.add(egui::TextEdit::singleline(&mut f.name).desired_width(170.0)).labelled_by(label);
+            });
+            let first = match f.kind {
+                0 => tr!("notes-from"),
+                1 => tr!("notes-date"),
+                _ => tr!("notes-month-of"),
+            };
+            ui.horizontal(|ui| {
+                let label = row(ui, first);
+                if let Some(d) = date_field(ui, egui::Id::new("note-from"), label, f.from, 100.0) {
+                    f.from = d;
+                }
+            });
+            if f.kind == 0 {
+                ui.horizontal(|ui| {
+                    let label = row(ui, tr!("notes-to"));
+                    if let Some(d) = date_field(ui, egui::Id::new("note-to"), label, f.to, 100.0) {
+                        f.to = d;
+                    }
+                });
+            }
+            ui.horizontal(|ui| {
+                row(ui, tr!("notes-color"));
+                let fallback = [t.blue, t.orange, t.red].get(usize::from(f.kind)).copied().unwrap_or(t.blue);
+                for code in std::iter::once("").chain(NOTE_COLORS) {
+                    let color = hex(code, fallback);
+                    let (r, response) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
+                    ui.painter().rect_filled(r.shrink(2.0), 3.0, color);
+                    if f.color == code {
+                        ui.painter().rect_stroke(r, 3.0, egui::Stroke::new(1.5, t.text), egui::StrokeKind::Inside);
+                    }
+                    let tip = if code.is_empty() { tr!("notes-color-default") } else { code.to_string() };
+                    if response.on_hover_text(tip).clicked() {
+                        f.color = code.to_string();
+                    }
+                }
+            });
+            ui.add_space(4.0);
+            if ui.button(tr!("notes-add")).clicked() {
+                let day = |d: Option<Date>| d.map(|d| d.to_string());
+                pending = Some(match f.kind {
+                    0 => ("band.add", json!({"name": f.name, "from": day(f.from), "to": day(f.to.or(f.from)), "color": f.color})),
+                    1 => ("marker.add", json!({"name": f.name, "date": day(f.from), "color": f.color})),
+                    _ => ("month-mark.add", json!({"month": day(f.from), "name": f.name, "color": f.color})),
+                });
+            }
+        });
+        if let Some((command, params)) = pending {
+            let adding = command.ends_with(".add");
+            self.run(command, params);
+            if adding && matches!(self.status, Some(Status::Info(_))) {
+                self.note_form = NoteForm { kind: self.note_form.kind, ..NoteForm::default() };
             }
         }
     }

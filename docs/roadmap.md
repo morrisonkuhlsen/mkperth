@@ -104,6 +104,10 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   activity, the columns chosen in Filters, today and the data date on the chart, progress drawn
   green; the calculation exported as LaTeX. 10 000 activities scroll at about 3 ms a frame
   (`crates/ui-egui/tests/large.rs`, run in release).
+  Chart notes, as Perth.jl draws them: bands shaded behind the bars with their names along their
+  edge, markers as dashed lines with their names, months painted in the ruler; read and written
+  in Perth.jl's JSON, made and deleted by command (`band.add`, `marker.add`, `month-mark.add`,
+  and their `.delete`) with undo, and in the Chart notes pane.
 - **Next:** calendars edited in the app; the network view (#17); the brand (#18, the user's).
 
 ## M4 — resources

@@ -198,3 +198,34 @@ fn today_comes_from_the_platform() {
     let h = harness(PerthApp::default());
     assert_eq!(h.state().options.today, None, "no clock, no line");
 }
+
+#[test]
+fn a_band_is_added_and_deleted_in_chart_notes() {
+    use egui::accesskit::Role;
+    let mut h = harness(PerthApp::default());
+    let before = h.state().session.project.bands.len();
+    h.query_all_by_label("Chart notes").last().unwrap().click();
+    h.run_steps(2);
+    assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::Notes));
+    h.get_by_role_and_label(Role::TextInput, "Name").click();
+    h.run_steps(1);
+    h.get_by_role_and_label(Role::TextInput, "Name").type_text("Rainy season");
+    h.run_steps(1);
+    for (field, text) in [("From", "2026-12-01"), ("To", "2027-01-31")] {
+        h.get_by_role_and_label(Role::TextInput, field).click();
+        h.run_steps(1);
+        h.get_by_role_and_label(Role::TextInput, field).type_text(text);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(2);
+    }
+    h.get_by_label("Add").click();
+    h.run_steps(3);
+    let bands = &h.state().session.project.bands;
+    assert_eq!(bands.len(), before + 1);
+    assert!(bands.iter().any(|b| b.name == "Rainy season" && b.from.to_string() == "2026-12-01" && b.to.to_string() == "2027-01-31"));
+    assert!(h.state().note_form.name.is_empty(), "the form is cleared for the next one");
+    // Each listed note has its delete button; the first band goes.
+    h.query_all_by_label("Delete this note").next().unwrap().click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project.bands.len(), before);
+}

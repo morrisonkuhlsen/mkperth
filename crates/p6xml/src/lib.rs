@@ -351,6 +351,9 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             data_date: p.text_of("DataDate").and_then(date_of),
             progress_mode: Default::default(),
             must_finish_by: p.text_of("MustFinishByDate").and_then(date_of),
+            bands: Vec::new(),
+            markers: Vec::new(),
+            month_marks: Vec::new(),
             activities,
             relationships,
             extra,
@@ -393,6 +396,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     let noted = project.activities.iter().filter(|a| !a.notes.trim().is_empty()).count();
     if noted > 0 {
         warnings.push(tr!("warn-p6-notes", n = noted));
+    }
+    if !(project.bands.is_empty() && project.markers.is_empty() && project.month_marks.is_empty()) {
+        warnings.push(tr!("warn-p6-chart-notes"));
     }
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str(&format!("<APIBusinessObjects xmlns=\"{NAMESPACE}\">\n"));

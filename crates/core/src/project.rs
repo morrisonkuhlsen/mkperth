@@ -250,5 +250,40 @@ pub struct Project {
     pub must_finish_by: Option<Date>,
     pub activities: Vec<Activity>,
     pub relationships: Vec<Relationship>,
+    /// Notes on the chart that never move a task: stretches shaded behind the bars, named days
+    /// drawn as lines, months painted in the ruler.
+    pub bands: Vec<Band>,
+    pub markers: Vec<Marker>,
+    pub month_marks: Vec<MonthMark>,
     pub extra: Extra,
+}
+
+/// A stretch of days shaded behind the bars, its name along its left edge: a rainy season, a
+/// shutdown, a sprint. Bands may overlap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Band {
+    pub name: String,
+    pub from: Date,
+    pub to: Date,
+    /// A hex colour (`#4a90d9`); empty picks one.
+    pub color: String,
+}
+
+/// A named day drawn as a line down the chart: an audit, a delivery, a visit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Marker {
+    pub name: String,
+    pub date: Date,
+    pub color: String,
+    /// How far down the chart its name is written, in percent (0, the top, to 100).
+    pub label_at: u8,
+}
+
+/// A whole month painted in the ruler, with a word: the month of the holidays.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MonthMark {
+    /// Its first day.
+    pub month: Date,
+    pub name: String,
+    pub color: String,
 }

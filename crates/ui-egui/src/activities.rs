@@ -81,6 +81,16 @@ impl Options {
     }
 }
 
+/// A note's colour: its own (`#rrggbb`), else the one given.
+pub(crate) fn note_color(hex: &str, fallback: egui::Color32) -> egui::Color32 {
+    let digits = hex.strip_prefix('#').filter(|h| h.len() == 6);
+    let part = |k: usize| digits.and_then(|h| h.get(k..k + 2)).and_then(|p| u8::from_str_radix(p, 16).ok());
+    match (part(0), part(2), part(4)) {
+        (Some(r), Some(g), Some(b)) => egui::Color32::from_rgb(r, g, b),
+        _ => fallback,
+    }
+}
+
 /// The narrowest and the widest a day may be drawn, in points.
 pub const MIN_SCALE: f32 = 0.5;
 pub const MAX_SCALE: f32 = 80.0;
@@ -254,13 +264,29 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
         // A month's name at its first day (the first one in view at the left edge), when it
         // doesn't run into the one before.
         if day == 1 || k == first_day.max(0) {
-            let text = format!("{} {y}", tr!(&format!("month-{m}")));
+            let mark = session.project.month_marks.iter().find(|x| x.month.ymd().0 == y && x.month.ymd().1 == m);
+            let text = match mark.filter(|x| !x.name.is_empty()) {
+                Some(x) => format!("{} {y} · {}", tr!(&format!("month-{m}")), x.name),
+                None => format!("{} {y}", tr!(&format!("month-{m}"))),
+            };
+            // A marked month: its strip of the ruler painted, a line along its foot.
+            if let Some(x) = mark {
+                let color = note_color(&x.color, t.red);
+                let first = x.month.days();
+                let next = Date::from_ymd(if m == 12 { y + 1 } else { y }, if m == 12 { 1 } else { m + 1 }, 1).map_or(first + 31, |n| n.days());
+                let strip = Rect::from_min_max(pos2(x_of(first, chart_left), header.top()), pos2(x_of(next, chart_left), header.center().y));
+                chart_header.rect_filled(strip, 0.0, color.gamma_multiply(0.22));
+                chart_header.hline(strip.x_range(), strip.bottom() - 1.0, Stroke::new(2.0, color));
+            }
             let galley = chart_header.layout_no_wrap(text, FontId::proportional(12.0), t.header_text);
             let at = if day == 1 { xd } else { xd.max(chart_left) };
             if day == 1 {
                 chart_header.vline(xd, header.top()..=header.center().y, Stroke::new(1.0, t.gridline));
             }
-            if at + 4.0 > month_end {
+            // The name held at the left edge gives way to the next month's when they'd meet.
+            let next = Date::from_ymd(if m == 12 { y + 1 } else { y }, if m == 12 { 1 } else { m + 1 }, 1).map(|n| x_of(n.days(), chart_left));
+            let crowded = day != 1 && next.is_some_and(|n| n < at + 4.0 + galley.size().x + 8.0);
+            if at + 4.0 > month_end && !crowded {
                 month_end = at + 4.0 + galley.size().x + 8.0;
                 chart_header.galley(pos2(at + 4.0, header.top() + 11.0 - galley.size().y / 2.0), galley, t.header_text);
             }
@@ -324,6 +350,19 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
                     }
                 }
             }
+            // The bands behind the bars, and the markers' lines.
+            let chart_row = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, rect.top()), rect.max));
+            for b in &session.project.bands {
+                let color = note_color(&b.color, t.blue);
+                let (l, r) = (x_of(b.from.days(), chart_left), x_of(b.to.days(), chart_left) + scale);
+                chart_row.rect_filled(Rect::from_min_max(pos2(l, rect.top()), pos2(r, rect.bottom())), 0.0, color.gamma_multiply(0.16));
+                chart_row.vline(l, rect.y_range(), Stroke::new(1.0, color.gamma_multiply(0.45)));
+            }
+            for m in &session.project.markers {
+                let x = x_of(m.date.days(), chart_left) + scale / 2.0;
+                let color = note_color(&m.color, t.orange);
+                chart_row.extend(egui::Shape::dashed_line(&[pos2(x, rect.top()), pos2(x, rect.bottom())], Stroke::new(1.2, color), 3.0, 3.0));
+            }
             if let Some(d) = options.today {
                 let xd = x_of(d.days(), chart_left) + scale / 2.0;
                 if xd >= chart_left {
@@ -338,6 +377,21 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
                 }
             }
             placed.push((i, depth, rect));
+        }
+        // The names of bands and markers, turned along their lines, over the rows in view.
+        let view = ui.clip_rect().intersect(Rect::from_min_max(pos2(chart_left, ui.clip_rect().top()), full.max));
+        let names = ui.painter().with_clip_rect(view);
+        let turned = |x: f32, y: f32, text: &str, color: egui::Color32| {
+            let galley = names.layout_no_wrap(text.to_string(), FontId::monospace(10.5), color);
+            // A quarter turn clockwise: it reads downwards, its height to the left of `x`.
+            names.add(egui::epaint::TextShape::new(pos2(x + galley.size().y + 2.0, y), galley, color).with_angle(std::f32::consts::FRAC_PI_2));
+        };
+        for b in &session.project.bands {
+            turned(x_of(b.from.days(), chart_left) + 3.0, view.top() + 8.0, &b.name, note_color(&b.color, t.text_dim));
+        }
+        for m in &session.project.markers {
+            let y = view.top() + 6.0 + (view.height() - 60.0).max(0.0) * f32::from(m.label_at) / 100.0;
+            turned(x_of(m.date.days(), chart_left) + scale / 2.0 + 1.0, y, &m.name, note_color(&m.color, t.orange));
         }
         // The relationship lines, under the bars, from the predecessor's start or finish to the
         // successor's; rows scrolled out of view still anchor them, clipped to the chart.
