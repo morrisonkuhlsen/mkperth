@@ -191,7 +191,7 @@ fn histogram(ui: &mut egui::Ui, t: &Tokens, project: &Project, schedule: &Schedu
         let x = plot.left() + slot * k as f32;
         let bar = egui::Rect::from_min_max(egui::pos2(x + slot * 0.15, y_of(*u)), egui::pos2(x + slot * 0.85, plot.bottom()));
         let over = c.is_some_and(|c| *u > c);
-        painter.rect_filled(bar, 2.0, if over { t.red } else { crate::splash::BRAND });
+        painter.rect_filled(bar, 0.0, if over { t.red } else { crate::splash::BRAND });
         if let Some(c) = c {
             painter.add(egui::Shape::dashed_line(
                 &[egui::pos2(x + 1.0, y_of(*c)), egui::pos2(x + slot - 1.0, y_of(*c))],

@@ -43,7 +43,7 @@ pub(crate) fn comments_tab(
         let frame = egui::Frame::new()
             .fill(if root.resolved { t.header_bg } else { t.paper })
             .stroke(egui::Stroke::new(1.0, if root.resolved { t.border } else { crate::splash::BRAND }))
-            .corner_radius(6.0)
+            .corner_radius(0.0)
             .inner_margin(egui::Margin::same(10));
         frame.show(ui, |ui| {
             ui.set_width(ui.available_width());

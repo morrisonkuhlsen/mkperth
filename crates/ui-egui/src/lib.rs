@@ -926,13 +926,13 @@ impl PerthApp {
             ui.allocate_ui_with_layout(egui::vec2(left_width, body), top_down, |ui| {
                 ui.set_width(left_width);
                 ui.set_height(body);
-                // The open views as tabs; the active one under them.
-                self.view_tabs(ui);
-                let below = (body - VIEW_TABS - 4.0).max(100.0);
+                // The active view, and the open views as tabs under it, as a spreadsheet's sheets.
+                let above = (body - VIEW_TABS - 4.0).max(100.0);
                 match self.view {
-                    View::Activities => self.left_pane(ui, below),
-                    View::Resources => self.resources_view(ui, below),
+                    View::Activities => self.left_pane(ui, above),
+                    View::Resources => self.resources_view(ui, above),
                 }
+                self.view_tabs(ui);
             });
             if let Some(side) = self.side {
                 ui.allocate_ui_with_layout(egui::vec2(SIDE_WIDTH, body), top_down, |ui| {
@@ -1029,9 +1029,16 @@ impl PerthApp {
         let t = Tokens::get(ui.ctx());
         let mut choose = None;
         let mut close = None;
-        ui.horizontal(|ui| {
+        // A strip along the bottom, as a spreadsheet's sheet tabs: square, the active one lifted
+        // in the paper's colour with the brand's line along its foot.
+        let (strip, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), VIEW_TABS + 4.0), egui::Sense::hover());
+        ui.painter().rect_filled(strip, 0.0, t.ribbon);
+        ui.painter().hline(strip.x_range(), strip.top(), egui::Stroke::new(1.0, t.border));
+        let mut row =
+            ui.new_child(egui::UiBuilder::new().max_rect(strip.shrink2(egui::vec2(6.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Min)));
+        row.horizontal(|ui| {
             ui.set_height(VIEW_TABS);
-            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.spacing_mut().item_spacing.x = 0.0;
             for view in self.open_views.clone() {
                 let (icon, name) = match view {
                     View::Activities => (Icon::Gantt, tr!("activities-view")),
@@ -1044,11 +1051,13 @@ impl PerthApp {
                 let (rect, response) = ui.allocate_exact_size(egui::vec2(width, VIEW_TABS), egui::Sense::click());
                 response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, on, &name));
                 if on {
-                    ui.painter().rect_filled(rect, egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, t.ribbon);
-                    ui.painter().hline(rect.x_range(), rect.bottom() - 1.0, egui::Stroke::new(2.0, crate::splash::BRAND));
+                    ui.painter().rect_filled(rect, 0.0, t.paper);
+                    ui.painter().hline(rect.x_range(), rect.bottom() - 1.0, egui::Stroke::new(3.0, crate::splash::BRAND));
                 } else if response.hovered() {
-                    ui.painter().rect_filled(rect, egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, t.hover);
+                    ui.painter().rect_filled(rect, 0.0, t.hover);
                 }
+                // A hairline between tabs.
+                ui.painter().vline(rect.right(), (rect.top() + 6.0)..=(rect.bottom() - 6.0), egui::Stroke::new(1.0, t.border));
                 icons::paint(
                     ui.painter(),
                     egui::Rect::from_center_size(egui::pos2(rect.left() + 18.0, rect.center().y), egui::vec2(14.0, 14.0)),
@@ -1117,9 +1126,9 @@ impl PerthApp {
         let response = ui.interact(slot, ui.scope_id().with("rail-table"), egui::Sense::click());
         response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, shown, &name));
         if shown {
-            ui.painter().rect_filled(slot.shrink(4.0), 4.0, t.accent_soft);
+            ui.painter().rect_filled(slot.shrink(4.0), 0.0, t.accent_soft);
         } else if response.hovered() {
-            ui.painter().rect_filled(slot.shrink(4.0), 4.0, t.hover);
+            ui.painter().rect_filled(slot.shrink(4.0), 0.0, t.hover);
         }
         icons::paint(ui.painter(), egui::Rect::from_center_size(slot.center(), egui::vec2(18.0, 18.0)), Icon::Table, &t);
         let tip = if shown { tr!("activity-table-hide-tip") } else { tr!("activity-table-show-tip") };
@@ -1677,7 +1686,7 @@ impl PerthApp {
         let mut pending: Option<(&str, serde_json::Value)> = None;
         let swatch = |ui: &mut egui::Ui, color: egui::Color32| {
             let (r, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-            ui.painter().rect_filled(r, 2.0, color);
+            ui.painter().rect_filled(r, 0.0, color);
         };
         let hex = |h: &str, fallback: egui::Color32| activities::note_color(h, fallback);
         egui::ScrollArea::vertical().id_salt("notes-pane").auto_shrink(false).show(ui, |ui| {
@@ -1768,9 +1777,9 @@ impl PerthApp {
                 for code in std::iter::once("").chain(NOTE_COLORS) {
                     let color = hex(code, fallback);
                     let (r, response) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
-                    ui.painter().rect_filled(r.shrink(2.0), 3.0, color);
+                    ui.painter().rect_filled(r.shrink(2.0), 0.0, color);
                     if f.color == code {
-                        ui.painter().rect_stroke(r, 3.0, egui::Stroke::new(1.5, t.text), egui::StrokeKind::Inside);
+                        ui.painter().rect_stroke(r, 0.0, egui::Stroke::new(1.5, t.text), egui::StrokeKind::Inside);
                     }
                     let tip = if code.is_empty() { tr!("notes-color-default") } else { code.to_string() };
                     if response.on_hover_text(tip).clicked() {

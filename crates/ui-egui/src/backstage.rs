@@ -334,8 +334,8 @@ fn card(ui: &mut Ui, icon: Icon, title: &str, text: &str) -> bool {
     if !enabled {
         p.set_opacity(0.45);
     }
-    p.rect_filled(rect, 6.0, t.ribbon);
-    p.rect_stroke(rect, 6.0, Stroke::new(if hot { 2.0 } else { 1.0 }, if hot { BRAND } else { t.border }), egui::StrokeKind::Inside);
+    p.rect_filled(rect, 0.0, t.ribbon);
+    p.rect_stroke(rect, 0.0, Stroke::new(if hot { 2.0 } else { 1.0 }, if hot { BRAND } else { t.border }), egui::StrokeKind::Inside);
     let badge = pos2(rect.left() + 34.0, rect.top() + 34.0);
     p.circle_filled(badge, 18.0, if hot { BRAND } else { t.accent_soft });
     let mut tokens = t;
@@ -356,8 +356,8 @@ fn fact(ui: &mut Ui, name: &str, value: &str) {
     let t = Tokens::get(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(vec2(200.0, 72.0), Sense::hover());
     let p = ui.painter();
-    p.rect_filled(rect, 6.0, t.ribbon);
-    p.rect_stroke(rect, 6.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+    p.rect_filled(rect, 0.0, t.ribbon);
+    p.rect_stroke(rect, 0.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
     p.text(pos2(rect.left() + 16.0, rect.top() + 12.0), Align2::LEFT_TOP, name, FontId::proportional(12.0), t.text_dim);
     let size = if value.chars().count() > 16 { 14.0 } else { 20.0 };
     let galley = p.layout(value.to_string(), FontId::proportional(size), t.text, rect.width() - 32.0);
@@ -393,7 +393,7 @@ fn recent(ui: &mut Ui, files: &[PathBuf]) -> Option<Action> {
         let (rect, response) = ui.allocate_exact_size(vec2(width, 44.0), if exists { Sense::click() } else { Sense::hover() });
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, exists, &name));
         if response.hovered() && exists {
-            ui.painter().rect_filled(rect, 4.0, t.accent_soft);
+            ui.painter().rect_filled(rect, 0.0, t.accent_soft);
         }
         let mut p = ui.painter().clone();
         if !exists {

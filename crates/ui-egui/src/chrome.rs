@@ -109,7 +109,7 @@ pub(crate) struct State<'a> {
 const HEADER_HEIGHT: f32 = 60.0;
 const TOOLBAR_HEIGHT: f32 = 36.0;
 /// Corners of the hover tints on the menus and the toolbar's buttons.
-const ROUND: f32 = 4.0;
+const ROUND: f32 = 0.0;
 
 /// Presenting: the schedule alone on the whole screen, as slides start.
 pub(crate) const PRESENT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F5);
@@ -175,9 +175,9 @@ fn outlined(ui: &mut egui::Ui, icon: Icon, text: &str) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text));
     if response.hovered() {
-        ui.painter().rect_filled(rect, height / 2.0, if response.is_pointer_button_down_on() { t.pressed } else { t.hover });
+        ui.painter().rect_filled(rect, 0.0, if response.is_pointer_button_down_on() { t.pressed } else { t.hover });
     }
-    ui.painter().rect_stroke(rect, height / 2.0, egui::Stroke::new(1.0, t.header_line), egui::StrokeKind::Inside);
+    ui.painter().rect_stroke(rect, 0.0, egui::Stroke::new(1.0, t.header_line), egui::StrokeKind::Inside);
     let icon_center = egui::pos2(rect.left() + pad + 5.0, rect.center().y);
     icons::paint(ui.painter(), egui::Rect::from_center_size(icon_center, egui::vec2(12.0, 12.0)), icon, &t);
     ui.painter().galley(egui::pos2(rect.left() + pad + 18.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
@@ -521,7 +521,7 @@ fn font_tools(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoi
     let mut text = ui.data(|d| d.get_temp::<(u8, String)>(key)).filter(|(was, _)| *was == now.size).map_or(now.size.to_string(), |(_, t)| t);
     let label = tr!("font-size");
     let field =
-        egui::Frame::new().stroke(egui::Stroke::new(1.0, t.text_dim)).corner_radius(4.0).inner_margin(egui::Margin::symmetric(2, 1)).show(ui, |ui| {
+        egui::Frame::new().stroke(egui::Stroke::new(1.0, t.text_dim)).corner_radius(0.0).inner_margin(egui::Margin::symmetric(2, 1)).show(ui, |ui| {
             ui.add(egui::TextEdit::singleline(&mut text).desired_width(24.0).align(egui::Align2::CENTER_CENTER).frame(egui::Frame::NONE))
         });
     let response = field.inner;

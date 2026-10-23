@@ -441,9 +441,9 @@ fn quick(app: PerthApp) -> Harness<'static, PerthApp> {
 // Where the sample's rows and ruler are in the 1360 × 820 window: W1, M0, A10, A20, A30 down
 // the table; the ruler's months over its days; the chart past the table.
 const TABLE_X: f32 = 200.0;
-const ROW_A10: f32 = 253.0;
-const ROW_A20: f32 = 277.0;
-const ROW_A30: f32 = 301.0;
+const ROW_A10: f32 = 223.0;
+const ROW_A20: f32 = 247.0;
+const ROW_A30: f32 = 271.0;
 
 /// Dragging over rows of the table chooses them all; Ctrl and a click adds one; Delete takes
 /// every one chosen, in one change.
@@ -492,7 +492,7 @@ fn double_clicks_on_the_chart_add_notes_and_open_details() {
     assert!(h.state().quick_note.is_none());
     // January 2027 on the ruler's months (a fresh window: the name just typed keeps the focus).
     let mut h = quick(PerthApp::default());
-    double_click(&mut h, egui::pos2(1090.0, 161.0));
+    double_click(&mut h, egui::pos2(1090.0, 131.0));
     let note = h.state().quick_note.clone().expect("a month's window");
     assert_eq!((note.month, note.from.to_string()), (true, "2027-01-01".to_string()));
     h.key_press(egui::Key::Escape);
@@ -563,7 +563,7 @@ fn drag(h: &mut Harness<'static, PerthApp>, from: egui::Pos2, to: egui::Pos2) {
 }
 
 // B10, Earthworks, has 19 days of float: its bar is the blue one on its row, from 25 November.
-const ROW_B10: f32 = 373.0;
+const ROW_B10: f32 = 343.0;
 const B10_MIDDLE: f32 = 981.0;
 const B10_FINISH_EDGE: f32 = 989.0;
 

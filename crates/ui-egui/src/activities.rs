@@ -748,7 +748,7 @@ pub(crate) fn show(
                 let cell = Rect::from_min_size(pos2(rect.left() + left, rect.top() + 1.0), vec2(width, ROW - 2.0));
                 if matches!(e.column, Column::Start | Column::Finish) {
                     let start = e.column == Column::Start;
-                    ui.painter().rect_stroke(cell, 2.0, Stroke::new(1.5, t.accent), StrokeKind::Inside);
+                    ui.painter().rect_stroke(cell, 0.0, Stroke::new(1.5, t.accent), StrokeKind::Inside);
                     let current = s_of(i).map(|s| if start { s.early_start } else { s.early_finish });
                     let shown = crate::read_date(&e.text).or(current);
                     let pick = egui::Id::unique("date-pick").with((i, start));
@@ -807,7 +807,7 @@ pub(crate) fn show(
             {
                 let (l, r) = (x_of(b.start.days(), chart_left), x_of(b.finish.days(), chart_left) + scale);
                 let y = rect.center().y + 6.0;
-                chart.rect_filled(Rect::from_min_max(pos2(l, y), pos2(r.max(l + 3.0), y + 3.5)), 1.0, t.orange.gamma_multiply(0.85));
+                chart.rect_filled(Rect::from_min_max(pos2(l, y), pos2(r.max(l + 3.0), y + 3.5)), 0.0, t.orange.gamma_multiply(0.85));
             }
             bar(&chart, a.kind, &a.name, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, look, &t);
         }
@@ -818,13 +818,13 @@ pub(crate) fn show(
                 Rect::from_min_max(pos2(x_of(start, chart_left), row.top() + 5.0), pos2(x_of(finish, chart_left) + scale, row.bottom() - 5.0));
             let clip =
                 ui.painter().with_clip_rect(Rect::from_min_max(pos2(chart_left, ui.clip_rect().top()), pos2(full.right(), ui.clip_rect().bottom())));
-            clip.rect_filled(ghost, 3.0, t.accent.gamma_multiply(0.25));
-            clip.rect_stroke(ghost, 3.0, Stroke::new(1.5, t.accent), StrokeKind::Inside);
+            clip.rect_filled(ghost, 0.0, t.accent.gamma_multiply(0.25));
+            clip.rect_stroke(ghost, 0.0, Stroke::new(1.5, t.accent), StrokeKind::Inside);
             if let (Some(s), Some(f)) = (Date::from_days(start), Date::from_days(finish)) {
                 let text = format!("{} – {}", show_date(s), show_date(f));
                 let galley = clip.layout_no_wrap(text, FontId::proportional(12.0), t.text);
                 let at = pos2(p.x + 12.0, row.top() - galley.size().y - 4.0);
-                clip.rect_filled(Rect::from_min_size(at - vec2(4.0, 2.0), galley.size() + vec2(8.0, 4.0)), 3.0, t.paper);
+                clip.rect_filled(Rect::from_min_size(at - vec2(4.0, 2.0), galley.size() + vec2(8.0, 4.0)), 0.0, t.paper);
                 clip.galley(at, galley, t.text);
             }
             ui.ctx().set_cursor_icon(if drag.mode == BarMode::Move { egui::CursorIcon::Grabbing } else { egui::CursorIcon::ResizeHorizontal });
@@ -852,8 +852,8 @@ pub(crate) fn show(
         let thumb_width = track.width() * share;
         let at = track.left() + (track.width() - thumb_width) * (options.offset / (days as f32 - visible_days).max(1.0));
         let thumb = Rect::from_min_size(pos2(at, track.top()), vec2(thumb_width, track.height()));
-        ui.painter().rect_filled(track, 3.0, t.header_bg);
-        ui.painter().rect_filled(thumb, 3.0, if response.hovered() || response.dragged() { t.text_dim } else { t.header_line });
+        ui.painter().rect_filled(track, 0.0, t.header_bg);
+        ui.painter().rect_filled(thumb, 0.0, if response.hovered() || response.dragged() { t.text_dim } else { t.header_line });
         if response.dragged() {
             options.offset += response.drag_delta().x / (track.width() - thumb_width).max(1.0) * (days as f32 - visible_days);
         }
@@ -890,8 +890,8 @@ pub(crate) fn show(
             }
         } else {
             let painter = ui.painter().with_clip_rect(full);
-            painter.rect_filled(b, 2.0, t.accent_soft.gamma_multiply(0.5));
-            painter.rect_stroke(b, 2.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+            painter.rect_filled(b, 0.0, t.accent_soft.gamma_multiply(0.5));
+            painter.rect_stroke(b, 0.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
         }
     }
     events.clicked = clicked;
@@ -977,16 +977,16 @@ fn bar(
     if look.float && s.total_float > 0 {
         let (_, lr) = span(s.late_start, s.late_finish);
         let band = Rect::from_min_max(pos2(r - 2.0, mid - 2.0), pos2(lr, mid + 2.0));
-        painter.rect_filled(band, 2.0, color.gamma_multiply(0.28));
+        painter.rect_filled(band, 0.0, color.gamma_multiply(0.28));
         painter.vline(lr, (mid - 4.0)..=(mid + 4.0), Stroke::new(1.0, color.gamma_multiply(0.6)));
     }
     let body = Rect::from_min_max(pos2(l, mid - 6.0), pos2(r, mid + 6.0));
     let edge = if look.selected { Stroke::new(2.0, t.accent) } else { Stroke::new(1.0, darker(color)) };
-    painter.rect(body, 3.0, color, edge, StrokeKind::Inside);
+    painter.rect(body, 0.0, color, edge, StrokeKind::Inside);
     // A highlight along the top, for a little depth.
     painter.rect_filled(
         Rect::from_min_max(pos2(l + 2.0, mid - 5.0), pos2((r - 2.0).max(l + 2.0), mid - 3.5)),
-        1.0,
+        0.0,
         egui::Color32::from_white_alpha(46),
     );
     if s.status == Status::InProgress
@@ -994,11 +994,7 @@ fn bar(
     {
         let done = x_of(d).clamp(l, r);
         if done > l {
-            painter.rect_filled(
-                Rect::from_min_max(pos2(l, mid - 6.0), pos2(done, mid + 6.0)),
-                egui::CornerRadius { nw: 3, sw: 3, ne: 0, se: 0 },
-                t.green,
-            );
+            painter.rect_filled(Rect::from_min_max(pos2(l, mid - 6.0), pos2(done, mid + 6.0)), egui::CornerRadius::ZERO, t.green);
         }
     }
     let end = if look.float && s.total_float > 0 { span(s.late_start, s.late_finish).1 } else { r };

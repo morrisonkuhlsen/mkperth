@@ -188,7 +188,7 @@ pub(crate) fn artwork(painter: &egui::Painter, art: Rect, k: f32) {
             critical_end = Some(pos2(bar.right(), bar.center().y));
         }
         let fill = if critical { BRAND } else { LILAC_DEEP.gamma_multiply(0.75) };
-        painter.rect_filled(bar, 3.0 * k, fill);
+        painter.rect_filled(bar, 0.0, fill);
         if !critical {
             // The float, as a thin line on to where the bar could finish.
             let float = pos2(bar.right() + 1.2 * step, bar.center().y);
