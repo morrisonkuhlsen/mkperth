@@ -18,8 +18,8 @@ mod tree;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use mkperth_core::{
-    Activity, ActivityKind, Assignment, Baseline, BaselineActivity, Calendar, Constraint, Date, DurationType, LevellingPriority, Period, Project,
-    Relationship, RelationshipType, Resource, ResourceKind, Role, UNIT, Weekday,
+    Accrual, Activity, ActivityKind, Assignment, Baseline, BaselineActivity, Calendar, Constraint, CostAccount, Date, DurationType, Expense,
+    LevellingPriority, Period, Price, Project, Relationship, RelationshipType, Resource, ResourceKind, Role, UNIT, Weekday,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -401,6 +401,67 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         let unit = e.text_of("UnitOfMeasureObjectId").and_then(|u| unit_of_measure.get(u)).map_or_else(String::new, |u| u.to_string());
         resources.push(Resource { name: e.text_of("Name").unwrap_or(&id).to_string(), id, kind, unit, calendar, max_units, ..Resource::default() });
     }
+    // Prices over time: each resource's rates by the day they take effect; the earliest holds
+    // from the start of time, as MK Perth keeps a first price.
+    for e in root.all("ResourceRate") {
+        let (Some(resource), Some(price)) =
+            (e.text_of("ResourceObjectId").and_then(|r| resource_by_object.get(r)), e.text_of("PricePerUnit").and_then(money_of))
+        else {
+            continue;
+        };
+        if let Some(r) = resources.iter_mut().find(|x| x.id == *resource).filter(|r| r.prices.len() < 1000) {
+            r.prices.push(Price { from: e.text_of("EffectiveDate").and_then(date_of), per_unit: price });
+        }
+    }
+    for r in &mut resources {
+        r.prices.sort_by_key(|p| p.from);
+        if let Some(first) = r.prices.first_mut() {
+            first.from = None;
+        }
+    }
+    // Cost accounts, by their object numbers for their parents and the expenses.
+    let mut account_by_object: HashMap<&str, String> = HashMap::new();
+    for e in root.all("CostAccount") {
+        if let (Some(o), Some(id)) = (e.text_of("ObjectId"), e.text_of("Id")) {
+            account_by_object.insert(o, id.to_string());
+        }
+    }
+    let cost_accounts: Vec<CostAccount> = root
+        .all("CostAccount")
+        .filter_map(|e| {
+            Some(CostAccount {
+                id: e.text_of("Id")?.to_string(),
+                name: e.text_of("Name").unwrap_or_default().to_string(),
+                parent: e.text_of("ParentObjectId").and_then(|o| account_by_object.get(o)).cloned(),
+            })
+        })
+        .collect();
+    let mut expenses: Vec<Expense> = Vec::new();
+    for e in p.all("ActivityExpense").chain(root.all("ActivityExpense")) {
+        let Some(activity) = e.text_of("ActivityObjectId").and_then(|o| by_object.get(o)).cloned() else { continue };
+        let mut name = e.text_of("ExpenseItem").unwrap_or("Expense").to_string();
+        // Unique on its activity, as MK Perth names them.
+        let base = name.clone();
+        let mut k = 1;
+        while expenses.iter().any(|x| x.activity == activity && x.name == name) && k < 10_000 {
+            k += 1;
+            name = format!("{base} ({k})");
+        }
+        let accrual = match e.text_of("AccrualType") {
+            Some("Start of Activity") => Accrual::Start,
+            Some("End of Activity") => Accrual::End,
+            _ => Accrual::Uniform,
+        };
+        expenses.push(Expense {
+            activity,
+            name,
+            account: e.text_of("CostAccountObjectId").and_then(|o| account_by_object.get(o)).cloned(),
+            planned: e.text_of("PlannedCost").and_then(money_of).unwrap_or(0),
+            actual: e.text_of("ActualCost").and_then(money_of).unwrap_or(0),
+            remaining: e.text_of("RemainingCost").and_then(money_of),
+            accrual,
+        });
+    }
     for e in root.all("ResourceRole") {
         let resource = e.text_of("ResourceObjectId").and_then(|r| resource_by_object.get(r));
         let role = e.text_of("RoleObjectId").and_then(|r| role_by_object.get(r));
@@ -486,8 +547,8 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             levelling: Default::default(),
             baselines,
             baseline_in_use,
-            expenses: Vec::new(),
-            cost_accounts: Vec::new(),
+            expenses,
+            cost_accounts,
             currency: String::new(),
             activities,
             relationships,
@@ -531,6 +592,11 @@ fn baselines_of(root: &Element, p: &Element) -> (Vec<Baseline>, Option<String>) 
     }
     let in_use = p.text_of("CurrentBaselineProjectObjectId").and_then(|o| by_object.get(o).cloned());
     (list, in_use)
+}
+
+/// P6's money (`1500.5`) as hundredths of the currency.
+fn money_of(text: &str) -> Option<i64> {
+    text.trim().parse::<f64>().ok().filter(|m| m.is_finite() && m.abs() < 1e15).map(|m| (m * 100.0).round() as i64)
 }
 
 /// Hundredths of the currency as P6 writes money: `1500.5`.
@@ -682,6 +748,33 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         out.push_str("  </Resource>\n");
     }
+    // Each resource's prices as its rates; a first price from the start of time takes effect on
+    // the project's start.
+    let mut rates = 0usize;
+    for r in &project.resources {
+        for price in &r.prices {
+            rates += 1;
+            out.push_str(&format!(
+                "  <ResourceRate>\n    <ObjectId>{rates}</ObjectId>\n    <ResourceObjectId>{}</ResourceObjectId>\n    <EffectiveDate>{}</EffectiveDate>\n    <PricePerUnit>{}</PricePerUnit>\n  </ResourceRate>\n",
+                resource_object(&r.id).unwrap_or(0),
+                timestamp(price.from.unwrap_or(project.start), false),
+                money(price.per_unit)
+            ));
+        }
+    }
+    let account_object = |id: &str| project.cost_accounts.iter().position(|c| c.id == id).map(|k| k + 1);
+    for (k, c) in project.cost_accounts.iter().enumerate() {
+        out.push_str(&format!(
+            "  <CostAccount>\n    <ObjectId>{}</ObjectId>\n    <Id>{}</Id>\n    <Name>{}</Name>\n",
+            k + 1,
+            esc(&c.id),
+            esc(&c.name)
+        ));
+        if let Some(parent) = c.parent.as_deref().and_then(account_object) {
+            out.push_str(&format!("    <ParentObjectId>{parent}</ParentObjectId>\n"));
+        }
+        out.push_str("  </CostAccount>\n");
+    }
     let mut pairs = 0usize;
     for r in &project.resources {
         for role in r.roles.iter().filter_map(|id| role_object(id)) {
@@ -789,6 +882,29 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
                 r.lag.saturating_mul(day)
             }))
         ));
+    }
+    // Expenses on activities; a summary is a WBS element and takes none.
+    for (k, e) in project.expenses.iter().enumerate().filter(|(_, e)| !summary(&e.activity)) {
+        let accrual = match e.accrual {
+            Accrual::Start => "Start of Activity",
+            Accrual::End => "End of Activity",
+            Accrual::Uniform => "Uniform over Activity",
+        };
+        out.push_str(&format!(
+            "    <ActivityExpense>\n      <ObjectId>{}</ObjectId>\n      <ActivityObjectId>{}</ActivityObjectId>\n      <ExpenseItem>{}</ExpenseItem>\n      <PlannedCost>{}</PlannedCost>\n      <ActualCost>{}</ActualCost>\n      <AccrualType>{accrual}</AccrualType>\n      <ProjectObjectId>1</ProjectObjectId>\n",
+            k + 1,
+            object(&e.activity),
+            esc(&e.name),
+            money(e.planned),
+            money(e.actual)
+        ));
+        if let Some(r) = e.remaining {
+            out.push_str(&format!("      <RemainingCost>{}</RemainingCost>\n", money(r)));
+        }
+        if let Some(a) = e.account.as_deref().and_then(account_object) {
+            out.push_str(&format!("      <CostAccountObjectId>{a}</CostAccountObjectId>\n"));
+        }
+        out.push_str("    </ActivityExpense>\n");
     }
     // Assignments to activities; a summary is a WBS element in P6 and takes none.
     let mut on_summaries = 0usize;

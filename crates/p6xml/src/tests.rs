@@ -281,3 +281,40 @@ fn baselines_read_back() {
     let back = read(&text).unwrap().project;
     assert_eq!((back.baselines, back.baseline_in_use), (p.baselines, p.baseline_in_use));
 }
+
+/// Costs as P6 keeps them: resource rates over time, cost accounts in a hierarchy, and expenses
+/// with their accrual, written and read back.
+#[test]
+fn costs_read_back() {
+    use mkperth_core::{Accrual, CostAccount, Expense, Price, Resource};
+    let mut p = read(&file()).unwrap().project;
+    let id = p.activities.iter().find(|a| !p.activities.iter().any(|b| b.parent.as_deref() == Some(a.id.as_str()))).unwrap().id.clone();
+    p.resources.push(Resource {
+        id: "ANA".into(),
+        name: "Ana".into(),
+        prices: vec![Price { from: None, per_unit: 2500 }, Price { from: Some(day(2026, 12, 1)), per_unit: 3050 }],
+        ..Resource::default()
+    });
+    p.cost_accounts = vec![
+        CostAccount { id: "1".into(), name: "Site".into(), parent: None },
+        CostAccount { id: "1.1".into(), name: "Permits & fees".into(), parent: Some("1".into()) },
+    ];
+    p.expenses = vec![
+        Expense {
+            activity: id.clone(),
+            name: "Permit".into(),
+            account: Some("1.1".into()),
+            planned: 45_050,
+            actual: 45_050,
+            remaining: Some(0),
+            accrual: Accrual::Start,
+        },
+        Expense { activity: id, name: "Crane".into(), account: None, planned: 120_000, actual: 0, remaining: None, accrual: Accrual::Uniform },
+    ];
+    let (text, _) = write(&p);
+    assert!(text.contains("<AccrualType>Start of Activity</AccrualType>") && text.contains("<PricePerUnit>30.5</PricePerUnit>"), "{text}");
+    let back = read(&text).unwrap().project;
+    assert_eq!(back.resources.iter().find(|r| r.id == "ANA").map(|r| r.prices.clone()), Some(p.resources.last().unwrap().prices.clone()));
+    assert_eq!(back.cost_accounts, p.cost_accounts);
+    assert_eq!(back.expenses, p.expenses);
+}
