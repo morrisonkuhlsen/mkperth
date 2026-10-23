@@ -2,7 +2,7 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang CODE]
-//!  [--select N] [--side details|filters] [--scale PT_PER_DAY] [--offset DAYS] [--tab home|project|view] [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1)
+//!  [--select N] [--side details|filters] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--tab home|project|view] [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1)
 
 use mkperth_ui_egui::PerthApp;
 
@@ -43,6 +43,17 @@ fn main() -> Result<(), String> {
                     Some("details") => Some(mkperth_ui_egui::Side::Details),
                     Some("filters") => Some(mkperth_ui_egui::Side::Filters),
                     _ => return Err("--side details|filters".into()),
+                };
+            }
+            "--details" => {
+                i += 1;
+                app.side = Some(mkperth_ui_egui::Side::Details);
+                app.details_tab = match args.get(i).map(String::as_str) {
+                    Some("general") => mkperth_ui_egui::DetailsTab::General,
+                    Some("status") => mkperth_ui_egui::DetailsTab::Status,
+                    Some("relationships") => mkperth_ui_egui::DetailsTab::Relationships,
+                    Some("notes") => mkperth_ui_egui::DetailsTab::Notes,
+                    _ => return Err("--details general|status|relationships|notes".into()),
                 };
             }
             "--lang" => {

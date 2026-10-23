@@ -73,7 +73,7 @@ const TASK_FIELDS: [&str; 22] = [
 const PROJECT_FIELDS: [&str; 12] =
     ["id", "name", "tasks", "calendar", "people", "bands", "markers", "month_marks", "file_path", "baseline_at", "created_at", "updated_at"];
 /// The fields the model holds itself; the rest go to `extra`.
-const TASK_MAPPED: [&str; 8] = ["id", "name", "start", "duration", "dependencies", "milestone", "deadline", "parent"];
+const TASK_MAPPED: [&str; 9] = ["id", "name", "start", "duration", "dependencies", "milestone", "deadline", "parent", "notes"];
 const PROJECT_MAPPED: [&str; 3] = ["name", "tasks", "calendar"];
 const PREFIX: &str = "perth.";
 /// Keeps, in `extra`, where the project's order of keys came from, so unknown keys keep their
@@ -243,6 +243,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             constraint: start.map(Constraint::StartOnOrAfter),
             secondary_constraint: deadline.map(Constraint::FinishOnOrBefore),
             calendar: None,
+            notes: text_of("notes")?,
             extra,
         });
         dependencies.push((label, deps));
@@ -323,6 +324,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         known.insert("dependencies".into(), Value::Array(deps));
         known.insert("milestone".into(), Value::Bool(a.kind.is_milestone()));
         known.insert("parent".into(), Value::String(a.parent.clone().unwrap_or_default()));
+        known.insert("notes".into(), Value::String(a.notes.clone()));
         match a.secondary_constraint {
             Some(Constraint::FinishOnOrBefore(d)) => {
                 known.insert("deadline".into(), Value::String(d.to_string()));
@@ -339,7 +341,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             "dependencies" => value.as_array().is_some_and(|d| !d.is_empty()),
             "milestone" => value.as_bool() == Some(true),
             "deadline" => !value.is_null(),
-            "parent" => value.as_str().is_some_and(|p| !p.is_empty()),
+            "parent" | "notes" => value.as_str().is_some_and(|p| !p.is_empty()),
             _ => true,
         };
         let mut fields: Vec<(String, Value)> = Vec::new();

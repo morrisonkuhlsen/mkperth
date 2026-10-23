@@ -13,6 +13,8 @@ use crate::{EngineError, Session};
 pub const UNDO_DEPTH: usize = 200;
 /// The longest ID or name a command takes, in characters.
 const MAX_TEXT: usize = 2000;
+/// The longest an activity's notes may be, in characters.
+const MAX_NOTES: usize = 100_000;
 
 /// A command's parameter as text, if given; an error if given and not text.
 fn text(params: &Value, command: &str, name: &str) -> Result<Option<String>, EngineError> {
@@ -260,6 +262,11 @@ impl Session {
         let minutes = number(params, C, "duration_minutes", 0..=mkperth_sched::MAX_SPAN * 1440)?;
         let kind = text(params, C, "kind")?.map(|k| kind_of(&k).ok_or_else(|| EngineError::Value(C.into(), "kind".into()))).transpose()?;
         let calendar = text(params, C, "calendar")?;
+        let notes = match params.get("notes") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) if s.chars().count() <= MAX_NOTES => Some(s.clone()),
+            Some(_) => return Err(EngineError::Value(C.into(), "notes".into())),
+        };
         let constraint = params.get("constraint").map(|c| constraint_of(c, C)).transpose()?;
         let secondary = params.get("secondary_constraint").map(|c| constraint_of(c, C)).transpose()?;
         let expected = date(params, C, "expected_finish")?;
@@ -333,6 +340,9 @@ impl Session {
             }
             if let Some(d) = expected {
                 a.expected_finish = d;
+            }
+            if let Some(n) = notes {
+                a.notes = n;
             }
             if let Some(d) = actual_start {
                 a.actual_start = d;

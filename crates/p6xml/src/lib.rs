@@ -388,7 +388,12 @@ fn timestamp(d: Date, evening: bool) -> String {
 /// durations and lags in hours by each calendar's working day, and the calendars' work periods. Returns the text and what P6's format couldn't
 /// hold.
 pub fn write(project: &Project) -> (String, Vec<String>) {
-    let warnings = Vec::new();
+    let mut warnings = Vec::new();
+    // P6 keeps notes in notebook topics this file doesn't write.
+    let noted = project.activities.iter().filter(|a| !a.notes.trim().is_empty()).count();
+    if noted > 0 {
+        warnings.push(tr!("warn-p6-notes", n = noted));
+    }
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str(&format!("<APIBusinessObjects xmlns=\"{NAMESPACE}\">\n"));
     let calendars: Vec<&Calendar> = std::iter::once(&project.calendar).chain(project.calendars.iter()).collect();

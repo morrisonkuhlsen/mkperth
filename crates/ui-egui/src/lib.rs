@@ -44,6 +44,16 @@ pub enum View {
     Activities,
 }
 
+/// The Details pane's tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DetailsTab {
+    #[default]
+    General,
+    Status,
+    Relationships,
+    Notes,
+}
+
 /// The panes the strip at the right edge opens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
@@ -85,6 +95,8 @@ pub struct PerthApp {
     pub editing: Option<Editing>,
     /// The Details pane's new predecessor: its ID, the kind (FS, SS, FF, SF) and the lag.
     link: (String, RelationshipType, i64),
+    /// The Details pane's tab.
+    pub details_tab: DetailsTab,
     /// The selected activity's calculation, in words: (its index, the lines).
     calculation: Option<(usize, Vec<String>)>,
     themed: bool,
@@ -172,6 +184,7 @@ impl PerthApp {
             zoom: 100,
             editing: None,
             link: (String::new(), RelationshipType::FinishToStart, 0),
+            details_tab: DetailsTab::default(),
             calculation: None,
             themed: false,
             title: String::new(),
@@ -610,140 +623,194 @@ impl PerthApp {
         };
         let mut pending: Option<(&str, serde_json::Value)> = None;
         let day = self.day_minutes_of(i);
-        egui::ScrollArea::vertical().id_salt("details").auto_shrink(false).show(ui, |ui| {
-            ui.label(egui::RichText::new(&a.name).size(15.0).color(t.text).strong());
-            ui.add_space(6.0);
-            fact(ui, tr!("detail-id"), a.id.clone());
-            fact(ui, tr!("detail-kind"), kind);
-            if !summary && !a.kind.is_milestone() {
-                fact(ui, tr!("detail-duration"), tr!("detail-days", n = days_text(a.working_minutes(day), day).as_str()));
-            }
-            fact(ui, tr!("detail-calendar"), a.calendar.clone().unwrap_or_else(|| project.calendar.name.clone()));
-            if let Some(parent) = a.parent.as_deref() {
-                fact(ui, tr!("detail-wbs"), parent.to_string());
-            }
-            for (name, c) in [(tr!("detail-constraint"), a.constraint), (tr!("detail-secondary-constraint"), a.secondary_constraint)] {
-                if let Some(c) = c {
-                    fact(ui, name, constraint_name(c, &show_date));
-                }
-            }
-            // Progress: where it stands, its actual dates and the work left.
-            if !summary {
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new(tr!("detail-progress")).size(12.5).color(t.text).strong());
-                ui.add_space(2.0);
-                if let Some(s) = scheduled {
-                    let status = match s.status {
-                        mkperth_engine::sched::Status::NotStarted => tr!("status-not-started"),
-                        mkperth_engine::sched::Status::InProgress => tr!("status-in-progress"),
-                        mkperth_engine::sched::Status::Completed => tr!("status-completed"),
-                    };
-                    fact(ui, tr!("detail-status"), status);
-                }
-                let mut fields = vec![
-                    (tr!("detail-actual-start"), "actual_start", a.actual_start),
-                    (tr!("detail-actual-finish"), "actual_finish", a.actual_finish),
-                ];
-                if !a.kind.is_milestone() && a.actual_finish.is_none() {
-                    fields.push((tr!("detail-expected-finish"), "expected_finish", a.expected_finish));
-                }
-                for (name, key, value) in fields {
-                    ui.horizontal(|ui| {
-                        let label = ui.add_sized(egui::vec2(120.0, 18.0), egui::Label::new(egui::RichText::new(name).size(12.0).color(t.text_dim)));
-                        if let Some(d) = date_field(ui, ui.id().with((key, i)), label.id, value, 100.0) {
-                            pending = Some(("activity.edit", json!({"id": a.id, key: d.map(|d| d.to_string())})));
-                        }
-                    });
-                    ui.add_space(3.0);
-                }
-                if a.actual_start.is_some() && a.actual_finish.is_none() {
-                    let left = scheduled.map_or(0, |s| s.remaining_minutes);
-                    ui.horizontal(|ui| {
-                        ui.add_sized(
-                            egui::vec2(120.0, 18.0),
-                            egui::Label::new(egui::RichText::new(tr!("detail-remaining")).size(12.0).color(t.text_dim)),
-                        );
-                        let mut days = left as f64 / day.max(1) as f64;
-                        let response = ui.add(
-                            egui::DragValue::new(&mut days)
-                                .range(0.0..=99_999.0)
-                                .speed(0.1)
-                                .max_decimals(2)
-                                .custom_formatter(|n, _| mkperth_engine::i18n::decimal(format!("{n:.2}").trim_end_matches('0').trim_end_matches('.')))
-                                .custom_parser(|text| text.trim().replace(',', ".").parse().ok()),
-                        );
-                        if response.changed() && !response.dragged() || response.drag_stopped() {
-                            let minutes = (days * day as f64).round() as i64;
-                            if minutes != left {
-                                pending = Some(("activity.edit", json!({"id": a.id, "remaining_minutes": minutes})));
-                            }
-                        }
-                    });
-                    ui.add_space(3.0);
-                }
-            }
-            if let Some(s) = scheduled {
-                ui.add_space(6.0);
-                fact(ui, tr!("col-early-start"), show_date(s.early_start));
-                fact(ui, tr!("col-early-finish"), show_date(s.early_finish));
-                fact(ui, tr!("col-late-start"), show_date(s.late_start));
-                fact(ui, tr!("col-late-finish"), show_date(s.late_finish));
-                fact(ui, tr!("col-total-float"), days_text(s.total_float_minutes, day));
-                fact(ui, tr!("col-free-float"), days_text(s.free_float_minutes, day));
-                if s.critical {
-                    ui.label(egui::RichText::new(tr!("detail-critical")).size(12.5).color(t.red));
-                }
-                if s.longest_path {
-                    ui.label(egui::RichText::new(tr!("detail-longest-path")).size(12.5).color(t.text));
-                }
-            }
-            let lag = |l: i64| if l == 0 { String::new() } else { format!(" {l:+}") };
-            let mut remove = None;
-            for (title, predecessors) in [(tr!("detail-predecessors"), true), (tr!("detail-successors"), false)] {
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new(title).size(12.5).color(t.text).strong());
-                let list: Vec<&mkperth_engine::core::Relationship> =
-                    project.relationships.iter().filter(|r| if predecessors { r.successor == a.id } else { r.predecessor == a.id }).collect();
-                if list.is_empty() {
-                    ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
-                }
-                for r in list {
-                    let other = if predecessors { &r.predecessor } else { &r.successor };
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(format!("{other}  {}{}", r.kind.code(), lag(r.lag))).size(12.5).color(t.text));
-                        if icon_button(ui, Icon::Close, &tr!("relationship-remove")) {
-                            remove = Some((r.predecessor.clone(), r.successor.clone()));
-                        }
-                    });
-                }
-            }
-            // A new predecessor: its ID, the kind and the lag.
-            ui.add_space(10.0);
-            ui.label(egui::RichText::new(tr!("relationship-add-title")).size(12.0).color(t.text_dim));
-            let mut add = false;
-            ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.link.0).hint_text(tr!("relationship-id-hint")).desired_width(90.0));
-                egui::ComboBox::from_id_salt("link-kind").selected_text(self.link.1.code()).width(48.0).show_ui(ui, |ui| {
-                    for k in [
-                        RelationshipType::FinishToStart,
-                        RelationshipType::StartToStart,
-                        RelationshipType::FinishToFinish,
-                        RelationshipType::StartToFinish,
-                    ] {
-                        ui.selectable_value(&mut self.link.1, k, k.code());
-                    }
-                });
-                ui.add(egui::DragValue::new(&mut self.link.2).range(-999..=999)).on_hover_text(tr!("relationship-lag-tip"));
-                add = ui.button(tr!("relationship-add")).clicked();
-            });
-            if add && !self.link.0.trim().is_empty() {
-                let params = json!({"predecessor": self.link.0.trim(), "successor": a.id, "kind": self.link.1.code(), "lag": self.link.2});
-                pending = Some(("relationship.add", params));
-            }
-            if let Some((p, s)) = remove {
-                pending = Some(("relationship.delete", json!({"predecessor": p, "successor": s})));
+        ui.label(egui::RichText::new(&a.name).size(15.0).color(t.text).strong());
+        ui.add_space(4.0);
+        // General, Status, Relationships and Notes, one at a time.
+        let mut tab = self.details_tab;
+        ui.horizontal(|ui| {
+            for (k, name) in [
+                (DetailsTab::General, tr!("details-general")),
+                (DetailsTab::Status, tr!("details-status")),
+                (DetailsTab::Relationships, tr!("details-relationships")),
+                (DetailsTab::Notes, tr!("details-notes")),
+            ] {
+                ui.selectable_value(&mut tab, k, name);
             }
         });
+        ui.separator();
+        // Notes typed and not yet saved when another tab took over.
+        if tab != DetailsTab::Notes {
+            let key = egui::Id::new(("notes", i)).with("text");
+            if let Some((was, text)) = ui.data_mut(|d| d.remove_temp::<(String, String)>(key))
+                && was == a.notes
+                && text != a.notes
+            {
+                pending = Some(("activity.edit", json!({"id": a.id, "notes": text})));
+            }
+        }
+        egui::ScrollArea::vertical().id_salt("details").auto_shrink(false).show(ui, |ui| {
+            match tab {
+                DetailsTab::General => {
+                    fact(ui, tr!("detail-id"), a.id.clone());
+                    fact(ui, tr!("detail-kind"), kind);
+                    if !summary && !a.kind.is_milestone() {
+                        fact(ui, tr!("detail-duration"), tr!("detail-days", n = days_text(a.working_minutes(day), day).as_str()));
+                    }
+                    fact(ui, tr!("detail-calendar"), a.calendar.clone().unwrap_or_else(|| project.calendar.name.clone()));
+                    if let Some(parent) = a.parent.as_deref() {
+                        fact(ui, tr!("detail-wbs"), parent.to_string());
+                    }
+                    for (name, c) in [(tr!("detail-constraint"), a.constraint), (tr!("detail-secondary-constraint"), a.secondary_constraint)] {
+                        if let Some(c) = c {
+                            fact(ui, name, constraint_name(c, &show_date));
+                        }
+                    }
+                }
+                DetailsTab::Status => {
+                    // Progress: where it stands, its actual dates and the work left.
+                    if !summary {
+                        if let Some(s) = scheduled {
+                            let status = match s.status {
+                                mkperth_engine::sched::Status::NotStarted => tr!("status-not-started"),
+                                mkperth_engine::sched::Status::InProgress => tr!("status-in-progress"),
+                                mkperth_engine::sched::Status::Completed => tr!("status-completed"),
+                            };
+                            fact(ui, tr!("detail-status"), status);
+                        }
+                        let mut fields = vec![
+                            (tr!("detail-actual-start"), "actual_start", a.actual_start),
+                            (tr!("detail-actual-finish"), "actual_finish", a.actual_finish),
+                        ];
+                        if !a.kind.is_milestone() && a.actual_finish.is_none() {
+                            fields.push((tr!("detail-expected-finish"), "expected_finish", a.expected_finish));
+                        }
+                        for (name, key, value) in fields {
+                            ui.horizontal(|ui| {
+                                let label =
+                                    ui.add_sized(egui::vec2(120.0, 18.0), egui::Label::new(egui::RichText::new(name).size(12.0).color(t.text_dim)));
+                                if let Some(d) = date_field(ui, ui.id().with((key, i)), label.id, value, 100.0) {
+                                    pending = Some(("activity.edit", json!({"id": a.id, key: d.map(|d| d.to_string())})));
+                                }
+                            });
+                            ui.add_space(3.0);
+                        }
+                        if a.actual_start.is_some() && a.actual_finish.is_none() {
+                            let left = scheduled.map_or(0, |s| s.remaining_minutes);
+                            ui.horizontal(|ui| {
+                                ui.add_sized(
+                                    egui::vec2(120.0, 18.0),
+                                    egui::Label::new(egui::RichText::new(tr!("detail-remaining")).size(12.0).color(t.text_dim)),
+                                );
+                                let mut days = left as f64 / day.max(1) as f64;
+                                let response = ui.add(
+                                    egui::DragValue::new(&mut days)
+                                        .range(0.0..=99_999.0)
+                                        .speed(0.1)
+                                        .max_decimals(2)
+                                        .custom_formatter(|n, _| {
+                                            mkperth_engine::i18n::decimal(format!("{n:.2}").trim_end_matches('0').trim_end_matches('.'))
+                                        })
+                                        .custom_parser(|text| text.trim().replace(',', ".").parse().ok()),
+                                );
+                                if response.changed() && !response.dragged() || response.drag_stopped() {
+                                    let minutes = (days * day as f64).round() as i64;
+                                    if minutes != left {
+                                        pending = Some(("activity.edit", json!({"id": a.id, "remaining_minutes": minutes})));
+                                    }
+                                }
+                            });
+                            ui.add_space(3.0);
+                        }
+                    }
+                    if let Some(s) = scheduled {
+                        ui.add_space(6.0);
+                        fact(ui, tr!("col-early-start"), show_date(s.early_start));
+                        fact(ui, tr!("col-early-finish"), show_date(s.early_finish));
+                        fact(ui, tr!("col-late-start"), show_date(s.late_start));
+                        fact(ui, tr!("col-late-finish"), show_date(s.late_finish));
+                        fact(ui, tr!("col-total-float"), days_text(s.total_float_minutes, day));
+                        fact(ui, tr!("col-free-float"), days_text(s.free_float_minutes, day));
+                        if s.critical {
+                            ui.label(egui::RichText::new(tr!("detail-critical")).size(12.5).color(t.red));
+                        }
+                        if s.longest_path {
+                            ui.label(egui::RichText::new(tr!("detail-longest-path")).size(12.5).color(t.text));
+                        }
+                    }
+                }
+                DetailsTab::Relationships => {
+                    let lag = |l: i64| if l == 0 { String::new() } else { format!(" {l:+}") };
+                    let mut remove = None;
+                    for (title, predecessors) in [(tr!("detail-predecessors"), true), (tr!("detail-successors"), false)] {
+                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new(title).size(12.5).color(t.text).strong());
+                        let list: Vec<&mkperth_engine::core::Relationship> =
+                            project.relationships.iter().filter(|r| if predecessors { r.successor == a.id } else { r.predecessor == a.id }).collect();
+                        if list.is_empty() {
+                            ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+                        }
+                        for r in list {
+                            let other = if predecessors { &r.predecessor } else { &r.successor };
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(format!("{other}  {}{}", r.kind.code(), lag(r.lag))).size(12.5).color(t.text));
+                                if icon_button(ui, Icon::Close, &tr!("relationship-remove")) {
+                                    remove = Some((r.predecessor.clone(), r.successor.clone()));
+                                }
+                            });
+                        }
+                    }
+                    // A new predecessor: its ID, the kind and the lag.
+                    ui.add_space(10.0);
+                    ui.label(egui::RichText::new(tr!("relationship-add-title")).size(12.0).color(t.text_dim));
+                    let mut add = false;
+                    ui.horizontal(|ui| {
+                        ui.add(egui::TextEdit::singleline(&mut self.link.0).hint_text(tr!("relationship-id-hint")).desired_width(90.0));
+                        egui::ComboBox::from_id_salt("link-kind").selected_text(self.link.1.code()).width(48.0).show_ui(ui, |ui| {
+                            for k in [
+                                RelationshipType::FinishToStart,
+                                RelationshipType::StartToStart,
+                                RelationshipType::FinishToFinish,
+                                RelationshipType::StartToFinish,
+                            ] {
+                                ui.selectable_value(&mut self.link.1, k, k.code());
+                            }
+                        });
+                        ui.add(egui::DragValue::new(&mut self.link.2).range(-999..=999)).on_hover_text(tr!("relationship-lag-tip"));
+                        add = ui.button(tr!("relationship-add")).clicked();
+                    });
+                    if add && !self.link.0.trim().is_empty() {
+                        let params = json!({"predecessor": self.link.0.trim(), "successor": a.id, "kind": self.link.1.code(), "lag": self.link.2});
+                        pending = Some(("relationship.add", params));
+                    }
+                    if let Some((p, s)) = remove {
+                        pending = Some(("relationship.delete", json!({"predecessor": p, "successor": s})));
+                    }
+                }
+                DetailsTab::Notes => {
+                    // Kept as typed, saved when the box is left or the tab changes.
+                    let id = egui::Id::new(("notes", i));
+                    let key = id.with("text");
+                    let mut text =
+                        ui.data_mut(|d| d.get_temp::<(String, String)>(key)).filter(|(was, _)| *was == a.notes).map_or(a.notes.clone(), |(_, t)| t);
+                    let response = ui.add(
+                        egui::TextEdit::multiline(&mut text)
+                            .id(id)
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(12)
+                            .hint_text(tr!("details-notes-hint")),
+                    );
+                    if response.lost_focus() {
+                        if text != a.notes {
+                            pending = Some(("activity.edit", json!({"id": a.id, "notes": text})));
+                        }
+                        ui.data_mut(|d| d.remove::<(String, String)>(key));
+                    } else {
+                        ui.data_mut(|d| d.insert_temp(key, (a.notes.clone(), text)));
+                    }
+                }
+            }
+        });
+        self.details_tab = tab;
         if let Some((command, params)) = pending {
             let added = command == "relationship.add";
             self.run(command, params);

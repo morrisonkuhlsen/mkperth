@@ -79,6 +79,7 @@ fn what_maps_to_the_model() {
     assert_eq!(p.calendar.name, "Brazil");
     assert_eq!(p.calendar.week, [true, true, true, true, true, false, false], "business days");
     assert_eq!(p.start, day(2026, 9, 1), "the earliest task start");
+    assert_eq!((p.activities[0].notes.as_str(), p.activities[1].notes.as_str()), ("**ok**", ""));
     let b = &p.activities[1];
     assert_eq!(b.constraint, Some(Constraint::StartOnOrAfter(day(2026, 9, 8))));
     assert_eq!(b.secondary_constraint, Some(Constraint::FinishOnOrBefore(day(2026, 9, 30))));

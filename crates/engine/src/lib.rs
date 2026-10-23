@@ -285,6 +285,10 @@ mod tests {
             assert_eq!(s.run("activity.edit", &bad), Err(EngineError::ConstraintPair("A10".into())), "{bad}");
         }
         assert_eq!(s.project, before);
+        // Notes, kept as typed; too long is refused.
+        s.run("activity.edit", &json!({"id": "A10", "notes": "Call the surveyor.\nTwo visits."})).unwrap();
+        assert_eq!(s.project.activities.iter().find(|a| a.id == "A10").unwrap().notes, "Call the surveyor.\nTwo visits.");
+        assert!(matches!(s.run("activity.edit", &json!({"id": "A10", "notes": "x".repeat(100_001)})), Err(EngineError::Value(..))));
         // An expected finish, then cleared.
         s.run("activity.edit", &json!({"id": "A10", "expected_finish": "2026-11-27"})).unwrap();
         assert_eq!(s.project.activities.iter().find(|a| a.id == "A10").unwrap().expected_finish, mkperth_core::Date::parse("2026-11-27"));

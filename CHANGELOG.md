@@ -25,6 +25,8 @@ Read it before re-scheduling a plan with a new version.
   XML; typed in Details and on the Project tab, drawn on the Gantt chart, explained in the
   calculation.
 - The ribbon's groups carry their names underneath.
+- The Details pane in tabs: General, Status, Relationships and Notes; notes per activity, kept
+  in Perth.jl's `notes` (P6 XML says they aren't written).
 - Exception days with work periods of their own; P6 XML's exceptions keep their hours (they
   were read as whole working days on their weekday's periods).
 - The calculation of an activity's dates as a LaTeX document: the Calculation pane's LaTeX

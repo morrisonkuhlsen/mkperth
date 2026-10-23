@@ -155,6 +155,8 @@ pub struct Activity {
     /// The activity it sits under in the WBS. An activity with children is a summary: its dates
     /// come from theirs, and it takes no part in the network itself.
     pub parent: Option<String>,
+    /// Free text: what the team keeps about it.
+    pub notes: String,
     pub extra: Extra,
 }
 

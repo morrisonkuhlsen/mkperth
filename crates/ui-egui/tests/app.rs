@@ -108,9 +108,11 @@ fn progress_is_typed_in_details_and_the_ribbon() {
     h.key_press(egui::Key::Enter);
     h.run_steps(3);
     assert_eq!(h.state().session.project.data_date, mkperth_ui_egui::read_date("2026-11-10"));
-    // A10's actual start in Details: it's under way.
+    // A10's actual start in Details, on the Status tab: it's under way.
     h.state_mut().selected = Some(2);
     h.state_mut().side = Some(mkperth_ui_egui::Side::Details);
+    h.run_steps(2);
+    h.get_by_label("Status").click();
     h.run_steps(2);
     h.get_by_role_and_label(Role::TextInput, "Actual start").click();
     h.run_steps(1);
@@ -151,4 +153,25 @@ fn the_calculation_saves_as_latex() {
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(tex.starts_with('%') && tex.contains("A10"), "{tex}");
     assert!(matches!(h.state().status, Some(mkperth_ui_egui::Status::Info(_))));
+}
+
+#[test]
+fn notes_are_typed_on_their_tab() {
+    use egui::accesskit::Role;
+    let mut h = harness(PerthApp::default());
+    h.state_mut().selected = Some(2);
+    h.state_mut().side = Some(mkperth_ui_egui::Side::Details);
+    h.run_steps(2);
+    h.get_by_label("Notes").click();
+    h.run_steps(2);
+    assert_eq!(h.state().details_tab, mkperth_ui_egui::DetailsTab::Notes);
+    h.get_by_role(Role::MultilineTextInput).click();
+    h.run_steps(1);
+    h.get_by_role(Role::MultilineTextInput).type_text("Call the surveyor");
+    h.run_steps(1);
+    // Leaving the box saves them.
+    h.get_by_label("General").click();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project.activities[2].notes, "Call the surveyor");
+    assert_eq!(h.state().session.undo_label(), Some("edit activity A10"));
 }
