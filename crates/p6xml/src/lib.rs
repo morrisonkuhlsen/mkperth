@@ -13,7 +13,7 @@
 
 mod tree;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use mkperth_core::{Activity, ActivityKind, Calendar, Constraint, Date, Period, Project, Relationship, RelationshipType, Weekday};
 use mkperth_i18n::tr;
@@ -155,18 +155,20 @@ fn calendar_of(e: &Element) -> (Calendar, f64) {
     if !any_day {
         week = [true, true, true, true, true, false, false];
     }
-    let (mut holidays, mut extra_days) = (BTreeSet::new(), BTreeSet::new());
-    if let Some(exceptions) = e.child("HolidayOrExceptions") {
-        for x in exceptions.all("HolidayOrException") {
+    // An exception with work times works them, whatever the week says; one without is a day off.
+    let (mut holidays, mut exceptions) = (BTreeSet::new(), BTreeMap::new());
+    if let Some(list) = e.child("HolidayOrExceptions") {
+        for x in list.all("HolidayOrException") {
             let Some(d) = x.text_of("Date").and_then(date_of) else { continue };
-            if x.all("WorkTime").next().is_some() {
-                extra_days.insert(d);
-            } else {
+            let p = periods_of(x, hours);
+            if p.is_empty() {
                 holidays.insert(d);
+            } else {
+                exceptions.insert(d, p);
             }
         }
     }
-    (Calendar { name, week, holidays, extra_days, region: None, periods }, hours)
+    (Calendar { name, week, holidays, extra_days: BTreeSet::new(), exceptions, region: None, periods }, hours)
 }
 
 /// Reads P6 XML.
@@ -427,13 +429,15 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
                 }
             }
         }
-        for d in &holidays {
+        // A day worked on its own periods is written once, as worked.
+        for d in holidays.iter().filter(|d| !c.extra_days.contains(d) && !c.exceptions.get(d).is_some_and(|p| !p.is_empty())) {
             out.push_str(&format!("      <HolidayOrException>\n        <Date>{d}T00:00:00</Date>\n      </HolidayOrException>\n"));
         }
-        for d in &c.extra_days {
+        let worked: BTreeSet<Date> = c.extra_days.iter().chain(c.exceptions.iter().filter(|(_, p)| !p.is_empty()).map(|(d, _)| d)).copied().collect();
+        for d in &worked {
             out.push_str(&format!(
                 "      <HolidayOrException>\n        <Date>{d}T00:00:00</Date>\n{}      </HolidayOrException>\n",
-                work_times(c.weekday_periods(d.weekday().index()), "        ")
+                work_times(c.day_periods(*d), "        ")
             ));
         }
         out.push_str("    </HolidayOrExceptions>\n  </Calendar>\n");

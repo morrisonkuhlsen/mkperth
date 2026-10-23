@@ -689,3 +689,25 @@ fn the_calculation_as_latex_compiles() {
     mkperth_i18n::set(mkperth_i18n::Lang::En);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn an_exception_day_works_its_own_periods() {
+    // A(2) from Monday 5 October on 08–12, 13–17; Monday works only 08–12 as an exception. Two
+    // days are 960 minutes: Monday's 240, Tuesday's 480, then 240 more to Wednesday at 12:00.
+    let mut p = project(&[("A", 2), ("B", 1)], &[("A", "B", FS, 0)]);
+    p.calendar.exceptions.insert(day(2026, 10, 5), vec![(480, 720)]);
+    let s = schedule(&p).unwrap();
+    assert_eq!(dates(&s, "A"), (day(2026, 10, 5), day(2026, 10, 7)));
+    assert_eq!(explain(&p, "A").unwrap().early_finish.time, Some(12 * 60));
+    // B, a day from Wednesday 13:00, ends Thursday at 12:00.
+    assert_eq!(dates(&s, "B"), (day(2026, 10, 7), day(2026, 10, 8)));
+    // A Saturday worked on its own morning; an exception with no periods is a day off.
+    let mut q = project(&[("C", 5)], &[]);
+    q.calendar.exceptions.insert(day(2026, 10, 10), vec![(480, 720)]);
+    q.calendar.exceptions.insert(day(2026, 10, 7), vec![]);
+    let s = schedule(&q).unwrap();
+    // Monday 480, Tuesday 960, Wednesday off, Thursday 1440, Friday 1920, Saturday's morning
+    // 2160, and the last 240 on Monday the 12th.
+    assert_eq!(dates(&s, "C"), (day(2026, 10, 5), day(2026, 10, 12)));
+    assert!(q.calendar.is_working(day(2026, 10, 10)) && !q.calendar.is_working(day(2026, 10, 7)));
+}

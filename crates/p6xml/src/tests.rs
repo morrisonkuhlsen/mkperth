@@ -75,7 +75,8 @@ fn reads_a_project() {
     // The default calendar: five days, the 2nd off, Saturday the 7th worked; its name unescaped.
     assert_eq!(p.calendar.name, "Standard & Holidays");
     assert_eq!(p.calendar.week, [true, true, true, true, true, false, false]);
-    assert!(p.calendar.holidays.contains(&day(2026, 11, 2)) && p.calendar.extra_days.contains(&day(2026, 11, 7)));
+    assert!(p.calendar.holidays.contains(&day(2026, 11, 2)));
+    assert_eq!(p.calendar.exceptions.get(&day(2026, 11, 7)), Some(&vec![(480, 720)]), "Saturday the 7th, the morning");
     assert_eq!(p.calendars.iter().map(|c| (c.name.as_str(), c.week)).collect::<Vec<_>>(), [("Seven days", [true; 7])]);
     let a = |id: &str| p.activities.iter().find(|a| a.id == id).unwrap();
     // The WBS as summaries; activities under them; hours to days at each calendar's hours.
@@ -132,6 +133,7 @@ fn what_is_written_reads_back_the_same() {
     assert_eq!((b.name.as_str(), b.start, b.must_finish_by, b.data_date), (p.name.as_str(), p.start, p.must_finish_by, p.data_date));
     assert_eq!(b.calendar.week, p.calendar.week);
     assert_eq!(b.calendar.holidays, p.calendar.holidays);
+    assert_eq!(b.calendar.exceptions, p.calendar.exceptions);
     assert_eq!(b.relationships, p.relationships);
     for a in &p.activities {
         let x = b.activities.iter().find(|x| x.id == a.id).unwrap();

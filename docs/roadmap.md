@@ -41,7 +41,9 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   placing, the floats; held against the schedule for every hand network, and exported as a
   LaTeX document (ASCII, accents as TeX's commands) that pdflatex compiles in both languages
   (`activity.export-tex`, the Calculation pane's LaTeX button).
-- **Next:** an exception day's own work periods.
+  An exception day works periods of its own (a short Christmas Eve, a Saturday morning), read
+  and written as P6 XML's `HolidayOrException` work times.
+- **Next:** calendars edited in the app (#16).
 
 ## M1 — data in and out
 - *Done:* Perth.jl's project JSON (`mkperth-perth`), read and written back byte for byte: a

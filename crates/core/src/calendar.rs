@@ -2,7 +2,7 @@
 //! periods), and the exceptions (holidays off, and days worked although the week says not).
 //! Durations count its working time.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -40,8 +40,11 @@ pub struct Calendar {
     pub week: [bool; 7],
     /// Days off although the week works them.
     pub holidays: BTreeSet<Date>,
-    /// Days worked although the week doesn't.
+    /// Days worked although the week doesn't, on their weekday's periods.
     pub extra_days: BTreeSet<Date>,
+    /// Days worked on periods of their own (a short Christmas Eve, a Saturday morning): they
+    /// override the week, the holidays and the region.
+    pub exceptions: BTreeMap<Date, Vec<Period>>,
     /// A region whose holidays are off too, computed from their rules for any year.
     pub region: Option<Region>,
     /// The periods worked on each day of the week, Monday first, in order; a worked day with
@@ -57,6 +60,7 @@ impl Default for Calendar {
             week: [true, true, true, true, true, false, false],
             holidays: BTreeSet::new(),
             extra_days: BTreeSet::new(),
+            exceptions: BTreeMap::new(),
             region: None,
             periods: Default::default(),
         }
@@ -82,9 +86,17 @@ impl Calendar {
         }
     }
 
+    /// The periods `date` works when it works: its own, as an exception, or its weekday's.
+    pub fn day_periods(&self, date: Date) -> &[Period] {
+        match self.exceptions.get(&date) {
+            Some(p) if !p.is_empty() => p,
+            _ => self.weekday_periods(date.weekday().index()),
+        }
+    }
+
     /// The periods worked on `date`: none on a day off.
     pub fn periods_on(&self, date: Date) -> &[Period] {
-        if self.is_working(date) { self.weekday_periods(date.weekday().index()) } else { &[] }
+        if self.is_working(date) { self.day_periods(date) } else { &[] }
     }
 
     /// The minutes of a working day, by which days of duration become working time: the first
@@ -97,10 +109,13 @@ impl Calendar {
 
     /// Whether it has any working day at all.
     pub fn works(&self) -> bool {
-        self.week.iter().any(|w| *w) || !self.extra_days.is_empty()
+        self.week.iter().any(|w| *w) || !self.extra_days.is_empty() || self.exceptions.values().any(|p| !p.is_empty())
     }
 
     pub fn is_working(&self, date: Date) -> bool {
+        if let Some(p) = self.exceptions.get(&date) {
+            return !p.is_empty();
+        }
         if self.extra_days.contains(&date) {
             return true;
         }
@@ -111,7 +126,7 @@ impl Calendar {
     }
 
     fn check(&self) -> Result<(), CalendarError> {
-        if self.week.iter().any(|w| *w) || !self.extra_days.is_empty() { Ok(()) } else { Err(CalendarError::NoWorkingDays(self.name.clone())) }
+        if self.works() { Ok(()) } else { Err(CalendarError::NoWorkingDays(self.name.clone())) }
     }
 
     /// `date` if it is a working day, else the next one.

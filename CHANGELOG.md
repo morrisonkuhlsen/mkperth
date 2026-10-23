@@ -12,6 +12,8 @@ Read it before re-scheduling a plan with a new version.
 
 ### Changed results
 
+- **A P6 calendar exception with its own work times** works those times (four hours on a short
+  day) instead of its weekday's whole day: activities across such days finish later.
 - **A finish milestone with no work before it** (one with no predecessor, at the project's
   start) now falls at the first working minute, the morning of the project's first working day,
   instead of that day's evening; its total float counts that day too (one more day).
@@ -23,6 +25,8 @@ Read it before re-scheduling a plan with a new version.
   XML; typed in Details and on the Project tab, drawn on the Gantt chart, explained in the
   calculation.
 - The ribbon's groups carry their names underneath.
+- Exception days with work periods of their own; P6 XML's exceptions keep their hours (they
+  were read as whole working days on their weekday's periods).
 - The calculation of an activity's dates as a LaTeX document: the Calculation pane's LaTeX
   button, the `activity.export-tex` command.
 - An expected finish date that sets an activity's work (or its work left); secondary constraints

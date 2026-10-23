@@ -91,7 +91,7 @@ pub(crate) fn moment(t: i64, evening: bool, calendar: &Calendar) -> Option<Momen
     let minute = if evening { t - 1 } else { t };
     let date = i32::try_from(minute.div_euclid(MINUTES_PER_DAY)).ok().and_then(Date::from_days)?;
     let of_day = t - i64::from(date.days()) * MINUTES_PER_DAY;
-    let periods = calendar.weekday_periods(date.weekday().index());
+    let periods = calendar.day_periods(date);
     let edge = if evening { periods.last().map(|(_, b)| i64::from(*b)) } else { periods.first().map(|(a, _)| i64::from(*a)) };
     let time = (edge != Some(of_day) && of_day != 0).then(|| u16::try_from(of_day).unwrap_or(0));
     Some(Moment { date, evening, time })
