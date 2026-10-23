@@ -23,14 +23,14 @@ thiserror = "2"
 # Perth.jl's project files are JSON; parsed with its recursion limit. MIT/Apache.
 serde_json = { version = "1", features = ["preserve_order"] }
 # P6 XML files, read event by event (the tree is built here, with caps). MIT.
-quick-xml = "0.41"
+quick-xml = "0.42"
 
 # ui
-egui = "0.36"
-eframe = { version = "0.36", default-features = false }
+egui = "0.37"
+eframe = { version = "0.37", default-features = false }
 rfd = "0.17"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-egui_kittest = "0.36"
+egui_kittest = "0.37"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
