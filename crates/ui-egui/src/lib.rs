@@ -9,6 +9,7 @@ mod activities;
 mod calendars;
 mod chrome;
 pub mod icons;
+mod resources_view;
 pub mod splash;
 pub mod theme;
 
@@ -24,6 +25,7 @@ pub use activities::{Column, Editing, Options};
 pub use calendars::{CalendarForm, periods_text, read_periods};
 pub use mkperth_engine::core::Date;
 pub use mkperth_engine::i18n;
+pub use resources_view::ResourceForm;
 pub use theme::Tokens;
 
 use icons::Icon;
@@ -48,6 +50,8 @@ pub struct Services {
 pub enum View {
     #[default]
     Activities,
+    /// The resources, the roles they fill and their assignments.
+    Resources,
 }
 
 /// The Details pane's tabs.
@@ -125,6 +129,9 @@ pub struct PerthApp {
     pub note_form: NoteForm,
     /// What the Calendars pane is editing.
     pub calendar_form: CalendarForm,
+    /// The resource selected in the Resources view, by index, and what that view is typing.
+    pub resource_selected: Option<usize>,
+    pub resource_form: ResourceForm,
     /// The selected activity's calculation, in words: (its index, the lines).
     calculation: Option<(usize, Vec<String>)>,
     themed: bool,
@@ -214,6 +221,8 @@ impl PerthApp {
             details_tab: DetailsTab::default(),
             note_form: NoteForm::default(),
             calendar_form: CalendarForm::default(),
+            resource_selected: None,
+            resource_form: ResourceForm::default(),
             calculation: None,
             themed: false,
             title: String::new(),
@@ -489,7 +498,10 @@ impl PerthApp {
             ui.allocate_ui_with_layout(egui::vec2(left_width, body), top_down, |ui| {
                 ui.set_width(left_width);
                 ui.set_height(body);
-                self.left_pane(ui, body);
+                match self.view {
+                    View::Activities => self.left_pane(ui, body),
+                    View::Resources => self.resources_view(ui, body),
+                }
             });
             if let Some(side) = self.side {
                 ui.allocate_ui_with_layout(egui::vec2(SIDE_WIDTH, body), top_down, |ui| {
@@ -529,7 +541,10 @@ impl PerthApp {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(RAIL_WIDTH, height), egui::Sense::hover());
         ui.painter().rect_filled(rect, 0.0, t.ribbon);
         ui.painter().vline(rect.right(), rect.y_range(), egui::Stroke::new(1.0, t.border));
-        let views = [(Icon::Gantt, tr!("activities-view"), tr!("activities-view-tip"), View::Activities)];
+        let views = [
+            (Icon::Gantt, tr!("activities-view"), tr!("activities-view-tip"), View::Activities),
+            (Icon::People, tr!("resources-view"), tr!("resources-view-tip"), View::Resources),
+        ];
         let views_len = views.len();
         for (k, (icon, name, tip, view)) in views.into_iter().enumerate() {
             let on = self.view == view;
@@ -548,7 +563,11 @@ impl PerthApp {
                 self.view = view;
             }
         }
-        // Under the views, a hairline and the table's switch: off, the chart takes the width.
+        // Under the views, a hairline and the activity table's switch (in their view): off, the
+        // chart takes the width.
+        if self.view != View::Activities {
+            return;
+        }
         let top = rect.top() + 4.0 + 42.0 * views_len as f32;
         ui.painter().hline((rect.left() + 10.0)..=(rect.right() - 11.0), top + 2.0, egui::Stroke::new(1.0, t.border));
         let slot = egui::Rect::from_min_size(egui::pos2(rect.left(), top + 6.0), egui::vec2(RAIL_WIDTH - 1.0, 40.0));

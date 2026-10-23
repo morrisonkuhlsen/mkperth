@@ -290,3 +290,31 @@ fn calendars_are_edited_in_their_pane() {
     h.run_steps(2);
     assert!(h.state().session.project.calendar.region.is_some());
 }
+
+/// The Resources view from the rail: a resource added through its form, picked, assigned.
+#[test]
+fn resources_are_added_and_assigned_in_their_view() {
+    use egui::accesskit::Role;
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Resources").click();
+    h.run_steps(2);
+    assert_eq!(h.state().view, mkperth_ui_egui::View::Resources);
+    h.get_by_role_and_label(Role::TextInput, "New resource").click();
+    h.run_steps(1);
+    h.get_by_role_and_label(Role::TextInput, "New resource").type_text("Ana");
+    h.run_steps(1);
+    h.get_by_label("Add resource").click();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project.resources.len(), 1);
+    assert_eq!(h.state().session.project.resources[0].name, "Ana");
+    h.get_by_label("R1").click();
+    h.run_steps(2);
+    assert_eq!(h.state().resource_selected, Some(0));
+    h.state_mut().resource_form.activity = "A10".into();
+    h.run_steps(2);
+    h.get_by_label("Assign").click();
+    h.run_steps(3);
+    let a = &h.state().session.project.assignments;
+    assert_eq!(a.len(), 1);
+    assert_eq!((a[0].activity.as_str(), a[0].planned), ("A10", 4000), "A10's 40 hours");
+}

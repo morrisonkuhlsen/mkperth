@@ -292,6 +292,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         if ui.radio(state.view == View::Activities, tr!("activities-view")).on_hover_text(tr!("activities-view-tip")).clicked() {
             set(Action::View(View::Activities));
         }
+        if ui.radio(state.view == View::Resources, tr!("resources-view")).on_hover_text(tr!("resources-view-tip")).clicked() {
+            set(Action::View(View::Resources));
+        }
         if check(ui, !state.table_hidden, &tr!("activity-table")) {
             set(Action::Table);
         }

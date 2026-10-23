@@ -20,6 +20,10 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- The Resources view, second on the rail (and View > Resources): the resources in a table (type,
+  unit, units an hour, calendar, roles, hours budgeted), added and deleted there, the roles they
+  fill, and the selected resource's details and assignments (budgeted, actual and remaining
+  work, edited in place; an activity assigned from a list).
 - Resources, roles and assignments (#20): `resource.add`, `.edit`, `.delete`; `role.add`,
   `.delete`; `assignment.add`, `.edit`, `.delete`, with undo. An assignment's budget defaults
   to the activity's working hours at the resource's units an hour; renaming or deleting an

@@ -132,7 +132,9 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   undo, an assignment's default budget the activity's hours at the resource's units an hour.
   P6 XML reads and writes them; Perth's `assignee` is a resource assigned for the task's
   `effort`, written back byte for byte.
-- **Next:** the Resources view; duration types
+  The Resources view on the rail: the resources' table, the roles, a resource's details and
+  assignments, each edit a command.
+- **Next:** an activity's assignments in Details; duration types
   and resource-dependent activities; histograms; prices that change over time (#23); levelling
   with priorities (#21).
 

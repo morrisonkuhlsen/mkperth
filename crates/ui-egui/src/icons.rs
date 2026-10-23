@@ -56,6 +56,8 @@ pub enum Icon {
     Minus,
     Plus,
     Pin,
+    /// Two people, one before the other: resources.
+    People,
     ChevronUp,
     ChevronDown,
     ChevronLeft,
@@ -420,6 +422,13 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, t: &Tokens) {
             fill(&[(9.0, 1.5), (14.5, 7.0), (12.0, 8.0), (8.0, 4.0)], ink.color);
             fill(&[(5.0, 6.0), (10.0, 11.0), (11.0, 9.5), (6.5, 5.0)], ink.color);
             line((7.5, 8.5), (2.0, 14.0), Stroke::new(w * 1.2, ink.color));
+        }
+        Icon::People => {
+            // The one behind, then the one in front: a head over shoulders each.
+            painter.circle_filled(p(10.5, 4.5), 2.2 * s, t.text_dim);
+            fill(&[(6.5, 13.0), (7.5, 9.0), (10.5, 7.8), (13.5, 9.0), (14.5, 13.0)], t.text_dim);
+            painter.circle_filled(p(5.5, 5.5), 2.5 * s, t.accent);
+            fill(&[(1.0, 14.5), (2.0, 10.0), (5.5, 8.6), (9.0, 10.0), (10.0, 14.5)], t.accent);
         }
         Icon::Minus => line((3.0, 8.0), (13.0, 8.0), Stroke::new(w * 1.2, ink.color)),
         Icon::Plus => {

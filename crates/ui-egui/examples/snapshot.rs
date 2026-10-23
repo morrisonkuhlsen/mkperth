@@ -2,7 +2,7 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang CODE]
-//!  [--select N] [--side details|filters|notes|calendars] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--splash] [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
+//!  [--select N] [--side details|filters|notes|calendars] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--splash] [--view activities|resources] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
 //!  `--click` clicks what has that accessible name, in order: `--click View --click Theme` opens a submenu)
 
 use egui_kittest::kittest::Queryable as _;
@@ -26,6 +26,20 @@ fn main() -> Result<(), String> {
             "--dark" => dark = true,
             "--toolbar-hidden" => app.toolbar_hidden = true,
             "--splash" => splash = true,
+            "--view" => {
+                i += 1;
+                app.view = match args.get(i).map(String::as_str) {
+                    Some("activities") => mkperth_ui_egui::View::Activities,
+                    Some("resources") => mkperth_ui_egui::View::Resources,
+                    _ => return Err("--view activities|resources".into()),
+                };
+            }
+            "--cmd" => {
+                // A command run first: `--cmd 'resource.add={"name":"Ana"}'`.
+                i += 1;
+                let (id, params) = args.get(i).and_then(|c| c.split_once('=')).ok_or("--cmd id=JSON")?;
+                app.run(id, serde_json::from_str(params).map_err(|e| e.to_string())?);
+            }
             "--scale" => {
                 i += 1;
                 app.options.scale = Some(args.get(i).and_then(|n| n.parse().ok()).ok_or("--scale needs points per day")?);
