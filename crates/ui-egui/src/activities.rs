@@ -13,8 +13,8 @@ use crate::theme::Tokens;
 const ROW: f32 = 24.0;
 const HEADER: f32 = 44.0;
 
-/// The table's columns: a message id and a width.
-const COLUMNS: [(&str, f32); 9] = [
+/// The table's columns: a message id and a width. The ID and the name are always shown.
+pub const COLUMNS: [(&str, f32); 9] = [
     ("col-id", 84.0),
     ("col-name", 230.0),
     ("col-duration", 60.0),
@@ -63,6 +63,22 @@ pub struct Options {
     pub offset: f32,
     /// Rows whose ID or name holds this text (any case), with their summaries.
     pub search: String,
+    /// The columns hidden, by their place in `COLUMNS`.
+    pub hidden: [bool; 9],
+    /// Today, drawn as a line on the chart.
+    pub today: Option<Date>,
+}
+
+impl Options {
+    /// The columns shown: their place in `COLUMNS`, message id and width.
+    pub fn columns(&self) -> Vec<(usize, &'static str, f32)> {
+        COLUMNS
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| *k < 2 || !self.hidden.get(*k).copied().unwrap_or(false))
+            .map(|(k, (id, w))| (k, *id, *w))
+            .collect()
+    }
 }
 
 /// The narrowest and the widest a day may be drawn, in points.
@@ -146,7 +162,10 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
     let Ok(schedule) = &session.schedule else { return events };
     let rows = visible(session, options);
     let acts = &session.project.activities;
-    let table_width: f32 = COLUMNS.iter().map(|(_, w)| w).sum();
+    let columns = options.columns();
+    let table_width: f32 = columns.iter().map(|(_, _, w)| w).sum();
+    // Where a column starts, if shown.
+    let left_of = |k: usize| columns.iter().position(|(c, _, _)| *c == k).map(|n| columns.iter().take(n).map(|(_, _, w)| w).sum::<f32>());
     let full = ui.available_rect_before_wrap();
     let chart_left = full.left() + table_width + 1.0;
     let chart_width = (full.right() - chart_left).max(60.0);
@@ -192,7 +211,7 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
     painter.rect_filled(header, 0.0, t.header_bg);
     painter.hline(header.x_range(), header.bottom(), Stroke::new(1.0, t.header_line));
     let mut x = header.left();
-    for (id, w) in COLUMNS {
+    for &(_, id, w) in &columns {
         let cell = Rect::from_min_size(pos2(x, header.top()), vec2(w, HEADER));
         painter.with_clip_rect(cell.shrink(2.0)).text(
             pos2(x + 6.0, header.center().y),
@@ -215,6 +234,11 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
     if let Some(d) = session.project.data_date {
         let xd = x_of(d.days(), chart_left);
         chart_header.vline(xd, header.y_range(), Stroke::new(1.5, t.green.gamma_multiply(0.7)));
+    }
+    // Today, at the middle of its day.
+    if let Some(d) = options.today {
+        let xd = x_of(d.days(), chart_left) + scale / 2.0;
+        chart_header.vline(xd, header.y_range(), Stroke::new(1.5, t.orange.gamma_multiply(0.8)));
     }
     let mut month_end = f32::NEG_INFINITY;
     for k in first_day.max(0)..=last_day.min(days) {
@@ -265,15 +289,18 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
                 && let Some(pos) = response.interact_pointer_pos()
             {
                 let x = pos.x - rect.left();
-                let (id_w, name_w, dur_w) = (COLUMNS[0].1, COLUMNS[1].1, COLUMNS[2].1);
-                double = if x < id_w {
-                    Some((i, Column::Id))
-                } else if x < id_w + name_w {
-                    Some((i, Column::Name))
-                } else if x < id_w + name_w + dur_w {
-                    Some((i, Column::Duration))
-                } else {
-                    None
+                let (mut at, mut hit) = (0.0, None);
+                for &(k, _, w) in &columns {
+                    if x >= at && x < at + w {
+                        hit = Some(k);
+                    }
+                    at += w;
+                }
+                double = match hit {
+                    Some(0) => Some((i, Column::Id)),
+                    Some(1) => Some((i, Column::Name)),
+                    Some(2) => Some((i, Column::Duration)),
+                    _ => None,
                 };
             }
             if acts.get(i).is_none() || schedule.activities.get(i).is_none() {
@@ -288,6 +315,12 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
                         let xd = x_of(d.days(), chart_left);
                         painter.rect_filled(Rect::from_min_max(pos2(xd, rect.top()), pos2(xd + scale, rect.bottom())), 0.0, t.header_bg);
                     }
+                }
+            }
+            if let Some(d) = options.today {
+                let xd = x_of(d.days(), chart_left) + scale / 2.0;
+                if xd >= chart_left {
+                    painter.vline(xd, rect.y_range(), Stroke::new(1.0, t.orange.gamma_multiply(0.6)));
                 }
             }
             // The data date: a line down the chart where progress was told.
@@ -366,7 +399,8 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
                 (crate::days_text(s.free_float_minutes, day), t.cell_text, 0.0),
             ];
             let mut x = rect.left();
-            for ((text, color, indent), (_, w)) in cells.into_iter().zip(COLUMNS) {
+            for (k, (text, color, indent)) in cells.into_iter().enumerate() {
+                let Some(&(_, _, w)) = columns.iter().find(|(c, _, _)| *c == k) else { continue };
                 let cell = Rect::from_min_size(pos2(x, rect.top()), vec2(w, ROW));
                 let painter = painter.with_clip_rect(cell.shrink(1.0));
                 painter.text(pos2(x + 6.0 + indent, rect.center().y), Align2::LEFT_CENTER, &text, FontId::proportional(12.5), color);
@@ -379,15 +413,15 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
             }
             // The cell being edited: a text box over it.
             if let Some(e) = editing.as_mut().filter(|e| e.index == i) {
-                let left: f32 = match e.column {
-                    Column::Id => 0.0,
-                    Column::Name => COLUMNS[0].1,
-                    Column::Duration => COLUMNS[0].1 + COLUMNS[1].1,
+                let k = match e.column {
+                    Column::Id => 0,
+                    Column::Name => 1,
+                    Column::Duration => 2,
                 };
-                let width = match e.column {
-                    Column::Id => COLUMNS[0].1,
-                    Column::Name => COLUMNS[1].1,
-                    Column::Duration => COLUMNS[2].1,
+                // A hidden column isn't edited.
+                let (Some(left), Some(width)) = (left_of(k), COLUMNS.get(k).map(|c| c.1)) else {
+                    *editing = None;
+                    continue;
                 };
                 let cell = Rect::from_min_size(pos2(rect.left() + left, rect.top() + 1.0), vec2(width, ROW - 2.0));
                 let edit = ui.put(cell, egui::TextEdit::singleline(&mut e.text).id_salt(("cell", i)).margin(vec2(4.0, 2.0)));

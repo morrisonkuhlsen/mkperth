@@ -175,3 +175,26 @@ fn notes_are_typed_on_their_tab() {
     assert_eq!(h.state().session.project.activities[2].notes, "Call the surveyor");
     assert_eq!(h.state().session.undo_label(), Some("edit activity A10"));
 }
+
+#[test]
+fn columns_are_chosen_in_filters() {
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Filters").click();
+    h.run_steps(2);
+    // Late start and late finish hidden; the ID and the name can't be.
+    h.get_by_label("Late start").click();
+    h.get_by_label("Late finish").click();
+    h.run_steps(2);
+    let shown: Vec<&str> = h.state().options.columns().iter().map(|(_, id, _)| *id).collect();
+    assert_eq!(shown, ["col-id", "col-name", "col-duration", "col-early-start", "col-early-finish", "col-total-float", "col-free-float"]);
+}
+
+#[test]
+fn today_comes_from_the_platform() {
+    let day = mkperth_ui_egui::Date::from_ymd(2026, 11, 20);
+    let mut h = harness(PerthApp::new(Services { today: Some(Box::new(move || day)), ..Services::default() }));
+    h.run_steps(1);
+    assert_eq!(h.state().options.today, day);
+    let h = harness(PerthApp::default());
+    assert_eq!(h.state().options.today, None, "no clock, no line");
+}

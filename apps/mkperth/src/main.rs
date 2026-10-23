@@ -41,6 +41,11 @@ fn main() -> eframe::Result {
             };
             dialog.set_file_name(suggested).save_file()
         })),
+        today: Some(Box::new(|| {
+            use chrono::Datelike as _;
+            let d = chrono::Local::now().date_naive();
+            mkperth_ui_egui::Date::from_ymd(d.year(), d.month(), d.day())
+        })),
     };
     let mut app = PerthApp::new(services);
     if let Some(path) = std::env::args().nth(1) {

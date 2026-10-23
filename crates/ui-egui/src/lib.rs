@@ -13,12 +13,13 @@ pub mod theme;
 use std::path::{Path, PathBuf};
 
 use mkperth_engine::Session;
-use mkperth_engine::core::{ActivityKind, Date, RelationshipType};
+use mkperth_engine::core::{ActivityKind, RelationshipType};
 use mkperth_engine::i18n::{Lang, current, tr};
 use mkperth_engine::sched::constraint_name;
 use serde_json::json;
 
 pub use activities::{Column, Editing, Options};
+pub use mkperth_engine::core::Date;
 pub use mkperth_engine::i18n;
 pub use ribbon::Tab;
 pub use theme::Tokens;
@@ -29,12 +30,15 @@ use icons::Icon;
 pub type PickOpen = Box<dyn Fn() -> Option<PathBuf>>;
 /// Shows a save-file dialog suggesting a file name; `None` when cancelled.
 pub type PickSave = Box<dyn Fn(&str) -> Option<PathBuf>>;
+pub type Today = Box<dyn Fn() -> Option<Date>>;
 
 /// What the platform provides: dialogs come in from the app, so the UI stays testable.
 #[derive(Default)]
 pub struct Services {
     pub pick_open: Option<PickOpen>,
     pub pick_save: Option<PickSave>,
+    /// Today where the person is, for the chart's line.
+    pub today: Option<Today>,
 }
 
 /// The views the rail switches between.
@@ -385,6 +389,7 @@ impl PerthApp {
             self.themed = true;
         }
         self.handle_input(ui.ctx());
+        self.options.today = self.services.today.as_ref().and_then(|today| today());
         // The project's name: Perth.jl names its files by id, so the name says more than the file.
         let name = if self.session.project.name.is_empty() {
             self.session.path.as_deref().and_then(Path::file_name).map_or_else(|| tr!("untitled"), |n| n.to_string_lossy().into_owned())
@@ -888,6 +893,17 @@ impl PerthApp {
         if count > 0 && ui.button(tr!("filters-clear")).clicked() {
             self.options.critical_only = false;
             self.options.search.clear();
+        }
+        // The table's columns: the ID and the name stay.
+        ui.add_space(8.0);
+        ui.label(egui::RichText::new(tr!("filter-columns")).size(12.0).color(t.text_dim));
+        for (k, (id, _)) in activities::COLUMNS.iter().enumerate().skip(2) {
+            if let Some(hidden) = self.options.hidden.get_mut(k) {
+                let mut shown = !*hidden;
+                if ui.checkbox(&mut shown, tr!(id)).changed() {
+                    *hidden = !shown;
+                }
+            }
         }
     }
 

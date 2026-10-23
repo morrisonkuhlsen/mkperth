@@ -25,6 +25,7 @@ Read it before re-scheduling a plan with a new version.
   XML; typed in Details and on the Project tab, drawn on the Gantt chart, explained in the
   calculation.
 - The ribbon's groups carry their names underneath.
+- The table's columns chosen in Filters (the ID and the name stay); today drawn on the chart.
 - The Details pane in tabs: General, Status, Relationships and Notes; notes per activity, kept
   in Perth.jl's `notes` (P6 XML says they aren't written).
 - Exception days with work periods of their own; P6 XML's exceptions keep their hours (they

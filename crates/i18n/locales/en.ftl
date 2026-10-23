@@ -276,3 +276,4 @@ details-status = Status
 details-relationships = Relationships
 details-notes = Notes
 details-notes-hint = Notes on this activity
+filter-columns = Columns

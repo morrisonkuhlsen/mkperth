@@ -276,3 +276,4 @@ details-status = Situação
 details-relationships = Vínculos
 details-notes = Notas
 details-notes-hint = Anotações sobre esta atividade
+filter-columns = Colunas
