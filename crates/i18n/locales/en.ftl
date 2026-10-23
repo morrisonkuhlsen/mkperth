@@ -186,6 +186,7 @@ err-relationship-exists = { $predecessor } and { $successor } are already relate
 err-no-relationship = There is no relationship from { $predecessor } to { $successor }.
 err-nothing-to-undo = Nothing to undo.
 err-nothing-to-redo = Nothing to redo.
+err-internal = { $command } failed unexpectedly; the project was put back as it was before it.
 undo-add-activity = add activity { $id }
 undo-edit-activity = edit activity { $id }
 undo-delete-activity = delete activity { $id }

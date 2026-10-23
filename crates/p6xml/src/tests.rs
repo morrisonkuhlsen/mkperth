@@ -198,3 +198,22 @@ fn hostile_files_are_errors_not_crashes() {
     let huge = "<APIBusinessObjects><Project><Activity><Id>A</Id><PlannedDuration>1e300</PlannedDuration></Activity></Project></APIBusinessObjects>";
     assert!(read(huge).is_ok());
 }
+
+/// Every cut, every byte flipped and every digit made huge: an error or a project, never a panic.
+#[test]
+fn mutated_files_never_panic() {
+    let bytes = file().into_bytes();
+    for cut in 0..bytes.len() {
+        let _ = read(&String::from_utf8_lossy(bytes.get(..cut).unwrap()));
+    }
+    for i in 0..bytes.len() {
+        let mut flipped = bytes.clone();
+        flipped[i] ^= 0xff;
+        let _ = read(&String::from_utf8_lossy(&flipped));
+        if bytes[i].is_ascii_digit() {
+            let mut huge = bytes.clone();
+            huge.splice(i..=i, *b"99999999999999999999999");
+            let _ = read(&String::from_utf8_lossy(&huge));
+        }
+    }
+}

@@ -51,6 +51,9 @@ pub enum EngineError {
     NothingToUndo,
     #[error("{}", tr!("err-nothing-to-redo"))]
     NothingToRedo,
+    /// A command that failed in a way no error foresaw; the project was put back as it was.
+    #[error("{}", tr!("err-internal", command = .0.as_str()))]
+    Internal(String),
     #[error(transparent)]
     Perth(#[from] PerthError),
     #[error(transparent)]
@@ -114,7 +117,26 @@ fn is_p6(path: &Path) -> bool {
 
 impl Session {
     /// Runs a command by id with its parameters (a JSON object; `null` for none).
+    ///
+    /// The last resort against a crash: a command that panics (a bug, never by design) is caught,
+    /// the session is put back as it was before the command, and the panic is an error.
     pub fn run(&mut self, id: &str, params: &Value) -> Result<(), EngineError> {
+        let before = (self.project.clone(), self.path.clone(), self.schedule.clone(), self.warnings.clone(), self.modified);
+        let (undo, redo) = (self.undo.len(), self.redo.len());
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.run_command(id, params))) {
+            Ok(result) => result,
+            Err(_) => {
+                (self.project, self.path, self.schedule, self.warnings, self.modified) = before;
+                // A change half made may have pushed its undo step (or taken a redo one): back
+                // to the stacks' depths before it, nothing after them kept.
+                self.undo.truncate(undo);
+                self.redo.truncate(redo);
+                Err(EngineError::Internal(id.to_string()))
+            }
+        }
+    }
+
+    fn run_command(&mut self, id: &str, params: &Value) -> Result<(), EngineError> {
         let param = |name: &str| params.get(name).and_then(Value::as_str).ok_or_else(|| EngineError::Param(id.to_string(), name.to_string()));
         if let Some(result) = self.run_edit(id, params).or_else(|| self.note_command(id, params)) {
             return result;
@@ -142,6 +164,13 @@ impl Session {
                 let param = |name: &str| params.get(name).and_then(Value::as_str).ok_or_else(|| EngineError::Param(id.to_string(), name.to_string()));
                 let (activity, path) = (param("id")?, param("path")?);
                 self.export_latex(activity, Path::new(path), &|d| d.to_string())
+            }
+            // A command that panics, to prove the guard above.
+            #[cfg(test)]
+            "test.panic" => {
+                self.project.activities.clear();
+                self.undo.push(("half".into(), self.project.clone()));
+                panic!("a bug in a command");
             }
             other => Err(EngineError::UnknownCommand(other.to_string())),
         }
@@ -414,6 +443,22 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A command that panics is an error, and the session is as it was before it: the project,
+    /// its schedule and the undo history.
+    #[test]
+    fn a_command_that_panics_puts_the_session_back() {
+        let mut s = Session::default();
+        s.run("activity.edit", &json!({"id": "A10", "name": "Survey"})).unwrap();
+        let (project, undo) = (s.project.clone(), s.undo_label().map(str::to_string));
+        assert_eq!(s.run("test.panic", &Value::Null), Err(EngineError::Internal("test.panic".into())));
+        assert_eq!(s.project, project);
+        assert!(s.schedule.is_ok());
+        assert_eq!(s.undo_label().map(str::to_string), undo, "the half-made step is gone");
+        // The session goes on: undo still takes back the edit before.
+        s.run("edit.undo", &Value::Null).unwrap();
+        assert_ne!(s.project, project);
     }
 
     #[test]

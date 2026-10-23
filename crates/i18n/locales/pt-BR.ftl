@@ -186,6 +186,7 @@ err-relationship-exists = { $predecessor } e { $successor } já estão vinculada
 err-no-relationship = Não existe vínculo de { $predecessor } para { $successor }.
 err-nothing-to-undo = Nada a desfazer.
 err-nothing-to-redo = Nada a refazer.
+err-internal = { $command } falhou de forma inesperada; o projeto voltou a ser como era antes.
 undo-add-activity = incluir a atividade { $id }
 undo-edit-activity = editar a atividade { $id }
 undo-delete-activity = excluir a atividade { $id }

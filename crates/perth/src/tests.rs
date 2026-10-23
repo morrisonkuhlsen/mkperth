@@ -236,3 +236,28 @@ fn calendars_are_written_as_perth_names_them() {
     assert!(back.warnings.is_empty(), "{:?}", back.warnings);
     assert_eq!(back.project.calendar.week, [true, true, true, true, true, false, false]);
 }
+
+/// Every cut, every byte flipped and every digit made huge: an error, or a project that then
+/// schedules (or says why not), never a panic.
+#[test]
+fn mutated_files_never_panic() {
+    let bytes = serde_json::to_string_pretty(&full()).unwrap().into_bytes();
+    let try_one = |b: &[u8]| {
+        if let Ok(r) = read(&String::from_utf8_lossy(b)) {
+            let _ = mkperth_sched::schedule(&r.project);
+        }
+    };
+    for cut in 0..bytes.len() {
+        try_one(bytes.get(..cut).unwrap());
+    }
+    for i in 0..bytes.len() {
+        let mut flipped = bytes.clone();
+        flipped[i] ^= 0xff;
+        try_one(&flipped);
+        if bytes[i].is_ascii_digit() {
+            let mut huge = bytes.clone();
+            huge.splice(i..=i, *b"99999999999999999999999");
+            try_one(&huge);
+        }
+    }
+}
