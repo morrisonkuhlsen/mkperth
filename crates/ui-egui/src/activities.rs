@@ -333,7 +333,14 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
             let (Some(a), Some(s)) = (acts.get(i), schedule.activities.get(i)) else { continue };
             let painter = ui.painter_at(rect);
             let summary = acts.iter().any(|c| c.parent.as_deref() == Some(a.id.as_str()));
-            let duration = if summary { String::new() } else { a.working_days().to_string() };
+            let day = session
+                .project
+                .activities
+                .get(i)
+                .and_then(|a| a.calendar.as_deref())
+                .and_then(|n| session.project.calendars.iter().find(|c| c.name == n))
+                .map_or(session.project.calendar.day_minutes(), |c| c.day_minutes());
+            let duration = if summary { String::new() } else { crate::days_text(a.working_minutes(day), day) };
             let float_color = if s.critical && !summary { t.red } else { t.cell_text };
             let cells = [
                 (a.id.clone(), t.cell_text, 0.0),
@@ -343,8 +350,8 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
                 (show_date(s.early_finish), t.cell_text, 0.0),
                 (show_date(s.late_start), t.text_dim, 0.0),
                 (show_date(s.late_finish), t.text_dim, 0.0),
-                (s.total_float.to_string(), float_color, 0.0),
-                (s.free_float.to_string(), t.cell_text, 0.0),
+                (crate::days_text(s.total_float_minutes, day), float_color, 0.0),
+                (crate::days_text(s.free_float_minutes, day), t.cell_text, 0.0),
             ];
             let mut x = rect.left();
             for ((text, color, indent), (_, w)) in cells.into_iter().zip(COLUMNS) {
@@ -412,7 +419,10 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
             let text = match column {
                 Column::Id => a.id.clone(),
                 Column::Name => a.name.clone(),
-                Column::Duration => a.duration.to_string(),
+                Column::Duration => {
+                    let day = session.project.calendar.day_minutes();
+                    crate::days_text(a.working_minutes(day), day)
+                }
             };
             *editing = Some(Editing { index: i, column, text });
         }

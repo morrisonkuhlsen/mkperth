@@ -10,7 +10,17 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+### Changed results
+
+- **A finish milestone with no work before it** (one with no predecessor, at the project's
+  start) now falls at the first working minute, the morning of the project's first working day,
+  instead of that day's evening; its total float counts that day too (one more day).
+
 ### Added
+
+- Time in hours: calendars with work periods for each day of the week, durations and lags of part
+  days (P6's hours kept exact), floats shown in days with decimals; the calculation names a time
+  of day when it isn't the start or end of the day's work.
 
 - The scheduler: the critical path method with finish-to-start, start-to-start, finish-to-finish
   and start-to-finish relationships, lags and leads, the forward and backward pass, total and

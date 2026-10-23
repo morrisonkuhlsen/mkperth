@@ -54,6 +54,8 @@ pub struct Relationship {
     pub kind: RelationshipType,
     /// Working days added to the tie (negative: a lead).
     pub lag: i64,
+    /// Working minutes, when the lag isn't whole days; it takes the place of `lag`.
+    pub lag_minutes: Option<i64>,
 }
 
 /// What an activity is, as far as scheduling cares.
@@ -106,6 +108,9 @@ pub struct Activity {
     /// Working days. A milestone takes none, whatever this says; a task of 0 is shown as a
     /// start milestone.
     pub duration: i64,
+    /// Working minutes, when the duration isn't whole days (from hours); it takes the place of
+    /// `duration`.
+    pub duration_minutes: Option<i64>,
     pub constraint: Option<Constraint>,
     /// A second constraint beside the first: typically a start on or after with a finish on or
     /// before. Both hold.
@@ -119,9 +124,20 @@ pub struct Activity {
 }
 
 impl Activity {
-    /// The working days it takes: none for a milestone.
+    /// The working days it takes: none for a milestone; a part day counts as one.
     pub fn working_days(&self) -> i64 {
-        if self.kind.is_milestone() { 0 } else { self.duration }
+        if self.kind.is_milestone() {
+            0
+        } else if let Some(m) = self.duration_minutes {
+            if m > 0 { m.saturating_add(479) / 480 } else { 0 }
+        } else {
+            self.duration
+        }
+    }
+
+    /// The working minutes it takes on a calendar of `day_minutes` a day: none for a milestone.
+    pub fn working_minutes(&self, day_minutes: i64) -> i64 {
+        if self.kind.is_milestone() { 0 } else { self.duration_minutes.unwrap_or_else(|| self.duration.saturating_mul(day_minutes)) }
     }
 }
 

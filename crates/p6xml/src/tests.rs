@@ -82,6 +82,7 @@ fn reads_a_project() {
     assert_eq!(a("A110").secondary_constraint, Some(Constraint::FinishOnOrBefore(day(2026, 12, 4))));
     assert_eq!((a("A120").duration, a("A120").calendar.as_deref()), (3, Some("Seven days")), "30 hours at 10 a day");
     assert_eq!(a("M900").kind, ActivityKind::FinishMilestone);
+    assert_eq!(a("A100").duration_minutes, Some(2400), "the hours themselves, scheduled on the periods");
     let ties: Vec<(&str, &str, RelationshipType, i64)> =
         p.relationships.iter().map(|r| (r.predecessor.as_str(), r.successor.as_str(), r.kind, r.lag)).collect();
     assert_eq!(
@@ -91,12 +92,16 @@ fn reads_a_project() {
             ("A110", "A120", RelationshipType::StartToStart, 2),
             ("A120", "A130", RelationshipType::FinishToFinish, 0),
             ("A130", "M900", RelationshipType::FinishToStart, 0),
-            // A lead of half a day rounds up, the cautious way: none.
+            // A lead of half a day: no whole day, four hours kept in minutes.
             ("A100", "A130", RelationshipType::StartToFinish, 0),
         ]
     );
-    // A relationship to an activity that isn't there, and a lead of half a day.
-    assert_eq!(read.warnings.len(), 2, "{:?}", read.warnings);
+    assert_eq!(p.relationships[4].lag_minutes, Some(-240));
+    // Seven days of ten hours from WorkTime without times; the default calendar's 08:00–17:00.
+    assert_eq!(p.calendars[0].periods[0], [(480, 1080)]);
+    assert_eq!(p.calendar.periods[0], [(480, 1020)]);
+    // A relationship to an activity that isn't there.
+    assert_eq!(read.warnings.len(), 1, "{:?}", read.warnings);
     // What isn't read is named once.
     let more = file().replace(
         "<Project>",

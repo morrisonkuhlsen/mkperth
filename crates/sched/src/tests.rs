@@ -26,7 +26,7 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
         extra: Default::default(),
         relationships: ties
             .iter()
-            .map(|(p, s, kind, lag)| Relationship { predecessor: p.to_string(), successor: s.to_string(), kind: *kind, lag: *lag })
+            .map(|(p, s, kind, lag)| Relationship { predecessor: p.to_string(), successor: s.to_string(), kind: *kind, lag: *lag, lag_minutes: None })
             .collect(),
     }
 }
@@ -106,11 +106,11 @@ fn start_and_finish_milestones() {
     let go = get(&s, "go");
     assert_eq!((go.early_start, go.early_finish), (day(2026, 10, 12), day(2026, 10, 12)));
     assert!(done.critical && go.critical);
-    // A finish milestone at the project's start falls on the evening of its first working day,
-    // Monday the 5th; it can wait until Friday the 9th's: 4 days.
+    // A finish milestone with no work before it falls at the project's first working minute,
+    // Monday the 5th at 08:00; it can wait until Friday the 9th's evening: 5 days.
     let kick = get(&s, "kick");
     assert_eq!(kick.early_finish, day(2026, 10, 5));
-    assert_eq!((kick.total_float, kick.late_finish), (4, day(2026, 10, 9)));
+    assert_eq!((kick.total_float, kick.late_finish), (5, day(2026, 10, 9)));
     // The latest early finish is the start milestone's, Monday the 12th.
     assert_eq!(s.finish, day(2026, 10, 12));
 }
@@ -398,8 +398,8 @@ fn every_date_with_its_calculation() {
     );
     let g = explain(&p, "G").unwrap();
     assert_eq!(g.early.len(), 2, "the project's start and the FF tie");
-    assert_eq!(g.early[1].via, Some(Moment { date: day(2026, 10, 12), evening: true }));
-    assert_eq!(g.early[1].moment, Moment { date: day(2026, 10, 9), evening: false });
+    assert_eq!(g.early[1].via, Some(Moment { date: day(2026, 10, 12), evening: true, time: None }));
+    assert_eq!(g.early[1].moment, Moment { date: day(2026, 10, 9), evening: false, time: None });
     assert_eq!(g.earliest, g.early_start);
     assert_eq!(g.early_start.date, g.scheduled.early_start);
     let lines = g.lines(&|d: Date| d.to_string());
@@ -434,15 +434,16 @@ fn the_explanation_is_the_calculation() {
         for a in &s.activities {
             let e = explain(p, &a.id).unwrap();
             assert_eq!(&e.scheduled, a);
-            let t = |m: Moment| (m.date, m.evening);
+            // In time order: a morning at the day's start of work, an evening at its end.
+            let t = |m: Moment| (m.date, m.time.unwrap_or(if m.evening { u16::MAX } else { 0 }));
             let mandatory = e.early.iter().find(|b| b.overrides);
             let won = mandatory.map(|b| b.moment).or_else(|| e.early.iter().map(|b| b.moment).max_by_key(|m| t(*m)));
             assert_eq!(won, Some(e.earliest), "{}: forward", a.id);
             let mandatory = e.late.iter().find(|b| b.overrides);
             let won = mandatory.map(|b| b.moment).or_else(|| e.late.iter().map(|b| b.moment).min_by_key(|m| t(*m)));
             assert_eq!(won, Some(e.latest), "{}: backward", a.id);
-            let least = e.free.iter().map(|s| s.days).min().unwrap_or(0).min(a.total_float).max(0);
-            assert_eq!(least, a.free_float, "{}: free float", a.id);
+            let least = e.free.iter().map(|s| s.minutes).min().unwrap_or(0).min(a.total_float_minutes).max(0);
+            assert_eq!(least, a.free_float_minutes, "{}: free float", a.id);
             assert!(!e.lines(&|d: Date| d.to_string()).is_empty());
         }
     }
@@ -487,4 +488,41 @@ fn start_float_and_the_smallest() {
         p.float_kind = kind;
         assert_eq!(get(&schedule(&p).unwrap(), "C").total_float, finish, "{kind:?}");
     }
+}
+
+#[test]
+fn half_days_and_lags_in_hours() {
+    // A takes half a day (four hours): Monday the 5th, 08:00 to 12:00. B(1) follows: it starts
+    // after lunch, Monday 13:00, and finishes Tuesday 12:00. C follows B two hours later: Tuesday
+    // 15:00 (13:00 plus two hours of work), one day to Wednesday 15:00.
+    let mut p = project(&[("A", 1), ("B", 1), ("C", 1)], &[("A", "B", FS, 0), ("B", "C", FS, 0)]);
+    p.activities[0].duration_minutes = Some(240);
+    p.relationships[1].lag_minutes = Some(120);
+    let e = |id: &str| explain(&p, id).unwrap();
+    let s = schedule(&p).unwrap();
+    assert_eq!((get(&s, "A").early_start, get(&s, "A").early_finish), (day(2026, 10, 5), day(2026, 10, 5)));
+    assert_eq!((get(&s, "B").early_start, get(&s, "B").early_finish), (day(2026, 10, 5), day(2026, 10, 6)));
+    assert_eq!(e("B").early_start.time, Some(13 * 60), "after lunch");
+    assert_eq!(e("C").early_start.time, Some(15 * 60));
+    assert_eq!(get(&s, "C").early_finish, day(2026, 10, 7));
+    // A half-day activity on its own beside a five-day one: four and a half days of float.
+    let mut q = project(&[("A", 5), ("H", 1)], &[]);
+    q.activities[1].duration_minutes = Some(240);
+    let h = get(&schedule(&q).unwrap(), "H").clone();
+    assert_eq!((h.total_float_minutes, h.total_float), (4 * 480 + 240, 4), "whole days towards zero");
+}
+
+#[test]
+fn a_short_friday() {
+    // Fridays work 08:00 to 12:00 only: five days (40 hours) from Monday the 5th take Monday to
+    // Thursday (32 hours), Friday morning (4) and Monday the 12th until 12:00 (4).
+    let mut p = project(&[("A", 5), ("B", 1)], &[("A", "B", FS, 0)]);
+    p.calendar.periods[4] = vec![(8 * 60, 12 * 60)];
+    let s = schedule(&p).unwrap();
+    assert_eq!(get(&s, "A").early_finish, day(2026, 10, 12));
+    assert_eq!(explain(&p, "A").unwrap().early_finish.time, Some(12 * 60));
+    // B starts after lunch on Monday the 12th.
+    assert_eq!(explain(&p, "B").unwrap().early_start.time, Some(13 * 60));
+    // A day of duration is the calendar's first working day: eight hours.
+    assert_eq!(p.calendar.day_minutes(), 480);
 }

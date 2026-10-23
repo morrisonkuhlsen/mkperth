@@ -97,6 +97,15 @@ impl Default for PerthApp {
     }
 }
 
+/// Working minutes in days of `day_minutes`, with the decimals they need, in the language's
+/// decimal mark.
+pub fn days_text(minutes: i64, day_minutes: i64) -> String {
+    let d = day_minutes.max(1);
+    let text =
+        if minutes % d == 0 { (minutes / d).to_string() } else { format!("{:.2}", minutes as f64 / d as f64).trim_end_matches('0').to_string() };
+    i18n::decimal(&text)
+}
+
 /// A date as the language writes it.
 pub fn show_date(d: Date) -> String {
     let (y, m, day) = d.ymd();
@@ -243,6 +252,16 @@ impl PerthApp {
         }
     }
 
+    /// The minutes of a working day on the calendar of the activity at `index`.
+    pub fn day_minutes_of(&self, index: usize) -> i64 {
+        let p = &self.session.project;
+        p.activities
+            .get(index)
+            .and_then(|a| a.calendar.as_deref())
+            .and_then(|n| p.calendars.iter().find(|c| c.name == n))
+            .map_or(p.calendar.day_minutes(), |c| c.day_minutes())
+    }
+
     /// An edit made in a table cell.
     fn commit(&mut self, index: usize, column: Column, text: String) {
         let Some(a) = self.session.project.activities.get(index) else { return };
@@ -250,10 +269,19 @@ impl PerthApp {
         let params = match column {
             Column::Id if text.trim() != id => json!({"id": id, "new_id": text.trim()}),
             Column::Name if a.name != text => json!({"id": id, "name": text}),
-            Column::Duration => match text.trim().parse::<i64>() {
-                Ok(d) if a.duration != d => json!({"id": id, "duration": d}),
-                Ok(_) => return,
-                Err(_) => {
+            // Days, with a decimal point or comma for part of a day.
+            Column::Duration => match text.trim().replace(',', ".").parse::<f64>() {
+                Ok(d) if d.is_finite() && d >= 0.0 && d.fract() == 0.0 => {
+                    if a.duration == d as i64 && a.duration_minutes.is_none() {
+                        return;
+                    }
+                    json!({"id": id, "duration": d as i64})
+                }
+                Ok(d) if d.is_finite() && d >= 0.0 => {
+                    let day = self.day_minutes_of(index);
+                    json!({"id": id, "duration_minutes": (d * day as f64).round() as i64})
+                }
+                _ => {
                     self.status = Some(Status::Error(tr!("err-not-a-duration", text = text.as_str())));
                     return;
                 }
@@ -517,13 +545,14 @@ impl PerthApp {
             ui.add_space(3.0);
         };
         let mut pending: Option<(&str, serde_json::Value)> = None;
+        let day = self.day_minutes_of(i);
         egui::ScrollArea::vertical().id_salt("details").auto_shrink(false).show(ui, |ui| {
             ui.label(egui::RichText::new(&a.name).size(15.0).color(t.text).strong());
             ui.add_space(6.0);
             fact(ui, tr!("detail-id"), a.id.clone());
             fact(ui, tr!("detail-kind"), kind);
             if !summary && !a.kind.is_milestone() {
-                fact(ui, tr!("detail-duration"), tr!("detail-days", n = a.working_days()));
+                fact(ui, tr!("detail-duration"), tr!("detail-days", n = days_text(a.working_minutes(day), day).as_str()));
             }
             fact(ui, tr!("detail-calendar"), a.calendar.clone().unwrap_or_else(|| project.calendar.name.clone()));
             if let Some(parent) = a.parent.as_deref() {
@@ -538,8 +567,8 @@ impl PerthApp {
                 fact(ui, tr!("col-early-finish"), show_date(s.early_finish));
                 fact(ui, tr!("col-late-start"), show_date(s.late_start));
                 fact(ui, tr!("col-late-finish"), show_date(s.late_finish));
-                fact(ui, tr!("col-total-float"), s.total_float.to_string());
-                fact(ui, tr!("col-free-float"), s.free_float.to_string());
+                fact(ui, tr!("col-total-float"), days_text(s.total_float_minutes, day));
+                fact(ui, tr!("col-free-float"), days_text(s.free_float_minutes, day));
                 if s.critical {
                     ui.label(egui::RichText::new(tr!("detail-critical")).size(12.5).color(t.red));
                 }

@@ -235,6 +235,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             parent: (!parent.is_empty()).then_some(parent),
             kind: if milestone { ActivityKind::StartMilestone } else { ActivityKind::Task },
             duration: if milestone { duration } else { duration.max(1) },
+            duration_minutes: None,
             constraint: start.map(Constraint::StartOnOrAfter),
             secondary_constraint: deadline.map(Constraint::FinishOnOrBefore),
             calendar: None,
@@ -253,7 +254,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
                 warnings.push(tr!("warn-perth-dangling", task = successor.as_str(), dependency = d.as_str()));
                 continue;
             }
-            relationships.push(Relationship { predecessor, successor: successor.clone(), kind, lag });
+            relationships.push(Relationship { predecessor, successor: successor.clone(), kind, lag, lag_minutes: None });
         }
     }
     let start = activities.iter().filter_map(|a| match a.constraint {

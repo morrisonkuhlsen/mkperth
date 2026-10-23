@@ -13,8 +13,9 @@ ideas.
 | Calendars | worked weekdays, holidays, exceptions | done |
 | Calendars | a calendar per activity | done |
 | Calendars | a region's holidays computed from their rules (Brazil) | done |
-| Calendars | hours per day; work periods within the day | next (#2) |
-| Durations | in hours, shown in days by hours per day | next (days for now) |
+| Calendars | work periods within each day of the week; hours per day from them | done |
+| Calendars | work periods of their own on an exception day | next |
+| Durations | in working minutes (from hours or part days), shown in days by the calendar's hours | done |
 | Milestones | start and finish milestones | done |
 | Float | total float as finish float (LF − EF) | done |
 | Float | total float as start float or as the smaller of the two | done (they differ once progress exists, #19) |

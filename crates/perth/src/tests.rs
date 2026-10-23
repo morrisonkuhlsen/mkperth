@@ -121,9 +121,9 @@ fn dependency_strings() {
         assert_eq!((id.as_str(), kind, lag), expected, "{text}");
     }
     for r in [
-        Relationship { predecessor: "a".into(), successor: "b".into(), kind: StartToStart, lag: 2 },
-        Relationship { predecessor: "a".into(), successor: "b".into(), kind: FinishToStart, lag: -1 },
-        Relationship { predecessor: "a".into(), successor: "b".into(), kind: FinishToFinish, lag: 0 },
+        Relationship { predecessor: "a".into(), successor: "b".into(), kind: StartToStart, lag: 2, lag_minutes: None },
+        Relationship { predecessor: "a".into(), successor: "b".into(), kind: FinishToStart, lag: -1, lag_minutes: None },
+        Relationship { predecessor: "a".into(), successor: "b".into(), kind: FinishToFinish, lag: 0, lag_minutes: None },
     ] {
         let text = write_dependency(&r).unwrap();
         assert_eq!(parse_dependency(&text), (r.predecessor.clone(), r.kind, r.lag), "{text}");
@@ -166,7 +166,13 @@ fn hostile_files_are_errors_not_crashes() {
 #[test]
 fn what_perth_cannot_hold_is_reported_on_writing() {
     let mut p = read(&older().to_string()).unwrap().project;
-    p.relationships.push(Relationship { predecessor: "x".into(), successor: "y".into(), kind: RelationshipType::StartToFinish, lag: 0 });
+    p.relationships.push(Relationship {
+        predecessor: "x".into(),
+        successor: "y".into(),
+        kind: RelationshipType::StartToFinish,
+        lag: 0,
+        lag_minutes: None,
+    });
     p.activities[0].constraint = Some(Constraint::MandatoryStart(day(2026, 8, 13)));
     let (text, warnings) = write(&p);
     assert_eq!(warnings.len(), 2, "{warnings:?}");

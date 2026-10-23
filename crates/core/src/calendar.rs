@@ -1,5 +1,6 @@
-//! A work calendar: the days of the week that are worked, and the exceptions to them (holidays
-//! off, and days worked although the week says not). Durations count its working days.
+//! A work calendar: the days of the week that are worked and the hours worked in each (its work
+//! periods), and the exceptions (holidays off, and days worked although the week says not).
+//! Durations count its working time.
 
 use std::collections::BTreeSet;
 
@@ -18,6 +19,16 @@ pub enum CalendarError {
     OutOfRange(String),
 }
 
+/// A work period within a day: from and to, in minutes after midnight.
+pub type Period = (u16, u16);
+
+/// The periods of a working day when a calendar doesn't say: 08:00 to 12:00 and 13:00 to 17:00,
+/// eight hours.
+pub const DEFAULT_PERIODS: [Period; 2] = [(8 * 60, 12 * 60), (13 * 60, 17 * 60)];
+
+/// The minutes in a day.
+pub const MINUTES_PER_DAY: i64 = 1440;
+
 /// How many days a search for a working day may look through before it gives up: years of
 /// exceptions, never an endless walk.
 const SEARCH: i32 = 3660;
@@ -33,6 +44,9 @@ pub struct Calendar {
     pub extra_days: BTreeSet<Date>,
     /// A region whose holidays are off too, computed from their rules for any year.
     pub region: Option<Region>,
+    /// The periods worked on each day of the week, Monday first, in order; a worked day with
+    /// none works the default periods.
+    pub periods: [Vec<Period>; 7],
 }
 
 impl Default for Calendar {
@@ -44,6 +58,7 @@ impl Default for Calendar {
             holidays: BTreeSet::new(),
             extra_days: BTreeSet::new(),
             region: None,
+            periods: Default::default(),
         }
     }
 }
@@ -52,6 +67,32 @@ impl Calendar {
     /// Every day worked: the 24-hour calendar lags can count on.
     pub fn every_day() -> Calendar {
         Calendar { name: "24 Hour".into(), week: [true; 7], ..Calendar::default() }
+    }
+
+    /// Around the clock, every day: the 24-hour calendar lags can count on.
+    pub fn around_the_clock() -> Calendar {
+        Calendar { name: "24 Hour".into(), week: [true; 7], periods: std::array::from_fn(|_| vec![(0, 1440)]), ..Calendar::default() }
+    }
+
+    /// The periods a weekday works when it works (the default ones if it names none).
+    pub fn weekday_periods(&self, weekday: usize) -> &[Period] {
+        match self.periods.get(weekday) {
+            Some(p) if !p.is_empty() => p,
+            _ => &DEFAULT_PERIODS,
+        }
+    }
+
+    /// The periods worked on `date`: none on a day off.
+    pub fn periods_on(&self, date: Date) -> &[Period] {
+        if self.is_working(date) { self.weekday_periods(date.weekday().index()) } else { &[] }
+    }
+
+    /// The minutes of a working day, by which days of duration become working time: the first
+    /// worked weekday's.
+    pub fn day_minutes(&self) -> i64 {
+        let weekday = self.week.iter().position(|w| *w).unwrap_or(0);
+        let minutes: i64 = self.weekday_periods(weekday).iter().map(|(a, b)| i64::from(*b) - i64::from(*a)).sum();
+        if minutes > 0 { minutes } else { 480 }
     }
 
     /// Whether it has any working day at all.

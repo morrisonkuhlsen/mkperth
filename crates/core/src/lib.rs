@@ -7,7 +7,7 @@ mod date;
 mod holidays;
 mod project;
 
-pub use calendar::{Calendar, CalendarError};
+pub use calendar::{Calendar, CalendarError, DEFAULT_PERIODS, MINUTES_PER_DAY, Period};
 pub use date::{Date, Weekday};
 pub use holidays::{Region, easter};
 pub use project::{Activity, ActivityKind, Constraint, CriticalBy, Extra, FloatKind, LagCalendar, Project, Relationship, RelationshipType};

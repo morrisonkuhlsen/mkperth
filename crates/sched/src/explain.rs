@@ -2,16 +2,19 @@
 //! where its calendar placed it, and how its floats were counted. Recorded by the scheduler
 //! itself as it runs (`crate::explain`), so the explanation is the calculation, not a second one.
 
-use mkperth_core::{Constraint, Date, RelationshipType};
+use mkperth_core::{Calendar, Constraint, Date, MINUTES_PER_DAY, RelationshipType};
 use mkperth_i18n::tr;
 
 use crate::Scheduled;
 
-/// A moment on the schedule: the morning or the evening of a day.
+/// A moment on the schedule: the morning (the start of work) or the evening (its end) of a day,
+/// or a time of day within it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Moment {
     pub date: Date,
     pub evening: bool,
+    /// Minutes after midnight, when the moment isn't the day's start or end of work.
+    pub time: Option<u16>,
 }
 
 /// Where a bound came from.
@@ -47,15 +50,18 @@ pub struct Bound {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Slack {
     pub source: Source,
-    pub days: i64,
+    /// Working minutes.
+    pub minutes: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Explanation {
     pub id: String,
     pub calendar: String,
-    /// Working days; 0 for a milestone or a summary.
+    /// Working minutes; 0 for a milestone or a summary.
     pub duration: i64,
+    /// The minutes of a working day on its calendar, to say durations and floats in days.
+    pub day_minutes: i64,
     /// The children whose dates a summary takes; empty for any other activity.
     pub children: Vec<String>,
     pub early: Vec<Bound>,
@@ -75,10 +81,16 @@ pub struct Explanation {
     pub scheduled: Scheduled,
 }
 
-/// A time as a moment: `t` is the morning of day `t`, or the evening of day `t − 1`.
-pub(crate) fn moment(t: i64, evening: bool) -> Option<Moment> {
-    let day = if evening { t - 1 } else { t };
-    i32::try_from(day).ok().and_then(Date::from_days).map(|date| Moment { date, evening })
+/// A time in minutes as a moment on `calendar`: a start names its day, a finish the day of its
+/// last minute; the time of day is kept when it isn't where the day's work starts or ends.
+pub(crate) fn moment(t: i64, evening: bool, calendar: &Calendar) -> Option<Moment> {
+    let minute = if evening { t - 1 } else { t };
+    let date = i32::try_from(minute.div_euclid(MINUTES_PER_DAY)).ok().and_then(Date::from_days)?;
+    let of_day = t - i64::from(date.days()) * MINUTES_PER_DAY;
+    let periods = calendar.weekday_periods(date.weekday().index());
+    let edge = if evening { periods.last().map(|(_, b)| i64::from(*b)) } else { periods.first().map(|(a, _)| i64::from(*a)) };
+    let time = (edge != Some(of_day) && of_day != 0).then(|| u16::try_from(of_day).unwrap_or(0));
+    Some(Moment { date, evening, time })
 }
 
 fn kind_name(kind: RelationshipType) -> String {
@@ -117,8 +129,16 @@ fn capitalized(text: String) -> String {
 impl Explanation {
     /// The calculation in words, line by line, dates written by `date`.
     pub fn lines(&self, date: &dyn Fn(Date) -> String) -> Vec<String> {
-        let at =
-            |m: Moment| if m.evening { tr!("ex-evening", date = date(m.date).as_str()) } else { tr!("ex-morning", date = date(m.date).as_str()) };
+        let at = |m: Moment| match m.time {
+            Some(t) => tr!("ex-at-time", date = date(m.date).as_str(), time = format!("{:02}:{:02}", t / 60, t % 60).as_str()),
+            None if m.evening => tr!("ex-evening", date = date(m.date).as_str()),
+            None => tr!("ex-morning", date = date(m.date).as_str()),
+        };
+        // Working minutes in days, with a decimal when they aren't whole.
+        let in_days = |minutes: i64| {
+            let d = self.day_minutes.max(1);
+            if minutes % d == 0 { (minutes / d).to_string() } else { format!("{:.2}", minutes as f64 / d as f64).trim_end_matches('0').to_string() }
+        };
         let lag = |l: i64| if l == 0 { String::new() } else { tr!("ex-lag", lag = format!("{l:+}").as_str()) };
         let source = |s: &Source| match s {
             Source::ProjectStart => tr!("ex-src-project-start"),
@@ -139,7 +159,7 @@ impl Explanation {
                 ls = date(self.scheduled.late_start).as_str(),
                 lf = date(self.scheduled.late_finish).as_str()
             ));
-            out.push(tr!("ex-total-float", calendar = self.calendar.as_str(), n = self.scheduled.total_float));
+            out.push(tr!("ex-total-float", calendar = self.calendar.as_str(), n = in_days(self.scheduled.total_float_minutes).as_str()));
             return out;
         }
         // Each bound under its pass, indented by two spaces (the catalogs keep no leading space).
@@ -159,7 +179,12 @@ impl Explanation {
             out.push(tr!("ex-placed", calendar = self.calendar.as_str(), at = at(self.early_start).as_str()));
         }
         if self.duration > 0 {
-            out.push(tr!("ex-early-finish", n = self.duration, calendar = self.calendar.as_str(), at = at(self.early_finish).as_str()));
+            out.push(tr!(
+                "ex-early-finish",
+                n = in_days(self.duration).as_str(),
+                calendar = self.calendar.as_str(),
+                at = at(self.early_finish).as_str()
+            ));
         }
         out.push(tr!("ex-backward"));
         for b in &self.late {
@@ -177,13 +202,14 @@ impl Explanation {
             out.push(tr!("ex-placed-late", calendar = self.calendar.as_str(), at = at(self.late_finish).as_str()));
         }
         if self.duration > 0 {
-            out.push(tr!("ex-late-start", n = self.duration, calendar = self.calendar.as_str(), at = at(self.late_start).as_str()));
+            out.push(tr!("ex-late-start", n = in_days(self.duration).as_str(), calendar = self.calendar.as_str(), at = at(self.late_start).as_str()));
         }
-        out.push(tr!("ex-total-float", calendar = self.calendar.as_str(), n = self.scheduled.total_float));
-        let free: Vec<String> = self.free.iter().map(|s| tr!("ex-slack", source = source(&s.source).as_str(), n = s.days)).collect();
-        out.push(tr!("ex-free-float", n = self.scheduled.free_float, list = free.join("; ").as_str()));
+        out.push(tr!("ex-total-float", calendar = self.calendar.as_str(), n = in_days(self.scheduled.total_float_minutes).as_str()));
+        let free: Vec<String> =
+            self.free.iter().map(|s| tr!("ex-slack", source = source(&s.source).as_str(), n = in_days(s.minutes).as_str())).collect();
+        out.push(tr!("ex-free-float", n = in_days(self.scheduled.free_float_minutes).as_str(), list = free.join("; ").as_str()));
         if self.held_late > 0 {
-            out.push(tr!("ex-held-late", n = self.held_late));
+            out.push(tr!("ex-held-late", n = in_days(self.held_late).as_str()));
         }
         if self.scheduled.critical {
             out.push(tr!("ex-critical"));

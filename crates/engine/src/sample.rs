@@ -41,7 +41,13 @@ pub(crate) fn project() -> Project {
     if let Some(a) = activities.iter_mut().find(|a| a.id == "C50") {
         a.constraint = Some(Constraint::FinishOnOrBefore(Date::from_ymd(2027, 6, 30).unwrap_or(start)));
     }
-    let tie = |p: &str, s: &str, kind: RelationshipType, lag: i64| Relationship { predecessor: p.into(), successor: s.into(), kind, lag };
+    let tie = |p: &str, s: &str, kind: RelationshipType, lag: i64| Relationship {
+        predecessor: p.into(),
+        successor: s.into(),
+        kind,
+        lag,
+        lag_minutes: None,
+    };
     Project {
         name: "Sample — a small building".into(),
         start,

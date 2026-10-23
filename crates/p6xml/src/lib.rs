@@ -15,7 +15,7 @@ mod tree;
 
 use std::collections::{BTreeSet, HashMap};
 
-use mkperth_core::{Activity, ActivityKind, Calendar, Constraint, Date, Project, Relationship, RelationshipType, Weekday};
+use mkperth_core::{Activity, ActivityKind, Calendar, Constraint, Date, Period, Project, Relationship, RelationshipType, Weekday};
 use mkperth_i18n::tr;
 use thiserror::Error;
 
@@ -109,19 +109,46 @@ fn constraint_name(c: Constraint) -> (&'static str, Option<Date>) {
     }
 }
 
+/// `08:00:00` (or `08:00`) as minutes after midnight; midnight at a period's end is 24:00.
+fn minutes_of(text: &str) -> Option<u16> {
+    let mut parts = text.trim().split(':');
+    let h: u16 = parts.next()?.parse().ok()?;
+    let m: u16 = parts.next().map_or(Some(0), |m| m.parse().ok())?;
+    (h <= 24 && m < 60).then(|| h * 60 + m).filter(|t| *t <= 1440)
+}
+
+/// The work periods of a `WorkTime` list; a `WorkTime` without times works `hours` from 08:00.
+fn periods_of(e: &Element, hours: f64) -> Vec<Period> {
+    let mut out = Vec::new();
+    for w in e.all("WorkTime") {
+        let period = match (w.text_of("Start").and_then(minutes_of), w.text_of("Finish").and_then(minutes_of)) {
+            (Some(a), Some(b)) => Some((a, if b <= a { 1440 } else { b })),
+            _ => Some((480, (480.0 + hours * 60.0).min(1440.0) as u16)),
+        };
+        if let Some(p) = period.filter(|(a, b)| a < b) {
+            out.push(p);
+        }
+    }
+    out.sort_unstable();
+    out
+}
+
 /// A calendar and its hours per day.
 fn calendar_of(e: &Element) -> (Calendar, f64) {
     let name = e.text_of("Name").unwrap_or("Calendar").to_string();
     let hours = e.text_of("HoursPerDay").and_then(|h| h.parse::<f64>().ok()).filter(|h| *h > 0.0 && *h <= 24.0).unwrap_or(HOURS_PER_DAY);
     let mut week = [false; 7];
+    let mut periods: [Vec<Period>; 7] = Default::default();
     let mut any_day = false;
     if let Some(standard) = e.child("StandardWorkWeek") {
         for day in standard.all("StandardWorkHours") {
             any_day = true;
-            if let Some(w) = day.text_of("DayOfWeek").and_then(weekday_of)
-                && let Some(slot) = week.get_mut(w.index())
-            {
-                *slot = day.all("WorkTime").next().is_some();
+            if let Some(w) = day.text_of("DayOfWeek").and_then(weekday_of) {
+                let p = periods_of(day, hours);
+                if let (Some(slot), Some(ps)) = (week.get_mut(w.index()), periods.get_mut(w.index())) {
+                    *slot = !p.is_empty();
+                    *ps = p;
+                }
             }
         }
     }
@@ -139,7 +166,7 @@ fn calendar_of(e: &Element) -> (Calendar, f64) {
             }
         }
     }
-    (Calendar { name, week, holidays, extra_days, region: None }, hours)
+    (Calendar { name, week, holidays, extra_days, region: None, periods }, hours)
 }
 
 /// Reads P6 XML.
@@ -172,14 +199,13 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         None => (Calendar::default(), HOURS_PER_DAY),
     };
     let calendar_by_id: HashMap<&str, (&str, f64)> = calendars.iter().map(|(id, c, h)| (id.as_str(), (c.name.as_str(), *h))).collect();
-    let to_days = |hours: f64, per_day: f64, warned: &mut bool| -> i64 {
-        let days = hours / per_day;
-        if (days - days.round()).abs() > 1e-9 {
-            *warned = true;
-        }
-        days.ceil().clamp(-1e9, 1e9) as i64
+    // Hours as working minutes, kept exact (P6 schedules them on the calendar's work periods);
+    // in days by its hours per day too, for showing.
+    let to_minutes = |hours: f64, per_day: f64| -> (i64, Option<i64>) {
+        let minutes = (hours * 60.0).round().clamp(-1e12, 1e12) as i64;
+        let day = ((per_day * 60.0).round() as i64).max(1);
+        (minutes / day + i64::from(minutes > 0 && minutes % day != 0), Some(minutes))
     };
-    let mut fractional = false;
 
     // The WBS as summaries, IDs from their codes, kept unique.
     let mut activities: Vec<Activity> = Vec::new();
@@ -230,7 +256,8 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             id: id.clone(),
             name: e.text_of("Name").unwrap_or_default().to_string(),
             kind,
-            duration: to_days(hours, per_day, &mut fractional),
+            duration: to_minutes(hours, per_day).0,
+            duration_minutes: to_minutes(hours, per_day).1,
             constraint: constraint("PrimaryConstraintType", "PrimaryConstraintDate"),
             secondary_constraint: constraint("SecondaryConstraintType", "SecondaryConstraintDate"),
             calendar,
@@ -259,21 +286,19 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             .find(|a| a.id == predecessor)
             .and_then(|a| a.calendar.as_deref())
             .map_or(project_hours, |name| calendars.iter().find(|(_, c, _)| c.name == name).map_or(project_hours, |(_, _, h)| *h));
-        let lag = match e.text_of("Lag") {
-            Some(h) => to_days(
-                h.parse::<f64>().ok().filter(|h| h.is_finite()).ok_or_else(|| P6Error::Field("Relationship".into(), "Lag".into()))?,
-                per_day,
-                &mut fractional,
-            ),
-            None => 0,
+        let (lag, lag_minutes) = match e.text_of("Lag") {
+            Some(h) => {
+                let hours = h.parse::<f64>().ok().filter(|h| h.is_finite()).ok_or_else(|| P6Error::Field("Relationship".into(), "Lag".into()))?;
+                let (days, minutes) = to_minutes(hours, per_day);
+                // A lead's part day doesn't round to a whole one.
+                (if hours < 0.0 { minutes.map_or(days, |m| m / ((per_day * 60.0).round() as i64).max(1)) } else { days }, minutes)
+            }
+            None => (0, None),
         };
-        relationships.push(Relationship { predecessor, successor, kind, lag });
+        relationships.push(Relationship { predecessor, successor, kind, lag, lag_minutes });
     }
     if dangling > 0 {
         warnings.push(tr!("warn-p6-dangling", n = dangling));
-    }
-    if fractional {
-        warnings.push(tr!("warn-p6-hours"));
     }
     // What else the project and the file hold, each kind named once.
     const READ: [&str; 6] = ["Project", "Calendar", "WBS", "Activity", "Relationship", "ProjectCodeType"];
@@ -323,12 +348,28 @@ fn esc(text: &str) -> String {
     quick_xml::escape::escape(text).into_owned()
 }
 
+/// Working minutes as P6's hours: whole, or with the decimals they need.
+fn hours(minutes: i64) -> String {
+    if minutes % 60 == 0 { (minutes / 60).to_string() } else { format!("{:.4}", minutes as f64 / 60.0).trim_end_matches('0').to_string() }
+}
+
+/// A day's work periods as `WorkTime` elements, indented.
+fn work_times(periods: &[Period], indent: &str) -> String {
+    let at = |m: u16| format!("{:02}:{:02}:00", m / 60, m % 60);
+    periods
+        .iter()
+        .map(|(a, b)| {
+            format!("{indent}<WorkTime>\n{indent}  <Start>{}</Start>\n{indent}  <Finish>{}</Finish>\n{indent}</WorkTime>\n", at(*a), at(*b))
+        })
+        .collect()
+}
+
 fn timestamp(d: Date, evening: bool) -> String {
     format!("{d}T{}", if evening { "17:00:00" } else { "08:00:00" })
 }
 
 /// Writes `project` as P6 XML (one project, its calendars, WBS, activities and relationships),
-/// durations and lags in hours at eight a day. Returns the text and what P6's format couldn't
+/// durations and lags in hours by each calendar's working day, and the calendars' work periods. Returns the text and what P6's format couldn't
 /// hold.
 pub fn write(project: &Project) -> (String, Vec<String>) {
     let warnings = Vec::new();
@@ -336,16 +377,21 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     out.push_str(&format!("<APIBusinessObjects xmlns=\"{NAMESPACE}\">\n"));
     let calendars: Vec<&Calendar> = std::iter::once(&project.calendar).chain(project.calendars.iter()).collect();
     let calendar_object = |name: &str| calendars.iter().position(|c| c.name == name).map_or(1, |k| k + 1);
+    // An activity's working day, by its calendar, to say days of duration and lag in hours.
+    let day_of = |a: &Activity| {
+        a.calendar.as_deref().and_then(|n| calendars.iter().find(|c| c.name == n)).map_or(project.calendar.day_minutes(), |c| c.day_minutes())
+    };
     for (k, c) in calendars.iter().enumerate() {
         out.push_str(&format!(
-            "  <Calendar>\n    <ObjectId>{}</ObjectId>\n    <Name>{}</Name>\n    <HoursPerDay>8</HoursPerDay>\n    <StandardWorkWeek>\n",
+            "  <Calendar>\n    <ObjectId>{}</ObjectId>\n    <Name>{}</Name>\n    <HoursPerDay>{}</HoursPerDay>\n    <StandardWorkWeek>\n",
             k + 1,
-            esc(&c.name)
+            esc(&c.name),
+            hours(c.day_minutes())
         ));
         for w in Weekday::ALL {
             out.push_str(&format!("      <StandardWorkHours>\n        <DayOfWeek>{w:?}</DayOfWeek>\n"));
             if c.week.get(w.index()).copied().unwrap_or(false) {
-                out.push_str("        <WorkTime>\n          <Start>08:00:00</Start>\n          <Finish>17:00:00</Finish>\n        </WorkTime>\n");
+                out.push_str(&work_times(c.weekday_periods(w.index()), "        "));
             }
             out.push_str("      </StandardWorkHours>\n");
         }
@@ -372,7 +418,8 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         for d in &c.extra_days {
             out.push_str(&format!(
-                "      <HolidayOrException>\n        <Date>{d}T00:00:00</Date>\n        <WorkTime>\n          <Start>08:00:00</Start>\n          <Finish>17:00:00</Finish>\n        </WorkTime>\n      </HolidayOrException>\n"
+                "      <HolidayOrException>\n        <Date>{d}T00:00:00</Date>\n{}      </HolidayOrException>\n",
+                work_times(c.weekday_periods(d.weekday().index()), "        ")
             ));
         }
         out.push_str("    </HolidayOrExceptions>\n  </Calendar>\n");
@@ -413,7 +460,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             object(&a.id),
             esc(&a.id),
             esc(&a.name),
-            a.working_days().saturating_mul(8),
+            hours(a.working_minutes(day_of(a))),
             a.calendar.as_deref().map_or(1, calendar_object)
         ));
         if let Some(p) = &a.parent {
@@ -438,7 +485,10 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             object(&r.predecessor),
             object(&r.successor),
             relationship_name(r.kind),
-            r.lag.saturating_mul(8)
+            hours(r.lag_minutes.unwrap_or_else(|| {
+                let day = project.activities.iter().find(|a| a.id == r.predecessor).map_or(project.calendar.day_minutes(), day_of);
+                r.lag.saturating_mul(day)
+            }))
         ));
     }
     out.push_str("  </Project>\n</APIBusinessObjects>\n");

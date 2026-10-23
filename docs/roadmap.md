@@ -23,7 +23,10 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   Float and critical options: total float as finish float, start float or the smaller; critical
   at a total-float threshold or on the longest path (the driving relationships back from the
   activities that finish the project), the longest path marked on every activity either way.
-- **Next:** durations in hours with hours per day (#2); the rest of #4 and #5.
+  Time in minutes: calendars with work periods per weekday (a short Friday), durations and lags
+  in working minutes for part days and P6's hours, floats in minutes shown in days with decimals;
+  every earlier test and oracle network keeps its dates.
+- **Next:** an exception day's own work periods; the rest of #4 and #5.
 
 ## M1 — data in and out
 - *Done:* Perth.jl's project JSON (`mkperth-perth`), read and written back byte for byte: a

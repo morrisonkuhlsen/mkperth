@@ -1,10 +1,9 @@
 //! The critical path method (CPM) over a project network: a forward pass for the early dates,
 //! a backward pass for the late ones, and the floats between them.
 //!
-//! Time runs in calendar days (see `clock`): a time `t` is the morning of day `t`, the evening
-//! of day `t − 1`. Each activity works on its own calendar: it starts on the morning of one of
-//! its working days, takes its duration in its working days, and finishes on the evening of the
-//! last. Each relationship bounds the successor `s` by its predecessor `p`, the lag counted in
+//! Time runs in minutes (see `clock`). Each activity works on its own calendar: it starts at a
+//! working minute, takes its duration in working minutes (days of duration at the calendar's
+//! hours a day), and finishes at the end of its last. Each relationship bounds the successor `s` by its predecessor `p`, the lag counted in
 //! working days of the lag calendar (the predecessor's by default) and `⊕` moving by them:
 //!
 //! | kind | bound |
@@ -31,7 +30,9 @@ mod explain;
 
 use std::collections::{HashMap, VecDeque};
 
-use mkperth_core::{ActivityKind, Calendar, CalendarError, Constraint, CriticalBy, Date, FloatKind, LagCalendar, Project, RelationshipType};
+use mkperth_core::{
+    ActivityKind, Calendar, CalendarError, Constraint, CriticalBy, Date, FloatKind, LagCalendar, MINUTES_PER_DAY, Project, RelationshipType,
+};
 use mkperth_i18n::tr;
 use thiserror::Error;
 
@@ -85,9 +86,11 @@ pub struct Scheduled {
     pub early_finish: Date,
     pub late_start: Date,
     pub late_finish: Date,
-    /// In working days of the activity's calendar.
+    /// In whole working days of the activity's calendar (towards zero), and in working minutes.
     pub total_float: i64,
     pub free_float: i64,
+    pub total_float_minutes: i64,
+    pub free_float_minutes: i64,
     /// By the project's rule: total float at or below its threshold, or on the longest path.
     pub critical: bool,
     /// On the longest path, whatever the rule: a chain of driving relationships back from the
@@ -111,21 +114,26 @@ struct Tie {
     from: usize,
     to: usize,
     kind: RelationshipType,
+    /// In days, as the relationship says it (for explanations), and in working minutes.
     lag: i64,
+    lag_minutes: i64,
     lag_calendar: usize,
 }
 
-/// The constraint's date as a time: its morning for a start, its evening for a finish.
-fn constraint_time(c: Constraint) -> Option<i64> {
-    match c {
+/// The constraint's date as a time on the activity's calendar: the start of its first work
+/// period for a start, the end of the last working time on or before it for a finish.
+fn constraint_time(c: Constraint, clock: &Clock) -> Result<Option<i64>, ScheduleError> {
+    let midnight = |d: Date| i64::from(d.days()) * MINUTES_PER_DAY;
+    Ok(match c {
         Constraint::StartOnOrAfter(d) | Constraint::StartOnOrBefore(d) | Constraint::StartOn(d) | Constraint::MandatoryStart(d) => {
-            Some(i64::from(d.days()))
+            let first = clock.periods(i64::from(d.days()))?.first().map_or(0, |(a, _)| i64::from(*a));
+            Some(midnight(d) + first)
         }
         Constraint::FinishOnOrAfter(d) | Constraint::FinishOnOrBefore(d) | Constraint::FinishOn(d) | Constraint::MandatoryFinish(d) => {
-            Some(i64::from(d.days()) + 1)
+            Some(clock.previous_finish(midnight(d) + MINUTES_PER_DAY)?)
         }
         Constraint::AsLateAsPossible => None,
-    }
+    })
 }
 
 /// Schedules `project` by the critical path method.
@@ -149,7 +157,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         return Err(ScheduleError::TooMany(tr!("what-relationships"), MAX_RELATIONSHIPS));
     }
     // The calendars: the project's (0), the others it lists, and 24 hours for lags (last).
-    let every_day = Calendar::every_day();
+    let every_day = Calendar::around_the_clock();
     let mut calendars: Vec<&Calendar> = vec![&project.calendar];
     calendars.extend(project.calendars.iter());
     calendars.push(&every_day);
@@ -169,7 +177,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         if a.duration < 0 {
             return Err(ScheduleError::NegativeDuration(a.id.clone()));
         }
-        if a.working_days() > MAX_SPAN {
+        if a.working_days() > MAX_SPAN || a.duration_minutes.is_some_and(|m| !(0..=MAX_SPAN * MINUTES_PER_DAY).contains(&m)) {
             return Err(ScheduleError::TooLong);
         }
         on.push(match &a.calendar {
@@ -226,7 +234,15 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
     let target = trace.map(find).transpose()?;
     let traced = |i: usize| target == Some(i);
     let id_of = |i: usize| acts.get(i).map_or_else(String::new, |a| a.id.clone());
-    let at = |t: i64, evening: bool| explain::moment(t, evening).ok_or(ScheduleError::TooLong);
+    // Moments on the traced activity's calendar: a time of day named only when it isn't the
+    // start of the day's work (a morning) or its end (an evening).
+    let traced_calendar = target.and_then(|i| on.get(i).copied()).and_then(|k| calendars.get(k).copied()).unwrap_or(&project.calendar);
+    // A finish at the start of a work period is the end of the last one, the same moment: shown
+    // as that evening. Starts stay as they were asked for, so the calendar's placing shows.
+    let at = |t: i64, evening: bool| -> Result<Moment, ScheduleError> {
+        let t = if evening { Clock { calendar: traced_calendar }.previous_finish(t)? } else { t };
+        explain::moment(t, evening, traced_calendar).ok_or(ScheduleError::TooLong)
+    };
     let (mut early_bounds, mut late_bounds, mut slacks) = (Vec::new(), Vec::new(), Vec::new());
     let (mut earliest, mut latest_seen, mut held_late) = (None, None, 0);
     let mut ties = Vec::with_capacity(project.relationships.len());
@@ -240,7 +256,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             ignored.push(k);
             continue;
         }
-        if r.lag.abs() > MAX_SPAN {
+        if r.lag.abs() > MAX_SPAN || r.lag_minutes.is_some_and(|m| m.abs() > MAX_SPAN * MINUTES_PER_DAY) {
             return Err(ScheduleError::TooLong);
         }
         let lag_calendar = match project.lag_calendar {
@@ -249,7 +265,8 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             LagCalendar::TwentyFourHour => twenty_four,
             LagCalendar::Project => 0,
         };
-        ties.push(Tie { from, to, kind: r.kind, lag: r.lag, lag_calendar });
+        let day = calendars.get(lag_calendar).map_or(480, |c| c.day_minutes());
+        ties.push(Tie { from, to, kind: r.kind, lag: r.lag, lag_minutes: r.lag_minutes.unwrap_or(r.lag.saturating_mul(day)), lag_calendar });
     }
     let n = acts.len();
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new(); n];
@@ -262,15 +279,16 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
     }
     let order = topological(n, &ties, &outgoing, &incoming, acts.iter().map(|a| a.id.as_str()).collect())?;
     // A summary takes no time and holds no constraint of its own: its dates are its children's.
-    let dur = |i: usize| if is_summary(i) { 0 } else { acts.get(i).map_or(0, |a| a.working_days()) };
+    let day_minutes = |i: usize| calendars.get(cal_of(i)).map_or(480, |c| c.day_minutes());
+    let dur = |i: usize| if is_summary(i) { 0 } else { acts.get(i).map_or(0, |a| a.working_minutes(day_minutes(i))) };
     let kind = |i: usize| acts.get(i).map_or(ActivityKind::Task, |a| a.kind);
     // Both constraints of an activity hold; the primary first.
     let constraints =
         |i: usize| acts.get(i).filter(|_| !is_summary(i)).map_or([None, None], |a| [a.constraint, a.secondary_constraint]).into_iter().flatten();
-    let origin = i64::from(project.start.days());
+    let origin = i64::from(project.start.days()) * MINUTES_PER_DAY;
     // Every time stays within the span of the project's start: far from overflow and from the
     // ends of the calendar.
-    let bounded = |t: i64| if (t - origin).abs() > MAX_SPAN * 2 { Err(ScheduleError::TooLong) } else { Ok(t) };
+    let bounded = |t: i64| if (t - origin).abs() > MAX_SPAN * 2 * MINUTES_PER_DAY { Err(ScheduleError::TooLong) } else { Ok(t) };
 
     // Where an activity's working time can begin and end, on its calendar.
     let place_start = |i: usize, t: i64| -> Result<i64, ScheduleError> {
@@ -286,27 +304,35 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         let c = clock(cal_of(i));
         if dur(i) == 0 { Ok(t) } else { c.retreat(c.next_finish(t)?, dur(i)) }
     };
+    // The latest finish at or before `t`; a start milestone (or a task of no duration) at the next
+    // working minute when no work lies between, which is the same moment.
     let place_finish = |i: usize, t: i64| -> Result<i64, ScheduleError> {
         let c = clock(cal_of(i));
-        match kind(i) {
-            ActivityKind::Task if dur(i) > 0 => c.previous_finish(t),
-            ActivityKind::FinishMilestone => c.previous_finish(t),
-            _ => c.previous_start(t),
+        let f = c.previous_finish(t)?;
+        if kind(i) == ActivityKind::StartMilestone || (kind(i) == ActivityKind::Task && dur(i) == 0) {
+            let s = c.next_start(f)?;
+            return Ok(if s <= t { s } else { f });
         }
+        Ok(f)
     };
     let start_of = |i: usize, lf: i64| -> Result<i64, ScheduleError> { clock(cal_of(i)).retreat(lf, dur(i)) };
-    // The latest finish that starts no later than `t`.
+    // The latest finish that starts no later than `t`: a relationship's bound counts moments
+    // with no work between as one; a constraint's date is strict.
     let finish_for_start = |i: usize, t: i64| -> Result<i64, ScheduleError> {
         let c = clock(cal_of(i));
         if dur(i) == 0 { Ok(t) } else { c.advance(c.previous_start(t)?, dur(i)) }
+    };
+    let finish_for_start_by = |i: usize, t: i64| -> Result<i64, ScheduleError> {
+        let c = clock(cal_of(i));
+        if dur(i) == 0 { Ok(t) } else { c.advance(c.start_by(t)?, dur(i)) }
     };
     // The bound a tie puts on its successor, from the predecessor's early dates: a start for
     // FS and SS, a finish for FF and SF.
     let forward_bound = |t: &Tie, p_es: i64, p_ef: i64| -> Result<i64, ScheduleError> {
         let lag = clock(t.lag_calendar);
         bounded(match t.kind {
-            RelationshipType::FinishToStart | RelationshipType::FinishToFinish => lag.shift(p_ef, t.lag)?,
-            RelationshipType::StartToStart | RelationshipType::StartToFinish => lag.shift(p_es, t.lag)?,
+            RelationshipType::FinishToStart | RelationshipType::FinishToFinish => lag.shift(p_ef, t.lag_minutes)?,
+            RelationshipType::StartToStart | RelationshipType::StartToFinish => lag.shift(p_es, t.lag_minutes)?,
         })
     };
 
@@ -333,7 +359,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         }
         // Early-date constraints: no earlier than their date; a mandatory one, on it.
         for c in constraints(i) {
-            let when = constraint_time(c).map(bounded).transpose()?;
+            let when = constraint_time(c, &clock(cal_of(i)))?.map(bounded).transpose()?;
             let (candidate, via, overrides) = match (c, when) {
                 (Constraint::StartOnOrAfter(_) | Constraint::StartOn(_), Some(t)) => (Some(t), None, false),
                 (Constraint::FinishOnOrAfter(_) | Constraint::FinishOn(_), Some(t)) => (Some(start_for_finish(i, t)?), Some(t), false),
@@ -367,7 +393,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
 
     // Backward pass, from the evening the project must finish by, or from its early finish.
     let end = match project.must_finish_by {
-        Some(date) => bounded(i64::from(date.days()) + 1)?,
+        Some(date) => bounded((i64::from(date.days()) + 1) * MINUTES_PER_DAY)?,
         None => finish,
     };
     let mut ls = vec![end; n];
@@ -383,14 +409,14 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             let lag = clock(t.lag_calendar);
             let (s_ls, s_lf) = (ls.get(t.to).copied().unwrap_or(end), lf.get(t.to).copied().unwrap_or(end));
             let (f, via) = match t.kind {
-                RelationshipType::FinishToStart => (lag.shift(s_ls, -t.lag)?, None),
+                RelationshipType::FinishToStart => (lag.shift(s_ls, -t.lag_minutes)?, None),
                 RelationshipType::StartToStart => {
-                    let v = lag.shift(s_ls, -t.lag)?;
+                    let v = lag.shift(s_ls, -t.lag_minutes)?;
                     (finish_for_start(i, v)?, Some(v))
                 }
-                RelationshipType::FinishToFinish => (lag.shift(s_lf, -t.lag)?, None),
+                RelationshipType::FinishToFinish => (lag.shift(s_lf, -t.lag_minutes)?, None),
                 RelationshipType::StartToFinish => {
-                    let v = lag.shift(s_lf, -t.lag)?;
+                    let v = lag.shift(s_lf, -t.lag_minutes)?;
                     (finish_for_start(i, v)?, Some(v))
                 }
             };
@@ -402,11 +428,11 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         }
         // Late-date constraints: no later than their date; a mandatory one, on it.
         for c in constraints(i) {
-            let when = constraint_time(c).map(bounded).transpose()?;
+            let when = constraint_time(c, &clock(cal_of(i)))?.map(bounded).transpose()?;
             let (candidate, via, overrides) = match (c, when) {
-                (Constraint::StartOnOrBefore(_) | Constraint::StartOn(_), Some(t)) => (Some(finish_for_start(i, t)?), Some(t), false),
+                (Constraint::StartOnOrBefore(_) | Constraint::StartOn(_), Some(t)) => (Some(finish_for_start_by(i, t)?), Some(t), false),
                 (Constraint::FinishOnOrBefore(_) | Constraint::FinishOn(_), Some(t)) => (Some(t), None, false),
-                (Constraint::MandatoryStart(_), Some(t)) => (Some(finish_for_start(i, t)?), Some(t), true),
+                (Constraint::MandatoryStart(_), Some(t)) => (Some(finish_for_start_by(i, t)?), Some(t), true),
                 (Constraint::MandatoryFinish(_), Some(t)) => (Some(t), None, true),
                 _ => (None, None, false),
             };
@@ -433,10 +459,10 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         }
     }
 
-    // Working days between two times, by each calendar's running count over the schedule's
-    // span: one pass per calendar, not one per activity.
-    let lo = es.iter().chain(&ls).copied().min().unwrap_or(origin).min(origin) - 1;
-    let hi = ef.iter().chain(&lf).copied().max().unwrap_or(origin).max(end) + 1;
+    // Working minutes between two times, by each calendar's running count of whole days over the
+    // schedule's span plus the part of the day: one pass per calendar, not one per activity.
+    let lo = (es.iter().chain(&ls).copied().min().unwrap_or(origin).min(origin)).div_euclid(MINUTES_PER_DAY) - 1;
+    let hi = (ef.iter().chain(&lf).copied().max().unwrap_or(origin).max(end)).div_euclid(MINUTES_PER_DAY) + 2;
     let span = usize::try_from(hi - lo).map_err(|_| ScheduleError::TooLong)?;
     let mut counts: Vec<Vec<i64>> = Vec::with_capacity(calendars.len());
     for k in 0..calendars.len() {
@@ -445,18 +471,27 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         let mut total = 0i64;
         running.push(0);
         for day in lo..hi {
-            total += i64::from(c.working(day)?);
+            total += c.day_work(day)?;
             running.push(total);
         }
         counts.push(running);
     }
     let between = |k: usize, a: i64, b: i64| -> Result<i64, ScheduleError> {
-        let at = |t: i64| usize::try_from(t - lo).ok().and_then(|x| counts.get(k).and_then(|r| r.get(x)).copied());
-        match (at(a), at(b)) {
+        let c = clock(k);
+        let at = |t: i64| -> Result<Option<i64>, ScheduleError> {
+            let day = t.div_euclid(MINUTES_PER_DAY);
+            Ok(match usize::try_from(day - lo).ok().and_then(|x| counts.get(k).and_then(|r| r.get(x)).copied()) {
+                Some(whole) => Some(whole + c.worked_before(t)?),
+                None => None,
+            })
+        };
+        match (at(a)?, at(b)?) {
             (Some(x), Some(y)) => Ok(y - x),
-            _ => clock(k).between(a, b),
+            _ => c.between(a, b),
         }
     };
+    // Working minutes as whole working days of an activity's calendar, towards zero.
+    let days = |i: usize, minutes: i64| minutes / day_minutes(i).max(1);
 
     // Free float, successors first, so an activity held as late as possible moves by its own
     // before its predecessors measure theirs against it.
@@ -466,7 +501,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         let (e_s, e_f) = (es.get(i).copied().unwrap_or(origin), ef.get(i).copied().unwrap_or(origin));
         let mut slack = between(cal_of(i), e_f, finish)?;
         if traced(i) {
-            slacks.push(Slack { source: Source::ProjectFinish, days: slack });
+            slacks.push(Slack { source: Source::ProjectFinish, minutes: slack });
         }
         for &k in outgoing.get(i).map_or(&[][..], Vec::as_slice) {
             let Some(t) = ties.get(k) else { continue };
@@ -475,11 +510,11 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
                 RelationshipType::FinishToStart | RelationshipType::StartToStart => es.get(t.to).copied().unwrap_or(origin),
                 RelationshipType::FinishToFinish | RelationshipType::StartToFinish => ef.get(t.to).copied().unwrap_or(origin),
             };
-            let days = between(cal_of(i), bound, actual)?;
+            let gap = between(cal_of(i), bound, actual)?;
             if traced(i) {
-                slacks.push(Slack { source: Source::Relationship { other: id_of(t.to), kind: t.kind, lag: t.lag }, days });
+                slacks.push(Slack { source: Source::Relationship { other: id_of(t.to), kind: t.kind, lag: t.lag }, minutes: gap });
             }
-            slack = slack.min(days);
+            slack = slack.min(gap);
         }
         let total = between(cal_of(i), e_f, lf.get(i).copied().unwrap_or(end))?;
         let mut own = slack.min(total).max(0);
@@ -504,7 +539,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
     // A start is the morning of its day; a finish the evening of the day before its time. A
     // start milestone (or a task of no duration) is shown on its morning's day, a finish
     // milestone on its evening's.
-    let date = |t: i64| i32::try_from(t).ok().and_then(Date::from_days).ok_or(ScheduleError::TooLong);
+    let date = |t: i64| i32::try_from(t.div_euclid(MINUTES_PER_DAY)).ok().and_then(Date::from_days).ok_or(ScheduleError::TooLong);
     let start_date = |i: usize, t: i64| if kind(i) == ActivityKind::FinishMilestone { date(t - 1) } else { date(t) };
     let finish_date = |i: usize, t: i64| match kind(i) {
         ActivityKind::FinishMilestone => date(t - 1),
@@ -541,8 +576,8 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             }
         }
     }
-    let critical = |total: i64, longest: bool| match project.critical_by {
-        CriticalBy::TotalFloat(threshold) => total <= threshold,
+    let critical = |i: usize, total: i64, longest: bool| match project.critical_by {
+        CriticalBy::TotalFloat(threshold) => total <= threshold.saturating_mul(day_minutes(i)),
         CriticalBy::LongestPath => longest,
     };
 
@@ -565,9 +600,11 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             early_finish,
             late_start: start_date(i, l_s)?,
             late_finish: finish_date(i, l_f)?,
-            total_float: total,
-            free_float: free.get(i).copied().unwrap_or(0),
-            critical: critical(total, on_longest),
+            total_float: days(i, total),
+            free_float: days(i, free.get(i).copied().unwrap_or(0)),
+            total_float_minutes: total,
+            free_float_minutes: free.get(i).copied().unwrap_or(0),
+            critical: critical(i, total, on_longest),
             longest_path: on_longest,
         });
     }
@@ -611,10 +648,12 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             a.early_finish = ef_d;
             a.late_start = ls_d;
             a.late_finish = lf_d;
-            a.total_float = total;
+            a.total_float = days(s, total);
             a.free_float = 0;
+            a.total_float_minutes = total;
+            a.free_float_minutes = 0;
             a.longest_path = on_longest;
-            a.critical = critical(total, on_longest);
+            a.critical = critical(s, total, on_longest);
         }
     }
     let last = out.iter().map(|a| a.early_finish).max().unwrap_or(project.start).max(project.start);
@@ -629,6 +668,7 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
                 id: id_of(i),
                 calendar: calendars.get(cal_of(i)).map_or_else(String::new, |c| c.name.clone()),
                 duration: dur(i),
+                day_minutes: day_minutes(i),
                 children: (0..n).filter(|&c| parent.get(c).copied().flatten() == Some(i)).map(id_of).collect(),
                 early: early_bounds,
                 earliest: at(earliest.unwrap_or(origin), false)?,

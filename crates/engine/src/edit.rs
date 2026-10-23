@@ -224,6 +224,7 @@ impl Session {
         let new_id = text(params, C, "new_id")?.map(|s| s.trim().to_string());
         let name = text(params, C, "name")?;
         let duration = number(params, C, "duration", 0..=mkperth_sched::MAX_SPAN)?;
+        let minutes = number(params, C, "duration_minutes", 0..=mkperth_sched::MAX_SPAN * 1440)?;
         let kind = text(params, C, "kind")?.map(|k| kind_of(&k).ok_or_else(|| EngineError::Value(C.into(), "kind".into()))).transpose()?;
         let calendar = text(params, C, "calendar")?;
         let constraint = params.get("constraint").map(|c| constraint_of(c, C)).transpose()?;
@@ -263,8 +264,14 @@ impl Session {
             if let Some(name) = name {
                 a.name = name;
             }
+            // Whole days, or working minutes for a part day (its days rounded up, for showing).
             if let Some(d) = duration {
                 a.duration = d;
+                a.duration_minutes = None;
+            }
+            if let Some(m) = minutes {
+                a.duration_minutes = Some(m);
+                a.duration = (m + 479) / 480;
             }
             if let Some(kind) = kind {
                 a.kind = kind;
@@ -316,7 +323,7 @@ impl Session {
             if p.relationships.iter().any(|r| r.predecessor == predecessor && r.successor == successor) {
                 return Err(EngineError::DuplicateRelationship(predecessor.clone(), successor.clone()));
             }
-            p.relationships.push(Relationship { predecessor: predecessor.clone(), successor: successor.clone(), kind, lag });
+            p.relationships.push(Relationship { predecessor: predecessor.clone(), successor: successor.clone(), kind, lag, lag_minutes: None });
             Ok(())
         })
     }
