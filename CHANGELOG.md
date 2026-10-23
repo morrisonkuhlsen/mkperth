@@ -41,6 +41,12 @@ Read it before re-scheduling a plan with a new version.
   finish; a ghost bar with the new days follows the pointer, the cursor says move or resize,
   and the dates, floats and calculation follow on release, one undo each. Summaries and
   activities already begun don't drag.
+- More in the toolbar: the zoom as a drop-down beside undo; Link and Unlink (the chosen rows
+  tied in their order, finish to start, or every tie between them taken away, one undo each:
+  `relationship.add` and `relationship.delete` take `activities`); Indent and Outdent (under
+  the activity above at its level, or out of its summary: `activity.edit` takes `parent`); a
+  comment on the selected activity; Today and Go to the activity on the time scale; Level
+  resources with the project's options. The groups' names show when the row has room for them.
 - Dates picked in the activity table: a double click on a start or finish cell opens a month
   of days under it (arrows for other months, today in the accent) and a field to type one; a
   start picked moves the activity there (it starts on or after it), a finish stretches it to

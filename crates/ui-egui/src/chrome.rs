@@ -33,6 +33,19 @@ pub(crate) enum Action {
     ToggleToolbar,
     Search,
     Calendars,
+    /// The interface's zoom, in percent.
+    Zoom(u32),
+    /// The chosen activities tied one after another, or untied.
+    Link,
+    Unlink,
+    /// The selected activity under the summary above it, or out of its own.
+    Indent,
+    Outdent,
+    /// The chart scrolled to today, or to the selected activity.
+    Today,
+    Locate,
+    /// Levelled now, with the project's options.
+    Level,
     /// The Levelling pane.
     Levelling,
     /// The selected activity's comments.
@@ -72,6 +85,14 @@ pub(crate) struct State<'a> {
     pub redo: Option<&'a str>,
     /// An activity is selected (Delete needs one).
     pub selected: bool,
+    /// How many activities are chosen (linking needs two).
+    pub chosen: usize,
+    /// The selected activity is under a summary.
+    pub nested: bool,
+    /// Today is known, to go to.
+    pub today: bool,
+    /// The interface's zoom, in percent.
+    pub zoom: u32,
     pub toolbar_hidden: bool,
 }
 
@@ -116,6 +137,9 @@ fn group_name(ui: &mut egui::Ui, name: &str) {
     ui.label(egui::RichText::new(name).size(11.5).color(t.text_dim));
     ui.add_space(4.0);
 }
+
+/// The zooms offered, in percent.
+const ZOOMS: [u32; 9] = [50, 75, 90, 100, 110, 125, 150, 175, 200];
 
 /// A hairline between the toolbar's groups.
 fn divider(ui: &mut egui::Ui) {
@@ -577,10 +601,18 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     }
     let t = Tokens::get(ui.ctx());
     let mut action = None;
+    // The groups' names, when the row has room for them beside everything else: measured on the
+    // last frame without them, so showing them never takes away the room they were shown in.
+    let names = [tr!("group-edit"), tr!("font"), tr!("group-activities"), tr!("group-show"), tr!("group-time-scale"), tr!("group-resources")];
+    let names_width: f32 =
+        names.iter().map(|n| ui.painter().layout_no_wrap(n.clone(), egui::FontId::proportional(11.5), t.text_dim).size().x + 10.0).sum();
+    let fits_key = egui::Id::unique("toolbar-without-names");
+    let without_names = ui.data(|d| d.get_temp::<f32>(fits_key));
     egui::Frame::new().inner_margin(egui::Margin { left: 10, right: 10, top: 0, bottom: 8 }).show(ui, |ui| {
         let (band, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), TOOLBAR_HEIGHT), egui::Sense::hover());
-        let mut row = ui
-            .new_child(egui::UiBuilder::new().max_rect(band.shrink2(egui::vec2(12.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        let inner = band.shrink2(egui::vec2(12.0, 0.0));
+        let named = without_names.is_none_or(|w| w + names_width + 40.0 <= inner.width());
+        let mut row = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::left_to_right(egui::Align::Center)));
         quiet(&mut row);
         row.spacing_mut().item_spacing.x = 1.0;
         let mut go = |ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: bool, on: bool, then: Action| {
@@ -588,31 +620,61 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
                 action = Some(then);
             }
         };
-        group_name(&mut row, &tr!("group-edit"));
+        let group = |ui: &mut egui::Ui, k: usize| {
+            if named && let Some(name) = names.get(k) {
+                group_name(ui, name);
+            }
+        };
+        group(&mut row, 0);
         let undo = state.undo.map_or_else(|| tr!("nothing-to-undo"), |l| tr!("undo-named", what = l));
         go(&mut row, Icon::Undo, &tr!("undo"), &undo, state.undo.is_some(), false, Action::Undo);
         let redo = state.redo.map_or_else(|| tr!("nothing-to-redo"), |l| tr!("redo-named", what = l));
         go(&mut row, Icon::Redo, &tr!("redo"), &redo, state.redo.is_some(), false, Action::Redo);
+        row.add_space(2.0);
+        let zoom = format!("{}%", state.zoom);
+        let zoomed = drop_down(&mut row, &zoom, &tr!("zoom-named", n = state.zoom), &tr!("zoom"), 62.0, |ui| {
+            let mut chosen = None;
+            for z in ZOOMS {
+                if ui.radio(state.zoom == z, format!("{z}%")).clicked() {
+                    chosen = Some(z);
+                }
+            }
+            chosen
+        });
         divider(&mut row);
-        group_name(&mut row, &tr!("font"));
+        group(&mut row, 1);
         let font = font_tools(&mut row, state);
         divider(&mut row);
-        group_name(&mut row, &tr!("group-activities"));
+        group(&mut row, 2);
         go(&mut row, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
         go(&mut row, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
+        go(&mut row, Icon::Link, &tr!("link-activities"), &tr!("link-activities-tip"), state.chosen >= 2, false, Action::Link);
+        go(&mut row, Icon::Unlink, &tr!("unlink-activities"), &tr!("unlink-activities-tip"), state.chosen >= 2, false, Action::Unlink);
+        go(&mut row, Icon::Outdent, &tr!("outdent"), &tr!("outdent-tip"), state.nested, false, Action::Outdent);
+        go(&mut row, Icon::Indent, &tr!("indent"), &tr!("indent-tip"), state.selected, false, Action::Indent);
+        let tip = format!("{} ({})", tr!("comment-tool-tip"), ui.ctx().format_shortcut(&COMMENT));
+        go(&mut row, Icon::Comment, &tr!("comment-tool"), &tip, state.selected, false, Action::Comment);
         divider(&mut row);
-        group_name(&mut row, &tr!("group-show"));
+        group(&mut row, 3);
         go(&mut row, Icon::Critical, &tr!("critical-only"), &tr!("critical-only-tip"), true, state.critical_only, Action::CriticalOnly);
         go(&mut row, Icon::Gantt, &tr!("late-bars"), &tr!("late-bars-tip"), true, state.late_bars, Action::LateBars);
         go(&mut row, Icon::Network, &tr!("links"), &tr!("links-tip"), true, state.links, Action::Links);
         divider(&mut row);
-        group_name(&mut row, &tr!("group-time-scale"));
+        group(&mut row, 4);
         go(&mut row, Icon::Minus, &tr!("time-narrower"), &tr!("time-narrower-tip"), true, false, Action::TimeScale(-1));
         go(&mut row, Icon::Grid, &tr!("time-fit"), &tr!("time-fit-tip"), true, state.fitted, Action::TimeScale(0));
         go(&mut row, Icon::Plus, &tr!("time-wider"), &tr!("time-wider-tip"), true, false, Action::TimeScale(1));
+        go(&mut row, Icon::Today, &tr!("go-today"), &tr!("go-today-tip"), state.today, false, Action::Today);
+        go(&mut row, Icon::Locate, &tr!("go-selected"), &tr!("go-selected-tip"), state.selected, false, Action::Locate);
+        divider(&mut row);
+        group(&mut row, 5);
+        go(&mut row, Icon::Level, &tr!("level-tool"), &tr!("level-tool-tip"), true, false, Action::Level);
         divider(&mut row);
         if let Some(f) = font {
             action = Some(Action::Font(f));
+        }
+        if let Some(z) = zoomed {
+            action = Some(Action::Zoom(z));
         }
         row.add_space(4.0);
         let label = row.label(egui::RichText::new(tr!("option-data-date")).size(12.5).color(t.text_dim));
@@ -620,6 +682,8 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         if let Some(d) = crate::date_field(&mut row, egui::Id::unique("data-date"), label.id, state.data_date, 96.0) {
             action = Some(Action::Options(serde_json::json!({ "data_date": d.map(|d| d.to_string()) })));
         }
+        let used = row.cursor().left() - inner.left() - if named { names_width } else { 0.0 };
+        row.ctx().data_mut(|d| d.insert_temp(fits_key, used));
         row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let tip = format!("{} ({})", tr!("toolbar-hide"), ui.ctx().format_shortcut(&TOGGLE_TOOLBAR));
             if tool(ui, Icon::ChevronUp, &tr!("toolbar-hide"), &tip, true, false) {

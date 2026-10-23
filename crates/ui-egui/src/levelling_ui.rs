@@ -31,6 +31,23 @@ impl LevelForm {
 }
 
 impl PerthApp {
+    /// After levelling, said in the status bar: how many wait, the finish now, and what is left
+    /// over.
+    pub(crate) fn level_status(&mut self) {
+        if !matches!(self.status, Some(Status::Info(_))) {
+            return;
+        }
+        let held = self.session.project.activities.iter().filter(|a| a.levelled.is_some()).count();
+        if let Ok(s) = &self.session.schedule {
+            let left = mkperth_engine::sched::overloads(&self.session.project, s).len();
+            let mut text = tr!("level-done", n = held, finish = show_date(s.finish).as_str());
+            if left > 0 {
+                text = format!("{text} {}", tr!("level-left", n = left));
+            }
+            self.status = Some(if left > 0 { Status::Warning(text) } else { Status::Info(text) });
+        }
+    }
+
     pub(crate) fn levelling_pane(&mut self, ui: &mut egui::Ui) {
         let t = Tokens::get(ui.ctx());
         if theme::pane_header(ui, Icon::Level, &tr!("pane-levelling"), &tr!("pane-levelling-tip"), |ui| {
@@ -151,18 +168,7 @@ impl PerthApp {
             let order: Vec<&str> = form.order.iter().filter(|(_, on)| *on).map(|(b, _)| b.code()).collect();
             let params = json!({"within_float": form.within_float, "resources": form.resources, "order": order});
             self.run("resource.level", params);
-            // Said in the status bar: how many wait, the finish now, and what is left over.
-            if matches!(self.status, Some(Status::Info(_))) {
-                let held = self.session.project.activities.iter().filter(|a| a.levelled.is_some()).count();
-                if let Ok(s) = &self.session.schedule {
-                    let left = mkperth_engine::sched::overloads(&self.session.project, s).len();
-                    let mut text = tr!("level-done", n = held, finish = show_date(s.finish).as_str());
-                    if left > 0 {
-                        text = format!("{text} {}", tr!("level-left", n = left));
-                    }
-                    self.status = Some(if left > 0 { Status::Warning(text) } else { Status::Info(text) });
-                }
-            }
+            self.level_status();
         }
         if clear {
             self.run("resource.unlevel", serde_json::Value::Null);

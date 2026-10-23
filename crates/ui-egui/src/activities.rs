@@ -136,6 +136,10 @@ pub struct Options {
     pub table_hidden: bool,
     /// Today, drawn as a line on the chart.
     pub today: Option<Date>,
+    /// A day to bring into view (a quarter in from the chart's left), once.
+    pub goto: Option<Date>,
+    /// An activity whose row to bring into view, once.
+    pub goto_row: Option<usize>,
 }
 
 impl Options {
@@ -291,6 +295,12 @@ pub(crate) fn show(
     let scale = options.scale.unwrap_or(fit);
     // Never scrolled past either end.
     let visible_days = chart_width / scale;
+    // A day asked for: a quarter in from the left (a fitted chart shows every day already).
+    if let Some(d) = options.goto.take()
+        && options.scale.is_some()
+    {
+        options.offset = (d.days() - from) as f32 - visible_days * 0.25;
+    }
     options.offset = if options.scale.is_none() { 0.0 } else { options.offset.clamp(0.0, (days as f32 - visible_days).max(0.0)) };
     let offset = options.offset;
     let x_of = |d: i32, left: f32| left + ((d - from) as f32 - offset) * scale;
@@ -435,7 +445,14 @@ pub(crate) fn show(
         })
     };
     let position = |i: usize| rows.iter().position(|(r, _)| *r == i);
-    egui::ScrollArea::vertical().id_salt("activities").auto_shrink(false).show_rows(ui, ROW, rows.len(), |ui, range| {
+    let mut area = egui::ScrollArea::vertical().id_salt("activities").auto_shrink(false);
+    // A row asked for: a few rows down from the top.
+    if let Some(i) = options.goto_row.take()
+        && let Some(at) = rows.iter().position(|(r, _)| *r == i)
+    {
+        area = area.vertical_scroll_offset((at as f32 - 3.0).max(0.0) * ROW);
+    }
+    area.show_rows(ui, ROW, rows.len(), |ui, range| {
         // In layers: the rows' backgrounds, then the relationship lines, then the cells, bars and
         // names over them.
         let mut first_top = None;

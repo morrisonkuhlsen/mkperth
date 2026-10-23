@@ -657,3 +657,39 @@ fn dates_are_picked_in_the_table() {
     h.run_steps(2);
     assert_eq!(a10(&h).2, 5);
 }
+
+/// The toolbar's activity tools: two rows chosen are linked in their order and unlinked; B20
+/// goes under B10 above it and back out; B10, first under W2, has nothing to go under. The zoom
+/// is picked from its drop-down.
+#[test]
+fn the_toolbar_links_indents_and_zooms() {
+    let mut h = harness(PerthApp::default());
+    let tie = |h: &Harness<'static, PerthApp>| h.state().session.project.relationships.iter().any(|r| r.predecessor == "A30" && r.successor == "B10");
+    click(&mut h, egui::pos2(TABLE_X, ROW_A30), egui::Modifiers::NONE);
+    click(&mut h, egui::pos2(TABLE_X, ROW_B10), egui::Modifiers::COMMAND);
+    h.get_by_label("Link").click();
+    h.run_steps(2);
+    assert!(tie(&h), "A30 → B10");
+    h.get_by_label("Unlink").click();
+    h.run_steps(2);
+    assert!(!tie(&h));
+    let parent =
+        |h: &Harness<'static, PerthApp>, id: &str| h.state().session.project.activities.iter().find(|a| a.id == id).and_then(|a| a.parent.clone());
+    click(&mut h, egui::pos2(TABLE_X, ROW_B10 + 24.0), egui::Modifiers::NONE);
+    h.get_by_label("Indent").click();
+    h.run_steps(2);
+    assert_eq!(parent(&h, "B20").as_deref(), Some("B10"));
+    h.get_by_label("Outdent").click();
+    h.run_steps(2);
+    assert_eq!(parent(&h, "B20").as_deref(), Some("W2"));
+    click(&mut h, egui::pos2(TABLE_X, ROW_B10), egui::Modifiers::NONE);
+    h.get_by_label("Indent").click();
+    h.run_steps(2);
+    assert_eq!(parent(&h, "B10").as_deref(), Some("W2"));
+    assert!(matches!(h.state().status, Some(mkperth_ui_egui::Status::Error(_))));
+    h.get_by_label("Zoom: 100%").click();
+    h.run_steps(2);
+    h.get_by_label("125%").click();
+    h.run_steps(2);
+    assert_eq!(h.state().zoom, 125);
+}

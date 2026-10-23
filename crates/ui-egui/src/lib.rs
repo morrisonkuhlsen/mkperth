@@ -556,6 +556,35 @@ impl PerthApp {
             Action::Search => self.side = Some(Side::Filters),
             Action::Calendars => self.side = Some(Side::Calendars),
             Action::Levelling => self.side = Some(Side::Levelling),
+            Action::Zoom(z) => self.zoom = z.clamp(50, 200),
+            Action::Link | Action::Unlink => {
+                let ids = self.chosen_ids();
+                if ids.len() >= 2 {
+                    let command = if matches!(action, Action::Link) { "relationship.add" } else { "relationship.delete" };
+                    self.run(command, json!({ "activities": ids }));
+                }
+            }
+            Action::Indent => self.indent(),
+            Action::Outdent => {
+                let p = &self.session.project;
+                if let Some(a) = self.selected.and_then(|i| p.activities.get(i)) {
+                    // Beside its summary: under that summary's own, or at the top.
+                    let up = a.parent.as_deref().and_then(|s| p.activities.iter().find(|x| x.id == s)).and_then(|s| s.parent.clone());
+                    let params = json!({"id": a.id, "parent": up.unwrap_or_default()});
+                    self.run("activity.edit", params);
+                }
+            }
+            Action::Today => self.options.goto = self.options.today,
+            Action::Locate => {
+                if let Some(i) = self.selected {
+                    self.options.goto = self.session.schedule.as_ref().ok().and_then(|s| s.activities.get(i)).map(|s| s.early_start);
+                    self.options.goto_row = Some(i);
+                }
+            }
+            Action::Level => {
+                self.run("resource.level", json!({}));
+                self.level_status();
+            }
             Action::Present => self.present(ctx, true),
             Action::Font(choice) => {
                 if let Some(save) = &self.services.save_font {
@@ -611,6 +640,35 @@ impl PerthApp {
             self.selected = None;
             self.marked.clear();
         }
+    }
+
+    /// The IDs of the activities chosen (the marked ones, and the selected), in the table's order.
+    fn chosen_ids(&self) -> Vec<String> {
+        let chosen = |i: usize| self.marked.contains(&i) || self.selected == Some(i);
+        activities::rows(&self.session)
+            .into_iter()
+            .filter(|(i, _)| chosen(*i))
+            .filter_map(|(i, _)| self.session.project.activities.get(i).map(|a| a.id.clone()))
+            .collect()
+    }
+
+    /// The selected activity under the one above it at its level in the WBS (which becomes a
+    /// summary, if it wasn't).
+    fn indent(&mut self) {
+        let Some(i) = self.selected else { return };
+        let rows = activities::rows(&self.session);
+        let Some(at) = rows.iter().position(|(r, _)| *r == i) else { return };
+        let depth = rows.get(at).map_or(0, |(_, d)| *d);
+        let above =
+            rows.get(..at).and_then(|before| before.iter().rev().take_while(|(_, d)| *d >= depth).find(|(_, d)| *d == depth)).map(|(r, _)| *r);
+        let p = &self.session.project;
+        let (Some(a), Some(parent)) = (p.activities.get(i), above.and_then(|k| p.activities.get(k))) else {
+            let id = p.activities.get(i).map_or_else(String::new, |a| a.id.clone());
+            self.status = Some(Status::Error(tr!("err-nothing-above", id = id.as_str())));
+            return;
+        };
+        let params = json!({"id": a.id, "parent": parent.id});
+        self.run("activity.edit", params);
     }
 
     /// The minutes of a working day on the calendar of the activity at `index`.
@@ -787,6 +845,10 @@ impl PerthApp {
             undo: self.session.undo_label(),
             redo: self.session.redo_label(),
             selected: self.selected.is_some(),
+            chosen: self.chosen_ids().len(),
+            nested: self.selected.and_then(|i| self.session.project.activities.get(i)).is_some_and(|a| a.parent.is_some()),
+            today: self.options.today.is_some(),
+            zoom: self.zoom,
             toolbar_hidden: self.toolbar_hidden,
         };
         let mut actions = Vec::new();

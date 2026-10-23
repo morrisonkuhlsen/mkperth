@@ -60,6 +60,20 @@ pub enum Icon {
     People,
     /// Three even bars under a line: resources levelled within their limit.
     Level,
+    /// Two links of a chain: activities tied one after another.
+    Link,
+    /// The two links apart, the break marked.
+    Unlink,
+    /// Lines with an arrow into them: under the summary above.
+    Indent,
+    /// Lines with an arrow out of them: out of its summary.
+    Outdent,
+    /// A speech bubble: a comment.
+    Comment,
+    /// A calendar page with today marked.
+    Today,
+    /// Cross hairs on a dot: go to the chosen activity.
+    Locate,
     /// A screen on its stand with a play mark: presenting.
     Present,
     ChevronUp,
@@ -433,6 +447,48 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, t: &Tokens) {
             line((8.0, 11.5), (8.0, 13.5), Stroke::new(w, t.text_dim));
             line((5.0, 14.0), (11.0, 14.0), Stroke::new(w, t.text_dim));
         }
+        Icon::Link => {
+            painter.rect_stroke(r(1.5, 5.0, 9.5, 11.0), 3.0 * s, Stroke::new(w * 1.2, t.text), egui::StrokeKind::Middle);
+            painter.rect_stroke(r(6.5, 5.0, 14.5, 11.0), 3.0 * s, Stroke::new(w * 1.2, t.accent), egui::StrokeKind::Middle);
+        }
+        Icon::Unlink => {
+            painter.rect_stroke(r(0.8, 5.0, 6.8, 11.0), 3.0 * s, Stroke::new(w * 1.2, t.text), egui::StrokeKind::Middle);
+            painter.rect_stroke(r(9.2, 5.0, 15.2, 11.0), 3.0 * s, Stroke::new(w * 1.2, t.accent), egui::StrokeKind::Middle);
+            line((8.0, 1.5), (8.0, 3.5), Stroke::new(w, t.red));
+            line((8.0, 12.5), (8.0, 14.5), Stroke::new(w, t.red));
+        }
+        Icon::Indent | Icon::Outdent => {
+            for y in [3.5, 8.0, 12.5] {
+                line((7.5, y), (14.5, y), ink);
+            }
+            let stroke = Stroke::new(w * 1.2, t.accent);
+            line((1.5, 8.0), (5.5, 8.0), stroke);
+            if icon == Icon::Indent {
+                poly(&[(3.5, 5.8), (5.7, 8.0), (3.5, 10.2)], stroke);
+            } else {
+                poly(&[(3.5, 5.8), (1.3, 8.0), (3.5, 10.2)], stroke);
+            }
+        }
+        Icon::Comment => {
+            frame(r(2.0, 2.5, 14.0, 11.0), t.text);
+            fill(&[(4.5, 10.5), (4.5, 14.0), (8.0, 10.5)], t.text);
+            line((4.5, 5.5), (11.5, 5.5), Stroke::new(w, t.accent));
+            line((4.5, 8.0), (9.5, 8.0), Stroke::new(w, t.accent));
+        }
+        Icon::Today => {
+            frame(r(2.0, 3.0, 14.0, 14.5), t.text);
+            line((2.0, 6.0), (14.0, 6.0), ink);
+            line((5.0, 1.5), (5.0, 4.0), ink);
+            line((11.0, 1.5), (11.0, 4.0), ink);
+            painter.circle_filled(p(8.0, 10.2), 2.0 * s, t.accent);
+        }
+        Icon::Locate => {
+            painter.circle_stroke(p(8.0, 8.0), 4.5 * s, ink);
+            for (a, b) in [((8.0, 1.0), (8.0, 4.0)), ((8.0, 12.0), (8.0, 15.0)), ((1.0, 8.0), (4.0, 8.0)), ((12.0, 8.0), (15.0, 8.0))] {
+                line(a, b, ink);
+            }
+            painter.circle_filled(p(8.0, 8.0), 1.6 * s, t.accent);
+        }
         Icon::Level => {
             for x in [2.0, 6.5, 11.0] {
                 painter.rect_filled(r(x, 7.0, x + 3.0, 13.5), 0.5 * s, t.accent);
@@ -470,7 +526,7 @@ pub fn show(ui: &mut egui::Ui, icon: Icon, size: f32) -> egui::Response {
 
 /// For tests: every icon stays inside its square.
 #[cfg(test)]
-pub(crate) const ALL: [Icon; 55] = [
+pub(crate) const ALL: [Icon; 62] = [
     Icon::Dashboard,
     Icon::Mark,
     Icon::Gantt,
@@ -526,6 +582,13 @@ pub(crate) const ALL: [Icon; 55] = [
     Icon::Info,
     Icon::Close,
     Icon::Level,
+    Icon::Link,
+    Icon::Unlink,
+    Icon::Indent,
+    Icon::Outdent,
+    Icon::Comment,
+    Icon::Today,
+    Icon::Locate,
 ];
 
 #[cfg(test)]

@@ -133,6 +133,20 @@ fn new_id(project: &Project) -> String {
     }
 }
 
+/// The activities a chain names (`activities`: two IDs or more), if given.
+fn chain(params: &Value, command: &str) -> Result<Option<Vec<String>>, EngineError> {
+    match params.get("activities") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(items)) if (2..=mkperth_sched::MAX_ACTIVITIES).contains(&items.len()) => items
+            .iter()
+            .map(|i| i.as_str().map(str::to_string))
+            .collect::<Option<Vec<_>>>()
+            .map(Some)
+            .ok_or_else(|| EngineError::Value(command.into(), "activities".into())),
+        Some(_) => Err(EngineError::Value(command.into(), "activities".into())),
+    }
+}
+
 fn find(project: &Project, id: &str) -> Result<usize, EngineError> {
     project.activities.iter().position(|a| a.id == id).ok_or_else(|| EngineError::UnknownActivity(id.to_string()))
 }
@@ -363,6 +377,8 @@ impl Session {
             .map(|d| mkperth_core::DurationType::from_code(&d).ok_or_else(|| EngineError::Value(C.into(), "duration_type".into())))
             .transpose()?;
         let calendar = text(params, C, "calendar")?;
+        // The summary it goes under; empty for the top of the WBS.
+        let parent = text(params, C, "parent")?.map(|s| s.trim().to_string());
         let priority = text(params, C, "levelling_priority")?
             .map(|d| mkperth_core::LevellingPriority::from_code(&d).ok_or_else(|| EngineError::Value(C.into(), "levelling_priority".into())))
             .transpose()?;
@@ -418,6 +434,12 @@ impl Session {
                     c.activity = new.to_string();
                 }
             }
+            if let Some(par) = parent.as_deref().filter(|s| !s.is_empty()) {
+                if par == id {
+                    return Err(EngineError::Value(C.into(), "parent".into()));
+                }
+                find(p, par)?;
+            }
             // Its assignments' units an hour, as they are before a new duration.
             let resized = duration.is_some() || minutes.is_some();
             if resized {
@@ -433,6 +455,9 @@ impl Session {
             }
             if let Some(r) = resource_dependent {
                 a.resource_dependent = r;
+            }
+            if let Some(par) = parent {
+                a.parent = (!par.is_empty()).then_some(par);
             }
             if let Some(l) = priority {
                 a.levelling_priority = l;
@@ -541,13 +566,38 @@ impl Session {
 
     fn add_relationship(&mut self, params: &Value) -> Result<(), EngineError> {
         const C: &str = "relationship.add";
-        let predecessor = required(text(params, C, "predecessor")?, C, "predecessor")?;
-        let successor = required(text(params, C, "successor")?, C, "successor")?;
         let kind = match text(params, C, "kind")? {
             None => RelationshipType::FinishToStart,
             Some(k) => RelationshipType::from_code(&k).ok_or_else(|| EngineError::Value(C.into(), "kind".into()))?,
         };
         let lag = number(params, C, "lag", -mkperth_sched::MAX_SPAN..=mkperth_sched::MAX_SPAN)?.unwrap_or(0);
+        // A chain: each of `activities` the predecessor of the next, as one change; ties already
+        // there are kept as they are.
+        if let Some(ids) = chain(params, C)? {
+            return self.change(tr!("undo-link", n = ids.len()), |p| {
+                for id in &ids {
+                    find(p, id)?;
+                }
+                let mut added = 0;
+                for pair in ids.windows(2) {
+                    let (Some(a), Some(b)) = (pair.first(), pair.get(1)) else { continue };
+                    if a == b {
+                        return Err(ScheduleError::SelfRelationship(a.clone()).into());
+                    }
+                    if !p.relationships.iter().any(|r| r.predecessor == *a && r.successor == *b) {
+                        p.relationships.push(Relationship { predecessor: a.clone(), successor: b.clone(), kind, lag, lag_minutes: None });
+                        added += 1;
+                    }
+                }
+                if added == 0 {
+                    let (first, last) = (ids.first().cloned().unwrap_or_default(), ids.last().cloned().unwrap_or_default());
+                    return Err(EngineError::DuplicateRelationship(first, last));
+                }
+                Ok(())
+            });
+        }
+        let predecessor = required(text(params, C, "predecessor")?, C, "predecessor")?;
+        let successor = required(text(params, C, "successor")?, C, "successor")?;
         let label = tr!("undo-add-relationship", predecessor = predecessor.as_str(), successor = successor.as_str());
         self.change(label, |p| {
             find(p, &predecessor)?;
@@ -565,6 +615,18 @@ impl Session {
 
     fn delete_relationship(&mut self, params: &Value) -> Result<(), EngineError> {
         const C: &str = "relationship.delete";
+        // Every tie between any two of `activities`, as one change.
+        if let Some(ids) = chain(params, C)? {
+            return self.change(tr!("undo-unlink", n = ids.len()), |p| {
+                let before = p.relationships.len();
+                p.relationships.retain(|r| !(ids.contains(&r.predecessor) && ids.contains(&r.successor)));
+                if p.relationships.len() == before {
+                    let (first, last) = (ids.first().cloned().unwrap_or_default(), ids.last().cloned().unwrap_or_default());
+                    return Err(EngineError::UnknownRelationship(first, last));
+                }
+                Ok(())
+            });
+        }
         let predecessor = required(text(params, C, "predecessor")?, C, "predecessor")?;
         let successor = required(text(params, C, "successor")?, C, "successor")?;
         let label = tr!("undo-delete-relationship", predecessor = predecessor.as_str(), successor = successor.as_str());

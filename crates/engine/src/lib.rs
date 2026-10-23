@@ -458,6 +458,43 @@ mod tests {
         assert_eq!(s.project, original);
     }
 
+    /// Several activities linked in one change, each the predecessor of the next, and unlinked
+    /// the same way; an activity put under a summary, and back at the top of the WBS.
+    #[test]
+    fn chains_and_the_wbs_in_one_change() {
+        let mut s = Session::default();
+        for id in ["X1", "X2", "X3"] {
+            s.run("activity.add", &json!({ "id": id })).unwrap();
+        }
+        let ties = |s: &Session| {
+            s.project
+                .relationships
+                .iter()
+                .filter(|r| r.predecessor.starts_with('X'))
+                .map(|r| format!("{}>{}", r.predecessor, r.successor))
+                .collect::<Vec<_>>()
+        };
+        s.run("relationship.add", &json!({"activities": ["X1", "X2", "X3"]})).unwrap();
+        assert_eq!(ties(&s), ["X1>X2", "X2>X3"]);
+        assert_eq!(s.undo_label(), Some("link 3 activities"));
+        assert!(matches!(s.run("relationship.add", &json!({"activities": ["X1", "X2"]})), Err(EngineError::DuplicateRelationship(..))));
+        s.run("relationship.delete", &json!({"activities": ["X3", "X2", "X1"]})).unwrap();
+        assert!(ties(&s).is_empty());
+        assert!(s.run("relationship.add", &json!({"activities": ["X1"]})).is_err());
+        assert!(s.run("relationship.delete", &json!({"activities": ["X1", "X2"]})).is_err(), "nothing between them");
+        let parent = |s: &Session| s.project.activities.iter().find(|a| a.id == "X1").and_then(|a| a.parent.clone());
+        s.run("activity.edit", &json!({"id": "X1", "parent": "W2"})).unwrap();
+        assert_eq!(parent(&s).as_deref(), Some("W2"));
+        s.run("activity.edit", &json!({"id": "X1", "parent": ""})).unwrap();
+        assert_eq!(parent(&s), None);
+        // Never under itself, a milestone, or one of its own.
+        let before = s.project.clone();
+        assert!(s.run("activity.edit", &json!({"id": "X1", "parent": "X1"})).is_err());
+        assert!(s.run("activity.edit", &json!({"id": "X1", "parent": "M0"})).is_err());
+        assert!(s.run("activity.edit", &json!({"id": "W1", "parent": "A10"})).is_err());
+        assert_eq!(s.project, before);
+    }
+
     #[test]
     fn edits_that_would_break_the_project_are_refused() {
         let mut s = Session::default();
