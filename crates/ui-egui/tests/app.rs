@@ -394,3 +394,18 @@ fn an_activity_takes_resources_in_details() {
     h.run_steps(3);
     assert_eq!(h.state().session.project.assignments[0].actual, 600);
 }
+
+/// A view from the rail opens as a tab beside the activities; the table's switch stays on the
+/// rail; closing the tab goes back to the activities.
+#[test]
+fn views_open_as_tabs() {
+    use mkperth_ui_egui::View;
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Resources").click();
+    h.run_steps(2);
+    assert_eq!((h.state().view, h.state().open_views.clone()), (View::Resources, vec![View::Activities, View::Resources]));
+    assert!(h.query_by_label("Activity table").is_some(), "the table's switch stays");
+    h.get_by_label("Close Resources").click();
+    h.run_steps(2);
+    assert_eq!((h.state().view, h.state().open_views.clone()), (View::Activities, vec![View::Activities]));
+}

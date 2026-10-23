@@ -148,6 +148,7 @@ activities-view = Atividades
 activities-view-tip = A tabela de atividades ao lado do gráfico de Gantt
 resources-view = Recursos
 resources-view-tip = Quem e o que faz o trabalho: recursos, funções e suas alocações
+view-close = Fechar { $name }
 resources-none = Nenhum recurso ainda: adicione um abaixo.
 resource-id = ID
 resource-name = Nome

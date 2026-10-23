@@ -148,6 +148,7 @@ activities-view = Activities
 activities-view-tip = The activity table beside the Gantt chart
 resources-view = Resources
 resources-view-tip = Who and what does the work: resources, roles and their assignments
+view-close = Close { $name }
 resources-none = No resources yet: add one below.
 resource-id = ID
 resource-name = Name

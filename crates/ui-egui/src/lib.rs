@@ -115,6 +115,8 @@ pub enum Status {
 
 const STATUS_HEIGHT: f32 = 24.0;
 const RAIL_WIDTH: f32 = 44.0;
+/// The height of the open views' tabs over the main area.
+const VIEW_TABS: f32 = 30.0;
 const SIDE_WIDTH: f32 = 320.0;
 const SIDE_STRIP: f32 = 30.0;
 const CALCULATION_HEIGHT: f32 = 230.0;
@@ -132,6 +134,9 @@ pub struct PerthApp {
     /// The projects opened or saved lately, newest first.
     pub recent: Vec<PathBuf>,
     pub view: View,
+    /// The views open as tabs over the main area, in the order they were opened; the
+    /// activities always among them.
+    pub open_views: Vec<View>,
     pub options: Options,
     /// The pane open beside the strip at the right edge, if any.
     pub side: Option<Side>,
@@ -236,6 +241,7 @@ impl PerthApp {
             backstage: None,
             recent: Vec::new(),
             view: View::default(),
+            open_views: vec![View::Activities],
             options: Options { late_bars: true, links: true, ..Options::default() },
             side: None,
             autosave: false,
@@ -394,7 +400,7 @@ impl PerthApp {
             Action::Table => self.options.table_hidden = !self.options.table_hidden,
             Action::Options(params) => self.run("project.options", params),
             Action::TimeScale(step) => self.time_scale(step),
-            Action::View(view) => self.view = view,
+            Action::View(view) => self.open_view(view),
             Action::Theme(preference) => ctx.set_theme(preference),
             Action::ToggleToolbar => self.toolbar_hidden = !self.toolbar_hidden,
             Action::Search => self.side = Some(Side::Filters),
@@ -624,9 +630,12 @@ impl PerthApp {
             ui.allocate_ui_with_layout(egui::vec2(left_width, body), top_down, |ui| {
                 ui.set_width(left_width);
                 ui.set_height(body);
+                // The open views as tabs; the active one under them.
+                self.view_tabs(ui);
+                let below = (body - VIEW_TABS - 4.0).max(100.0);
                 match self.view {
-                    View::Activities => self.left_pane(ui, body),
-                    View::Resources => self.resources_view(ui, body),
+                    View::Activities => self.left_pane(ui, below),
+                    View::Resources => self.resources_view(ui, below),
                 }
             });
             if let Some(side) = self.side {
@@ -661,6 +670,70 @@ impl PerthApp {
         }
     }
 
+    /// Opens `view` as a tab, or brings its tab forward.
+    pub fn open_view(&mut self, view: View) {
+        if !self.open_views.contains(&view) {
+            self.open_views.push(view);
+        }
+        self.view = view;
+    }
+
+    /// The tabs of the open views: each with its icon and name, the active one underlined in
+    /// the accent; every one but the activities closes.
+    fn view_tabs(&mut self, ui: &mut egui::Ui) {
+        let t = Tokens::get(ui.ctx());
+        let mut choose = None;
+        let mut close = None;
+        ui.horizontal(|ui| {
+            ui.set_height(VIEW_TABS);
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for view in self.open_views.clone() {
+                let (icon, name) = match view {
+                    View::Activities => (Icon::Gantt, tr!("activities-view")),
+                    View::Resources => (Icon::People, tr!("resources-view")),
+                };
+                let on = self.view == view;
+                let galley = ui.painter().layout_no_wrap(name.clone(), egui::FontId::proportional(13.0), if on { t.text } else { t.text_dim });
+                let closable = view != View::Activities;
+                let width = 34.0 + galley.size().x + if closable { 22.0 } else { 10.0 };
+                let (rect, response) = ui.allocate_exact_size(egui::vec2(width, VIEW_TABS), egui::Sense::click());
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, on, &name));
+                if on {
+                    ui.painter().rect_filled(rect, egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, t.ribbon);
+                    ui.painter().hline(rect.x_range(), rect.bottom() - 1.0, egui::Stroke::new(2.0, crate::splash::BRAND));
+                } else if response.hovered() {
+                    ui.painter().rect_filled(rect, egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, t.hover);
+                }
+                icons::paint(
+                    ui.painter(),
+                    egui::Rect::from_center_size(egui::pos2(rect.left() + 18.0, rect.center().y), egui::vec2(14.0, 14.0)),
+                    icon,
+                    &t,
+                );
+                ui.painter().galley(egui::pos2(rect.left() + 30.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
+                if response.clicked() {
+                    choose = Some(view);
+                }
+                if closable {
+                    let x = egui::Rect::from_center_size(egui::pos2(rect.right() - 13.0, rect.center().y), egui::vec2(16.0, 16.0));
+                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(x));
+                    if icon_button(&mut child, Icon::Close, &tr!("view-close", name = name.as_str())) {
+                        close = Some(view);
+                    }
+                }
+            }
+        });
+        if let Some(view) = choose {
+            self.view = view;
+        }
+        if let Some(view) = close {
+            self.open_views.retain(|v| *v != view);
+            if self.view == view {
+                self.view = self.open_views.last().copied().unwrap_or_default();
+            }
+        }
+    }
+
     /// The rail of views down the left edge.
     fn view_rail(&mut self, ui: &mut egui::Ui, height: f32) {
         let t = Tokens::get(ui.ctx());
@@ -686,14 +759,11 @@ impl PerthApp {
             }
             icons::paint(painter, egui::Rect::from_center_size(slot.center(), egui::vec2(20.0, 20.0)), icon, &t);
             if response.on_hover_text(tip).clicked() {
-                self.view = view;
+                self.open_view(view);
             }
         }
         // Under the views, a hairline and the activity table's switch (in their view): off, the
         // chart takes the width.
-        if self.view != View::Activities {
-            return;
-        }
         let top = rect.top() + 4.0 + 42.0 * views_len as f32;
         ui.painter().hline((rect.left() + 10.0)..=(rect.right() - 11.0), top + 2.0, egui::Stroke::new(1.0, t.border));
         let slot = egui::Rect::from_min_size(egui::pos2(rect.left(), top + 6.0), egui::vec2(RAIL_WIDTH - 1.0, 40.0));
