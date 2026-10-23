@@ -65,6 +65,8 @@ pub struct Options {
     pub search: String,
     /// The columns hidden, by their place in `COLUMNS`.
     pub hidden: [bool; 9],
+    /// The whole table hidden: the chart takes its width, the names beside the bars.
+    pub table_hidden: bool,
     /// Today, drawn as a line on the chart.
     pub today: Option<Date>,
 }
@@ -178,7 +180,7 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
     let Ok(schedule) = &session.schedule else { return events };
     let rows = visible(session, options);
     let acts = &session.project.activities;
-    let columns = options.columns();
+    let columns = if options.table_hidden { Vec::new() } else { options.columns() };
     let table_width: f32 = columns.iter().map(|(_, _, w)| w).sum();
     // Where a column starts, if shown.
     let left_of = |k: usize| columns.iter().position(|(c, _, _)| *c == k).map(|n| columns.iter().take(n).map(|(_, _, w)| w).sum::<f32>());

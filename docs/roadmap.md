@@ -99,7 +99,8 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
 - *Started:* a quiet header as in an online spreadsheet (the mark, the project's name and
   whether it is saved, the File, Edit, Project and View menus under it, search, theme and the
   Schedule button) over one slim toolbar of small icons (undo and redo, add and delete, what the
-  chart shows, the time scale, the data date), the rail of views, the Calculation pane under the activities (the
+  chart shows, the time scale, the data date), the rail of views (with the activity table's
+  switch), the Calculation pane under the activities (the
   selected activity's dates step by step, #5) with a Schedule button, the Details pane on the
   right (facts, constraints, dates and floats, predecessors and successors), the Filters strip
   (find by ID or name, critical only, late bars) and the status bar with the zoom; Save and Save

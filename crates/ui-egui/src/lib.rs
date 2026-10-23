@@ -283,6 +283,7 @@ impl PerthApp {
             Action::CriticalOnly => self.options.critical_only = !self.options.critical_only,
             Action::LateBars => self.options.late_bars = !self.options.late_bars,
             Action::Links => self.options.links = !self.options.links,
+            Action::Table => self.options.table_hidden = !self.options.table_hidden,
             Action::Options(params) => self.run("project.options", params),
             Action::TimeScale(step) => self.time_scale(step),
             Action::View(view) => self.view = view,
@@ -434,6 +435,7 @@ impl PerthApp {
             critical_only: self.options.critical_only,
             late_bars: self.options.late_bars,
             links: self.options.links,
+            table_hidden: self.options.table_hidden,
             float_kind: self.session.project.float_kind,
             data_date: self.session.project.data_date,
             progress_mode: self.session.project.progress_mode,
@@ -507,6 +509,7 @@ impl PerthApp {
         ui.painter().rect_filled(rect, 0.0, t.ribbon);
         ui.painter().vline(rect.right(), rect.y_range(), egui::Stroke::new(1.0, t.border));
         let views = [(Icon::Gantt, tr!("activities-view"), tr!("activities-view-tip"), View::Activities)];
+        let views_len = views.len();
         for (k, (icon, name, tip, view)) in views.into_iter().enumerate() {
             let on = self.view == view;
             let slot = egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 4.0 + 42.0 * k as f32), egui::vec2(RAIL_WIDTH - 1.0, 40.0));
@@ -523,6 +526,24 @@ impl PerthApp {
             if response.on_hover_text(tip).clicked() {
                 self.view = view;
             }
+        }
+        // Under the views, a hairline and the table's switch: off, the chart takes the width.
+        let top = rect.top() + 4.0 + 42.0 * views_len as f32;
+        ui.painter().hline((rect.left() + 10.0)..=(rect.right() - 11.0), top + 2.0, egui::Stroke::new(1.0, t.border));
+        let slot = egui::Rect::from_min_size(egui::pos2(rect.left(), top + 6.0), egui::vec2(RAIL_WIDTH - 1.0, 40.0));
+        let shown = !self.options.table_hidden;
+        let name = tr!("activity-table");
+        let response = ui.interact(slot, ui.id().with("rail-table"), egui::Sense::click());
+        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, shown, &name));
+        if shown {
+            ui.painter().rect_filled(slot.shrink(4.0), 4.0, t.accent_soft);
+        } else if response.hovered() {
+            ui.painter().rect_filled(slot.shrink(4.0), 4.0, t.hover);
+        }
+        icons::paint(ui.painter(), egui::Rect::from_center_size(slot.center(), egui::vec2(18.0, 18.0)), Icon::Table, &t);
+        let tip = if shown { tr!("activity-table-hide-tip") } else { tr!("activity-table-show-tip") };
+        if response.on_hover_text(tip).clicked() {
+            self.options.table_hidden = shown;
         }
     }
 

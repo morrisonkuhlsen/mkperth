@@ -243,3 +243,15 @@ fn the_toolbar_hides_and_comes_back() {
     assert!(!h.state().toolbar_hidden);
     assert!(h.query_by_label("Data date").is_some());
 }
+
+#[test]
+fn the_rail_hides_and_shows_the_table() {
+    let mut h = harness(PerthApp::default());
+    assert!(!h.state().options.table_hidden, "the table shows at first");
+    h.get_by_label("Activity table").click();
+    h.run_steps(2);
+    assert!(h.state().options.table_hidden);
+    h.get_by_label("Activity table").click();
+    h.run_steps(2);
+    assert!(!h.state().options.table_hidden);
+}

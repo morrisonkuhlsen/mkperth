@@ -24,6 +24,7 @@ pub(crate) enum Action {
     DeleteActivity,
     CriticalOnly,
     LateBars,
+    Table,
     Links,
     /// `project.options`' parameters.
     Options(serde_json::Value),
@@ -48,6 +49,7 @@ pub(crate) struct State<'a> {
     pub critical_only: bool,
     pub late_bars: bool,
     pub links: bool,
+    pub table_hidden: bool,
     pub float_kind: FloatKind,
     pub critical_by: CriticalBy,
     pub data_date: Option<Date>,
@@ -280,6 +282,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     menu(ui, &tr!("menu-view"), |ui| {
         if ui.radio(state.view == View::Activities, tr!("activities-view")).on_hover_text(tr!("activities-view-tip")).clicked() {
             set(Action::View(View::Activities));
+        }
+        if check(ui, !state.table_hidden, &tr!("activity-table")) {
+            set(Action::Table);
         }
         ui.separator();
         if check(ui, state.critical_only, &tr!("critical-only")) {

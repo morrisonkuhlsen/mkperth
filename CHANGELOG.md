@@ -20,6 +20,8 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- The activity table hides from the rail of views (or View ▸ Activity table): the Gantt chart
+  takes the width, with the names beside the bars.
 - Progress: a data date, actual start and finish dates, the work left of an activity under way,
   out-of-sequence progress by retained logic or by progress override; read and written in P6
   XML; typed in Details and in the toolbar, drawn on the Gantt chart, explained in the
