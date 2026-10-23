@@ -14,7 +14,7 @@
 
 use mkperth_core::{
     Activity, ActivityKind, Assignment, Band, Calendar, Comment, Constraint, Date, Extra, LevelBy, Levelled, LevellingOptions, LevellingPriority,
-    Marker, MonthMark, Project, Region, Relationship, RelationshipType, Resource, UNIT,
+    Marker, MonthMark, Pert, Project, Region, Relationship, RelationshipType, Resource, UNIT,
 };
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
@@ -76,7 +76,23 @@ const TASK_FIELDS: [&str; 22] = [
 const PROJECT_FIELDS: [&str; 12] =
     ["id", "name", "tasks", "calendar", "people", "bands", "markers", "month_marks", "file_path", "baseline_at", "created_at", "updated_at"];
 /// The fields the model holds itself; the rest go to `extra`.
-const TASK_MAPPED: [&str; 10] = ["id", "name", "start", "duration", "dependencies", "milestone", "deadline", "parent", "notes", "assignee"];
+const TASK_MAPPED: [&str; 13] = [
+    "id",
+    "name",
+    "start",
+    "duration",
+    "dependencies",
+    "milestone",
+    "deadline",
+    "parent",
+    "notes",
+    "assignee",
+    "optimistic",
+    "most_likely",
+    "pessimistic",
+];
+/// The longest a PERT estimate may be, in days.
+const MAX_ESTIMATE: f64 = 1e6;
 const PROJECT_MAPPED: [&str; 8] = ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING];
 /// MK Perth's levelling, which Perth has no fields for: a task's priority and where levelling
 /// held it, and the project's options; each written only when it says something.
@@ -252,6 +268,19 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             None => Vec::new(),
             Some(_) => return Err(PerthError::Field(label.clone(), "dependencies".into())),
         };
+        // PERT's three estimates, in days (0 for none); none given, none kept.
+        let estimate = |field: &str| -> Result<i64, PerthError> {
+            match t.get(field) {
+                None | Some(Value::Null) => Ok(0),
+                Some(v) => v
+                    .as_f64()
+                    .filter(|x| x.is_finite() && (0.0..=MAX_ESTIMATE).contains(x))
+                    .map(|x| (x * UNIT as f64).round() as i64)
+                    .ok_or_else(|| PerthError::Field(label.clone(), field.into())),
+            }
+        };
+        let (optimistic, most_likely, pessimistic) = (estimate("optimistic")?, estimate("most_likely")?, estimate("pessimistic")?);
+        let pert = (optimistic > 0 || most_likely > 0 || pessimistic > 0).then_some(Pert { optimistic, most_likely, pessimistic });
         let levelling_priority = match t.get(PRIORITY) {
             None | Some(Value::Null) => LevellingPriority::default(),
             Some(v) => v.as_str().and_then(LevellingPriority::from_code).ok_or_else(|| PerthError::Field(label.clone(), PRIORITY.into()))?,
@@ -308,6 +337,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             resource_dependent: false,
             levelling_priority,
             levelled,
+            pert,
             extra,
         });
         dependencies.push((label, deps));
@@ -484,6 +514,12 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             warnings.push(tr!("warn-perth-assignees", task = a.id.as_str()));
         }
         known.insert("assignee".into(), Value::String(names.join(", ")));
+        // PERT's estimates in days: whole as Perth writes them, else with their decimals.
+        let days = |h: i64| if h % UNIT == 0 { Value::from(h / UNIT) } else { Value::from(h as f64 / UNIT as f64) };
+        let p = a.pert.unwrap_or_default();
+        for (field, h) in [("optimistic", p.optimistic), ("most_likely", p.most_likely), ("pessimistic", p.pessimistic)] {
+            known.insert(field.into(), days(h));
+        }
         match a.secondary_constraint {
             Some(Constraint::FinishOnOrBefore(d)) => {
                 known.insert("deadline".into(), Value::String(d.to_string()));
@@ -501,6 +537,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             "milestone" => value.as_bool() == Some(true),
             "deadline" => !value.is_null(),
             "parent" | "notes" | "assignee" => value.as_str().is_some_and(|p| !p.is_empty()),
+            "optimistic" | "most_likely" | "pessimistic" => value.as_f64().is_some_and(|d| d != 0.0),
             _ => true,
         };
         let mut fields: Vec<(String, Value)> = Vec::new();

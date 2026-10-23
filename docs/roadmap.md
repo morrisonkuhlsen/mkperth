@@ -148,6 +148,9 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   activities on an over-allocated resource kept by a chosen order of priorities, the others
   held to start after the first finishes; within float or not; every hold explained, one undo;
   the Levelling pane, `resource.level` and `resource.unlevel`.
+  PERT as an analysis: three estimates per activity (Perth.jl's fields), the expected finish on
+  a copy, its σ from the expected longest path, the chance of a day and the days for a chance;
+  the PERT pane and the estimates in Details. Perth.jl's analysis as an oracle is still to type.
 - **Next:** prices that change over time (#23); levelling against a resource's limit that
   changes over time, and with the activity codes of #26 as priorities.
 

@@ -495,6 +495,22 @@ mod tests {
         assert_eq!(s.project, before);
     }
 
+    /// PERT's estimates are set and cleared on an activity, never moving its dates; out of order
+    /// they are refused.
+    #[test]
+    fn pert_estimates_leave_the_dates() {
+        let mut s = Session::default();
+        let before = s.schedule.clone();
+        s.run("activity.edit", &json!({"id": "A10", "pert": {"optimistic": 3, "most_likely": 4.5, "pessimistic": 9}})).unwrap();
+        let a10 = |s: &Session| s.project.activities.iter().find(|a| a.id == "A10").and_then(|a| a.pert);
+        assert_eq!(a10(&s), Some(mkperth_core::Pert { optimistic: 300, most_likely: 450, pessimistic: 900 }));
+        assert_eq!(s.schedule, before, "the dates stay");
+        assert!(s.run("activity.edit", &json!({"id": "A10", "pert": {"optimistic": 5, "most_likely": 4, "pessimistic": 9}})).is_err());
+        assert!(s.run("activity.edit", &json!({"id": "A10", "pert": {"optimistic": 1}})).is_err());
+        s.run("activity.edit", &json!({"id": "A10", "pert": null})).unwrap();
+        assert_eq!(a10(&s), None);
+    }
+
     #[test]
     fn edits_that_would_break_the_project_are_refused() {
         let mut s = Session::default();

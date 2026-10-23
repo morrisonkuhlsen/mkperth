@@ -284,6 +284,23 @@ fn an_assignee_is_a_resource_assigned() {
     assert_eq!(warnings.len(), 1);
 }
 
+/// PERT's estimates are Perth's own fields: read as hundredths of a day, written back as they
+/// were; a task without them writes none, one with decimals keeps them.
+#[test]
+fn pert_estimates_are_perths_fields() {
+    let read_back = read(&full().to_string()).unwrap().project;
+    assert_eq!(read_back.activities[0].pert, Some(Pert { optimistic: 400, most_likely: 500, pessimistic: 900 }));
+    assert_eq!(read_back.activities[1].pert, None, "zeros are none");
+    let mut p = read_back.clone();
+    p.activities[1].pert = Some(Pert { optimistic: 650, most_likely: 800, pessimistic: 1250 });
+    let (text, _) = write(&p);
+    assert!(text.contains("\"optimistic\":6.5") && text.contains("\"most_likely\":8,"), "{text}");
+    assert_eq!(read(&text).unwrap().project.activities[1].pert, p.activities[1].pert);
+    let mut v = full();
+    v["tasks"][0]["pessimistic"] = json!("lots");
+    assert!(read(&v.to_string()).is_err());
+}
+
 /// Levelling travels in fields of MK Perth's own: a task's priority and hold, the project's
 /// options; a file without them is written back without them.
 #[test]

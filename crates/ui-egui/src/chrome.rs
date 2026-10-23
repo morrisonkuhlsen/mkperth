@@ -48,6 +48,8 @@ pub(crate) enum Action {
     Level,
     /// The Levelling pane.
     Levelling,
+    /// The PERT pane.
+    Pert,
     /// The selected activity's comments.
     Comment,
     /// The schedule alone, full screen.
@@ -343,6 +345,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         }
         if item(ui, &tr!("level-menu"), None, true) {
             set(Action::Levelling);
+        }
+        if item(ui, &tr!("pert-menu"), None, true) {
+            set(Action::Pert);
         }
     });
     menu(ui, &tr!("menu-view"), |ui| {

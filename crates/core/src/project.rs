@@ -255,6 +255,32 @@ impl Default for LevellingOptions {
     }
 }
 
+/// Three estimates of an activity's duration, in hundredths of a working day (`UNIT` is a day),
+/// for PERT's analysis: they never move its dates, which its duration sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Pert {
+    pub optimistic: i64,
+    pub most_likely: i64,
+    pub pessimistic: i64,
+}
+
+impl Pert {
+    /// The expected duration, (O + 4M + P) / 6, in hundredths of a day.
+    pub fn expected(&self) -> f64 {
+        (self.optimistic as f64 + 4.0 * self.most_likely as f64 + self.pessimistic as f64) / 6.0
+    }
+
+    /// The standard deviation, (P − O) / 6, in hundredths of a day.
+    pub fn sigma(&self) -> f64 {
+        (self.pessimistic - self.optimistic) as f64 / 6.0
+    }
+
+    /// Whether the estimates are in order, none below nothing: O ≤ M ≤ P.
+    pub fn ordered(&self) -> bool {
+        0 <= self.optimistic && self.optimistic <= self.most_likely && self.most_likely <= self.pessimistic
+    }
+}
+
 /// Where levelling held an activity: to start on or after `start`, so that `resource` stays
 /// within its limit.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -308,6 +334,8 @@ pub struct Activity {
     /// Where the last levelling held it; it starts no earlier until levelling is run again or
     /// cleared.
     pub levelled: Option<Levelled>,
+    /// Its three estimates for PERT's analysis, when it has them.
+    pub pert: Option<Pert>,
     pub extra: Extra,
 }
 

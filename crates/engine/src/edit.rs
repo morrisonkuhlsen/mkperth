@@ -377,6 +377,28 @@ impl Session {
             .map(|d| mkperth_core::DurationType::from_code(&d).ok_or_else(|| EngineError::Value(C.into(), "duration_type".into())))
             .transpose()?;
         let calendar = text(params, C, "calendar")?;
+        // PERT's estimates in days (`{"optimistic", "most_likely", "pessimistic"}`, O ≤ M ≤ P), or
+        // `null` for none: for the analysis only, never the dates.
+        let pert = match params.get("pert") {
+            None => None,
+            Some(Value::Null) => Some(None),
+            Some(v) => {
+                let bad = || EngineError::Value(C.into(), "pert".into());
+                let field = |k: &str| -> Result<i64, EngineError> {
+                    v.get(k)
+                        .and_then(Value::as_f64)
+                        .filter(|d| d.is_finite() && (0.0..=mkperth_sched::MAX_SPAN as f64).contains(d))
+                        .map(|d| (d * mkperth_core::UNIT as f64).round() as i64)
+                        .ok_or_else(bad)
+                };
+                let p =
+                    mkperth_core::Pert { optimistic: field("optimistic")?, most_likely: field("most_likely")?, pessimistic: field("pessimistic")? };
+                if !p.ordered() {
+                    return Err(bad());
+                }
+                Some((p.pessimistic > 0).then_some(p))
+            }
+        };
         // The summary it goes under; empty for the top of the WBS.
         let parent = text(params, C, "parent")?.map(|s| s.trim().to_string());
         let priority = text(params, C, "levelling_priority")?
@@ -458,6 +480,9 @@ impl Session {
             }
             if let Some(par) = parent {
                 a.parent = (!par.is_empty()).then_some(par);
+            }
+            if let Some(p) = pert {
+                a.pert = p;
             }
             if let Some(l) = priority {
                 a.levelling_priority = l;

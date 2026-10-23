@@ -14,6 +14,7 @@ mod datepick;
 pub mod fonts;
 pub mod icons;
 mod levelling_ui;
+mod pert_ui;
 mod resources_view;
 pub mod splash;
 pub mod theme;
@@ -102,6 +103,8 @@ pub enum Side {
     Calendars,
     /// Resource levelling: what is over-allocated, the options, what was held.
     Levelling,
+    /// PERT's analysis: the expected finish, its spread and its chances.
+    Pert,
 }
 
 /// The note the Notes pane is making: its kind (0 a band, 1 a marker, 2 a month), name, dates
@@ -193,6 +196,9 @@ pub struct PerthApp {
     pub calendar_form: CalendarForm,
     /// The levelling options as the Levelling pane edits them, and the project's they began as.
     level_form: Option<(mkperth_engine::core::LevellingOptions, levelling_ui::LevelForm)>,
+    /// PERT's analysis and the project it was worked out for; the day its chance is asked for.
+    pert_cache: Option<(mkperth_engine::core::Project, Result<mkperth_engine::sched::PertAnalysis, String>)>,
+    pert_target: Option<Date>,
     /// The resource selected in the Resources view, by index, and what that view is typing.
     pub resource_selected: Option<usize>,
     pub resource_form: ResourceForm,
@@ -297,6 +303,8 @@ impl PerthApp {
             quick_note: None,
             calendar_form: CalendarForm::default(),
             level_form: None,
+            pert_cache: None,
+            pert_target: None,
             resource_selected: None,
             resource_form: ResourceForm::default(),
             comment_form: CommentForm::default(),
@@ -556,6 +564,7 @@ impl PerthApp {
             Action::Search => self.side = Some(Side::Filters),
             Action::Calendars => self.side = Some(Side::Calendars),
             Action::Levelling => self.side = Some(Side::Levelling),
+            Action::Pert => self.side = Some(Side::Pert),
             Action::Zoom(z) => self.zoom = z.clamp(50, 200),
             Action::Link | Action::Unlink => {
                 let ids = self.chosen_ids();
@@ -926,6 +935,7 @@ impl PerthApp {
                             Side::Notes => self.notes_pane(ui),
                             Side::Calendars => self.calendars_pane(ui),
                             Side::Levelling => self.levelling_pane(ui),
+                            Side::Pert => self.pert_pane(ui),
                         }
                     });
                 });
@@ -1365,6 +1375,10 @@ impl PerthApp {
                             }
                         });
                         ui.add_space(3.0);
+                        // PERT's three estimates, for the analysis only.
+                        if let Some(v) = pert_ui::pert_fields(ui, a) {
+                            pending = Some(("activity.edit", json!({"id": a.id, "pert": v})));
+                        }
                     }
                     fact(ui, tr!("detail-calendar"), a.calendar.clone().unwrap_or_else(|| project.calendar.name.clone()));
                     if let Some(parent) = a.parent.as_deref() {

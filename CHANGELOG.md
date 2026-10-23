@@ -41,6 +41,11 @@ Read it before re-scheduling a plan with a new version.
   finish; a ghost bar with the new days follows the pointer, the cursor says move or resize,
   and the dates, floats and calculation follow on release, one undo each. Summaries and
   activities already begun don't drag.
+- PERT as an analysis (Project > PERT analysis…): an activity's optimistic, most likely and
+  pessimistic durations in Details (`activity.edit`'s `pert`; Perth's own fields in its JSON); the
+  pane shows the finish planned and expected (each estimated activity at (O + 4M + P) / 6, on a
+  copy), its σ, the chance of finishing by a day and the days for 50, 80, 90 and 95%, and the
+  expected path. The schedule keeps its planned durations: no date changes.
 - More in the toolbar: the zoom as a drop-down beside undo; Link and Unlink (the chosen rows
   tied in their order, finish to start, or every tie between them taken away, one undo each:
   `relationship.add` and `relationship.delete` take `activities`); Indent and Outdent (under

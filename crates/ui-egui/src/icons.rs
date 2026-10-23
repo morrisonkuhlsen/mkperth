@@ -74,6 +74,8 @@ pub enum Icon {
     Today,
     /// Cross hairs on a dot: go to the chosen activity.
     Locate,
+    /// A bell curve over its axis, the mean marked: PERT's spread.
+    Pert,
     /// A screen on its stand with a play mark: presenting.
     Present,
     ChevronUp,
@@ -489,6 +491,18 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, t: &Tokens) {
             }
             painter.circle_filled(p(8.0, 8.0), 1.6 * s, t.accent);
         }
+        Icon::Pert => {
+            let curve: Vec<(f32, f32)> = (0..=24)
+                .map(|k| {
+                    let x = 1.0 + k as f32 * 14.0 / 24.0;
+                    let z = (x - 8.0) / 2.6;
+                    (x, 13.5 - 10.0 * (-z * z / 2.0).exp())
+                })
+                .collect();
+            poly(&curve, Stroke::new(w * 1.2, t.accent));
+            line((1.0, 14.0), (15.0, 14.0), ink);
+            line((8.0, 3.5), (8.0, 14.0), Stroke::new(w * 0.8, t.text_dim));
+        }
         Icon::Level => {
             for x in [2.0, 6.5, 11.0] {
                 painter.rect_filled(r(x, 7.0, x + 3.0, 13.5), 0.5 * s, t.accent);
@@ -526,7 +540,7 @@ pub fn show(ui: &mut egui::Ui, icon: Icon, size: f32) -> egui::Response {
 
 /// For tests: every icon stays inside its square.
 #[cfg(test)]
-pub(crate) const ALL: [Icon; 62] = [
+pub(crate) const ALL: [Icon; 63] = [
     Icon::Dashboard,
     Icon::Mark,
     Icon::Gantt,
@@ -589,6 +603,7 @@ pub(crate) const ALL: [Icon; 62] = [
     Icon::Comment,
     Icon::Today,
     Icon::Locate,
+    Icon::Pert,
 ];
 
 #[cfg(test)]

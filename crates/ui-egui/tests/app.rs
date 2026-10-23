@@ -693,3 +693,32 @@ fn the_toolbar_links_indents_and_zooms() {
     h.run_steps(2);
     assert_eq!(h.state().zoom, 125);
 }
+
+/// PERT: A10's three estimates typed in Details (the dates stay), then the PERT pane shows the
+/// finish expected beside the planned one.
+#[test]
+fn pert_estimates_and_their_analysis() {
+    use egui::accesskit::Role;
+    let mut h = harness(PerthApp::default());
+    let before = h.state().session.schedule.clone();
+    click(&mut h, egui::pos2(TABLE_X, ROW_A10), egui::Modifiers::NONE);
+    h.state_mut().side = Some(mkperth_ui_egui::Side::Details);
+    h.run_steps(2);
+    for (field, value) in [("O", "3"), ("M", "5"), ("P", "13")] {
+        h.get_by_role_and_label(Role::TextInput, field).click();
+        h.run_steps(1);
+        h.get_by_role_and_label(Role::TextInput, field).type_text(value);
+        h.run_steps(1);
+    }
+    h.key_press(egui::Key::Tab);
+    h.run_steps(3);
+    let a10 = h.state().session.project.activities.iter().find(|a| a.id == "A10").and_then(|a| a.pert);
+    assert_eq!(a10, Some(mkperth_engine::core::Pert { optimistic: 300, most_likely: 500, pessimistic: 1300 }));
+    assert_eq!(h.state().session.schedule, before, "an analysis only: the dates stay");
+    h.get_by_label("Project").click();
+    h.run_steps(2);
+    h.get_by_label("PERT analysis…").click();
+    h.run_steps(3);
+    assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::Pert));
+    assert!(h.query_by_label("Expected").is_some() && h.query_by_label("The expected path").is_some());
+}
