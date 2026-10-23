@@ -41,7 +41,7 @@ Read it before re-scheduling a plan with a new version.
   finish; a ghost bar with the new days follows the pointer, the cursor says move or resize,
   and the dates, floats and calculation follow on release, one undo each. Summaries and
   activities already begun don't drag.
-- View > Font: the interface's typeface (MK Perth's own, Ubuntu Light, or one the system has:
+- The toolbar's Font group (also View > Font), as spreadsheets have it: the interface's typeface (MK Perth's own, Ubuntu Light, or one the system has:
   Segoe UI, Arial, Calibri, Verdana and others where they are installed), its size (small,
   normal, large, larger, every text scaled) and, for a system family, bold and italic; kept
   for the next run. A font file that doesn't read is left out, egui's own staying.

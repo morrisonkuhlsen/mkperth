@@ -385,29 +385,11 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
 /// The Font submenu: the family (egui's own, or one the system has), the size, bold and italic
 /// (for a family of the system's).
 fn font_menu(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoice> {
-    let mut chosen = None;
+    let mut chosen = font_families(ui, state);
     let now = state.font;
-    let mut with = |f: crate::fonts::FontChoice| chosen = Some(f);
-    if ui.radio(now.family.is_none(), tr!("font-default")).clicked() && now.family.is_some() {
-        with(crate::fonts::FontChoice { family: None, bold: false, italic: false, ..now.clone() });
-    }
-    egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-        for f in state.font_families {
-            let on = now.family.as_deref() == Some(f.as_str());
-            if ui.radio(on, egui::RichText::new(f)).clicked() && !on {
-                with(crate::fonts::FontChoice { family: Some(f.clone()), ..now.clone() });
-            }
-        }
-    });
-    if state.font_families.is_empty() {
-        ui.label(egui::RichText::new(tr!("font-none")).size(11.5).weak());
-    }
     ui.separator();
-    for size in crate::fonts::SIZES {
-        if ui.radio(now.size == size, tr!(&format!("font-size-{size}"))).clicked() && now.size != size {
-            with(crate::fonts::FontChoice { size, ..now.clone() });
-        }
-    }
+    chosen = chosen.or(font_sizes(ui, state));
+    let mut with = |f: crate::fonts::FontChoice| chosen = Some(f);
     ui.separator();
     let own = now.family.is_some();
     let mut bold = now.bold;
@@ -417,6 +399,102 @@ fn font_menu(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoic
     let mut italic = now.italic;
     if ui.add_enabled(own, egui::Checkbox::new(&mut italic, tr!("font-italic"))).clicked() {
         with(crate::fonts::FontChoice { italic, ..now.clone() });
+    }
+    chosen
+}
+
+/// egui's own face and the system's families, one to choose.
+fn font_families(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoice> {
+    let mut chosen = None;
+    let now = state.font;
+    if ui.radio(now.family.is_none(), tr!("font-default")).clicked() && now.family.is_some() {
+        chosen = Some(crate::fonts::FontChoice { family: None, bold: false, italic: false, ..now.clone() });
+    }
+    egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+        for f in state.font_families {
+            let on = now.family.as_deref() == Some(f.as_str());
+            if ui.radio(on, egui::RichText::new(f)).clicked() && !on {
+                chosen = Some(crate::fonts::FontChoice { family: Some(f.clone()), ..now.clone() });
+            }
+        }
+    });
+    if state.font_families.is_empty() {
+        ui.label(egui::RichText::new(tr!("font-none")).size(11.5).weak());
+    }
+    chosen
+}
+
+/// The sizes, one to choose.
+fn font_sizes(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoice> {
+    let mut chosen = None;
+    let now = state.font;
+    for size in crate::fonts::SIZES {
+        let name = format!("{size}% · {}", tr!(&format!("font-size-{size}")));
+        if ui.radio(now.size == size, name).clicked() && now.size != size {
+            chosen = Some(crate::fonts::FontChoice { size, ..now.clone() });
+        }
+    }
+    chosen
+}
+
+/// A flat drop-down in the toolbar, as spreadsheets have them: its value, a small chevron, a
+/// tint under the pointer; a click opens `contents` under it.
+fn drop_down<R>(ui: &mut egui::Ui, text: &str, name: &str, tip: &str, width: f32, contents: impl FnOnce(&mut egui::Ui) -> Option<R>) -> Option<R> {
+    let t = Tokens::get(ui.ctx());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, name));
+    if response.hovered() {
+        ui.painter().rect_filled(rect, ROUND, if response.is_pointer_button_down_on() { t.pressed } else { t.hover });
+    }
+    let painter = ui.painter().with_clip_rect(rect.shrink2(egui::vec2(4.0, 0.0)).intersect(ui.clip_rect()));
+    let galley = painter.layout_no_wrap(text.to_string(), egui::FontId::proportional(12.5), t.text);
+    painter.galley(egui::pos2(rect.left() + 7.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
+    let chevron = egui::Rect::from_center_size(egui::pos2(rect.right() - 10.0, rect.center().y), egui::vec2(10.0, 10.0));
+    ui.painter().rect_filled(chevron.expand(3.0), 0.0, if response.hovered() { t.hover } else { egui::Color32::TRANSPARENT });
+    icons::paint(ui.painter(), chevron, Icon::ChevronDown, &t);
+    let response = response.on_hover_text(tip);
+    egui::Popup::menu(&response).show(contents).and_then(|r| r.inner)
+}
+
+/// A toolbar button that is a letter in its style (B, I), lit when on.
+fn letter_tool(ui: &mut egui::Ui, letter: egui::RichText, name: &str, tip: &str, enabled: bool, on: bool) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, on, name));
+    if on {
+        ui.painter().rect_filled(rect, ROUND, t.accent_soft);
+    } else if enabled && response.hovered() {
+        ui.painter().rect_filled(rect, ROUND, if response.is_pointer_button_down_on() { t.pressed } else { t.hover });
+    }
+    let color = if enabled { t.text } else { t.text_dim.gamma_multiply(0.6) };
+    let galley = egui::WidgetText::from(letter.size(14.5).color(color)).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::TextStyle::Body,
+    );
+    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
+    response.on_hover_text(tip).clicked() && enabled
+}
+
+/// The toolbar's Font group: the typeface, its size, bold and italic (those two once a system
+/// typeface is chosen: egui's own has neither face).
+fn font_tools(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoice> {
+    let now = state.font;
+    let family = now.family.clone().unwrap_or_else(|| "Ubuntu Light".into());
+    let mut chosen =
+        drop_down(ui, &family, &tr!("font-family-named", name = family.as_str()), &tr!("font-family-tip"), 132.0, |ui| font_families(ui, state));
+    ui.add_space(2.0);
+    let size = format!("{}%", now.size);
+    chosen = chosen.or(drop_down(ui, &size, &tr!("font-size-named", size = size.as_str()), &tr!("font-size-tip"), 62.0, |ui| font_sizes(ui, state)));
+    ui.add_space(2.0);
+    let own = now.family.is_some();
+    let tip = |name: String| if own { name } else { format!("{name} — {}", tr!("font-face-needs-family")) };
+    if letter_tool(ui, egui::RichText::new("B").strong(), &tr!("font-bold"), &tip(tr!("font-bold")), own, now.bold) {
+        chosen = Some(crate::fonts::FontChoice { bold: !now.bold, ..now.clone() });
+    }
+    if letter_tool(ui, egui::RichText::new("I").italics(), &tr!("font-italic"), &tip(tr!("font-italic")), own, now.italic) {
+        chosen = Some(crate::fonts::FontChoice { italic: !now.italic, ..now.clone() });
     }
     chosen
 }
@@ -516,6 +594,9 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         let redo = state.redo.map_or_else(|| tr!("nothing-to-redo"), |l| tr!("redo-named", what = l));
         go(&mut row, Icon::Redo, &tr!("redo"), &redo, state.redo.is_some(), false, Action::Redo);
         divider(&mut row);
+        group_name(&mut row, &tr!("font"));
+        let font = font_tools(&mut row, state);
+        divider(&mut row);
         group_name(&mut row, &tr!("group-activities"));
         go(&mut row, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
         go(&mut row, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
@@ -530,6 +611,9 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         go(&mut row, Icon::Grid, &tr!("time-fit"), &tr!("time-fit-tip"), true, state.fitted, Action::TimeScale(0));
         go(&mut row, Icon::Plus, &tr!("time-wider"), &tr!("time-wider-tip"), true, false, Action::TimeScale(1));
         divider(&mut row);
+        if let Some(f) = font {
+            action = Some(Action::Font(f));
+        }
         row.add_space(4.0);
         let label = row.label(egui::RichText::new(tr!("option-data-date")).size(12.5).color(t.text_dim));
         row.add_space(6.0);

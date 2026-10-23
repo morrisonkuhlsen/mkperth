@@ -518,10 +518,11 @@ fn presenting_shows_the_schedule_alone() {
     assert!(!h.state().presenting && h.query_by_label("File").is_some());
 }
 
-/// View > Font: a family the system offers is asked for and kept; a size set; a face that
-/// doesn't read leaves egui's own in its place, and nothing breaks.
+/// The toolbar's Font group, as spreadsheets have it: a family the system offers is asked for
+/// and kept; bold once a family is chosen; a size; a face that doesn't read leaves egui's own in
+/// its place, and nothing breaks.
 #[test]
-fn the_font_is_chosen_from_the_view_menu() {
+fn the_font_is_chosen_in_the_toolbar() {
     use std::sync::{Arc, Mutex};
     let saved = Arc::new(Mutex::new(Vec::new()));
     let keep = saved.clone();
@@ -532,16 +533,23 @@ fn the_font_is_chosen_from_the_view_menu() {
         ..Services::default()
     };
     let mut h = harness(PerthApp::new(services));
-    h.get_by_label("View").click();
+    h.get_by_label("Bold").click();
     h.run_steps(2);
-    h.get_by_label_contains("Font").click();
+    assert!(!h.state().font.bold, "egui's own face has no bold");
+    h.get_by_label("Typeface: Ubuntu Light").click();
     h.run_steps(2);
     h.get_by_label("Segoe UI").click();
     h.run_steps(3);
     assert_eq!(h.state().font.family.as_deref(), Some("Segoe UI"));
     assert_eq!(saved.lock().unwrap().last().map(String::as_str), Some("Segoe UI|100||"));
-    h.state_mut().font.size = 130;
+    h.get_by_label("Bold").click();
     h.run_steps(3);
+    assert!(h.state().font.bold);
+    h.get_by_label("Size: 100%").click();
+    h.run_steps(2);
+    h.get_by_label("130% · Larger").click();
+    h.run_steps(3);
+    assert_eq!(saved.lock().unwrap().last().map(String::as_str), Some("Segoe UI|130|bold|"));
     assert!(h.query_by_label("File").is_some(), "still drawn");
 }
 
