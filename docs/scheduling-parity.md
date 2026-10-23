@@ -28,6 +28,8 @@ ideas.
 | Project | must finish by date | done |
 | Progress | data date; actual start and finish; remaining duration | done (#19) |
 | Progress | retained logic, progress override, actual dates | done (#19); percent complete, suspend and resume later |
+| Resources | duration types (fixed duration and units/time, fixed duration and units, fixed units/time, fixed units) | done: units = units an hour × the activity's working hours; a new duration changes the units (both "units/time" types) or the units an hour (both "units" types); new units change the units an hour (both "fixed duration" types) or the duration (the other two); a new rate changes the units, or the duration for fixed units; a duration from assignments is the longest they take. MK Perth's rule from P6's published idea of the four types (#20) |
+| Resources | resource-dependent activities on their resources' calendars | later (#20) |
 | Resources | levelling with priorities | later |
 
 ## Perth.jl's conventions

@@ -283,6 +283,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             secondary_constraint: deadline.map(Constraint::FinishOnOrBefore),
             calendar: None,
             notes: text_of("notes")?,
+            duration_type: Default::default(),
             extra,
         });
         dependencies.push((label, deps));

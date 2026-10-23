@@ -139,8 +139,8 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   A resource's work by week against its capacity (`mkperth_sched::usage`, `capacity`,
   `by_week`), as a histogram in the Resources view, over-allocated weeks in red.
   An activity's assignments in Details' Resources tab.
-- **Next:** duration types
-  and resource-dependent activities; prices that change over time (#23); levelling
+  Duration types: a duration, units and units an hour worked out from each other by the type.
+- **Next:** resource-dependent activities on their resources' calendars; prices that change over time (#23); levelling
   with priorities (#21).
 
 ## M5 — costs and earned value

@@ -20,6 +20,12 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Duration types (#20): an activity's duration, its assignments' units and their units an hour
+  hold together (units = units an hour × hours) by its type, chosen in Details (fixed duration
+  and units/time, the default; fixed duration and units; fixed units/time; fixed units): a new
+  duration, new units or a new rate work out the third as the type says. Assignments keep their
+  units an hour (Units/h in Details' Resources tab and the Resources view; P6 XML's
+  PlannedUnitsPerTime and DurationType read and written). Existing projects schedule as before.
 - Details' Resources tab: the resources (and roles still to staff) on the selected activity,
   their budgeted, actual and remaining work typed in place, removed, and a resource assigned
   from a list.

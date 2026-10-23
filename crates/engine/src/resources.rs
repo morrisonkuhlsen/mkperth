@@ -1,7 +1,7 @@
 //! Resources, roles and their assignments to activities: who and what does the work. Each change
 //! is a command with undo; units come in as numbers (`7.5` hours) and are kept in hundredths.
 
-use mkperth_core::{Assignment, Project, Resource, ResourceKind, Role, UNIT};
+use mkperth_core::{Assignment, DurationType, Project, Resource, ResourceKind, Role, UNIT};
 use mkperth_i18n::tr;
 use serde_json::Value;
 
@@ -61,6 +61,72 @@ fn ids(params: &Value, command: &str, name: &str) -> Result<Option<Vec<String>>,
 fn next_id<'a>(prefix: &str, taken: impl Iterator<Item = &'a str>) -> String {
     let highest = taken.filter_map(|id| id.strip_prefix(prefix).and_then(|n| n.parse::<u64>().ok())).max().unwrap_or(0);
     format!("{prefix}{}", highest.saturating_add(1))
+}
+
+/// The working minutes of activity `k` on its calendar.
+pub(crate) fn activity_minutes(p: &Project, k: usize) -> i64 {
+    let Some(a) = p.activities.get(k) else { return 0 };
+    let calendar = a.calendar.as_deref().and_then(|n| p.calendars.iter().find(|c| c.name == n)).unwrap_or(&p.calendar);
+    a.working_minutes(calendar.day_minutes())
+}
+
+/// Sets activity `k`'s duration to `minutes` of work: whole days when it is, else the minutes.
+fn set_minutes(p: &mut Project, k: usize, minutes: i64) {
+    let calendar = p.activities.get(k).and_then(|a| a.calendar.clone());
+    let day = calendar.as_deref().and_then(|n| p.calendars.iter().find(|c| c.name == n)).unwrap_or(&p.calendar).day_minutes().max(1);
+    if let Some(a) = p.activities.get_mut(k) {
+        let minutes = minutes.clamp(0, mkperth_sched::MAX_SPAN.saturating_mul(day));
+        if minutes % day == 0 {
+            a.duration = minutes / day;
+            a.duration_minutes = None;
+        } else {
+            a.duration = (minutes + day - 1) / day;
+            a.duration_minutes = Some(minutes);
+        }
+    }
+}
+
+/// The units of `rate` an hour over `minutes` of work.
+fn units_at(rate: i64, minutes: i64) -> i64 {
+    rate.saturating_mul(minutes) / 60
+}
+
+/// Before activity `k`'s duration changes from `before` minutes: each assignment's units an hour
+/// kept as they are, so the duration type can hold them.
+pub(crate) fn before_duration(p: &mut Project, k: usize, before: i64) {
+    let Some(id) = p.activities.get(k).map(|a| a.id.clone()) else { return };
+    for x in p.assignments.iter_mut().filter(|x| x.activity == id) {
+        x.rate = Some(x.rate_over(before));
+    }
+}
+
+/// After activity `k`'s duration changed: by its duration type, each assignment's units follow
+/// at its units an hour, or its units stay and its units an hour follow.
+pub(crate) fn after_duration(p: &mut Project, k: usize) {
+    let Some((id, kind)) = p.activities.get(k).map(|a| (a.id.clone(), a.duration_type)) else { return };
+    let minutes = activity_minutes(p, k);
+    for x in p.assignments.iter_mut().filter(|x| x.activity == id) {
+        if kind.keeps_units_on_duration() {
+            x.rate = Some(if minutes > 0 { x.planned.saturating_mul(60) / minutes } else { 0 });
+        } else {
+            x.planned = units_at(x.rate.unwrap_or(0), minutes);
+        }
+    }
+}
+
+/// The duration the assignments on activity `k` take at their units an hour: the longest
+/// (the resource that sets the pace), when any has a rate.
+fn duration_by_assignments(p: &Project, k: usize) -> Option<i64> {
+    let id = p.activities.get(k)?.id.as_str();
+    let minutes = activity_minutes(p, k);
+    p.assignments
+        .iter()
+        .filter(|x| x.activity == id)
+        .filter_map(|x| {
+            let rate = x.rate_over(minutes);
+            (rate > 0).then(|| x.planned.saturating_mul(60) / rate)
+        })
+        .max()
 }
 
 /// Which assignment `params` names: on `activity`, of `resource` (or, unstaffed, for `role`).
@@ -278,15 +344,18 @@ impl Session {
             if taken {
                 return Err(EngineError::AssignmentExists(activity.clone(), who.clone()));
             }
-            // The activity's working hours at the resource's units an hour (one, for a role).
-            let planned = planned.unwrap_or_else(|| match r {
-                Some(r) if r.kind == ResourceKind::Material => 0,
-                _ => {
-                    let minutes = a.working_minutes(p.calendar.day_minutes());
+            // The activity's working hours at the resource's units an hour (one, for a role); a
+            // budget given sets the units an hour instead.
+            let k = p.activities.iter().position(|x| x.id == a.id).unwrap_or(0);
+            let minutes = activity_minutes(p, k);
+            let (planned, rate) = match (planned, r) {
+                (Some(u), _) => (u, if minutes > 0 { u.saturating_mul(60) / minutes } else { 0 }),
+                (None, Some(r)) if r.kind == ResourceKind::Material => (0, 0),
+                (None, r) => {
                     let per_hour = r.map_or(UNIT, |r| r.max_units);
-                    minutes.saturating_mul(per_hour) / 60
+                    (units_at(per_hour, minutes), per_hour)
                 }
-            });
+            };
             p.assignments.push(Assignment {
                 activity: activity.clone(),
                 resource: resource.clone(),
@@ -294,6 +363,7 @@ impl Session {
                 planned,
                 actual,
                 remaining: None,
+                rate: Some(rate),
                 ..Assignment::default()
             });
             Ok(())
@@ -301,11 +371,14 @@ impl Session {
     }
 
     /// Changes the assignment named by `activity` and `resource` (or `role`): `planned`,
-    /// `actual`, `remaining` (`null` for the budget less what is done), and `staff` (a resource
-    /// to fill an unstaffed role).
+    /// `actual`, `remaining` (`null` for the budget less what is done), `rate` (units an hour),
+    /// and `staff` (a resource to fill an unstaffed role). New units or a new rate hold together
+    /// with the activity's duration by its duration type: the rate or the units follow, or the
+    /// duration does (the longest its assignments take).
     fn edit_assignment(&mut self, params: &Value) -> Result<(), EngineError> {
         const C: &str = "assignment.edit";
         let planned = units(params, C, "planned")?;
+        let rate = units(params, C, "rate")?;
         let actual = units(params, C, "actual")?;
         let remaining = match params.get("remaining") {
             None => None,
@@ -324,9 +397,28 @@ impl Session {
                     return Err(EngineError::AssignmentExists(activity.clone(), s.clone()));
                 }
             }
+            let at = p.activities.iter().position(|x| p.assignments.get(k).is_some_and(|a| a.activity == x.id)).unwrap_or(0);
+            let kind = p.activities.get(at).map(|x| x.duration_type).unwrap_or_default();
+            let minutes = activity_minutes(p, at);
+            let mut moves = false;
             let Some(a) = p.assignments.get_mut(k) else { return Err(bad(C, "activity")) };
+            let was = a.rate_over(minutes);
             if let Some(u) = planned {
                 a.planned = u;
+                if kind.moves_duration() {
+                    a.rate = Some(was);
+                    moves = true;
+                } else {
+                    a.rate = Some(if minutes > 0 { u.saturating_mul(60) / minutes } else { 0 });
+                }
+            }
+            if let Some(r) = rate {
+                a.rate = Some(r);
+                if kind == DurationType::FixedUnits {
+                    moves = true;
+                } else {
+                    a.planned = units_at(r, minutes);
+                }
             }
             if let Some(u) = actual {
                 a.actual = u;
@@ -336,6 +428,12 @@ impl Session {
             }
             if let Some(s) = staff {
                 a.resource = Some(s);
+            }
+            // The duration the assignments now take; the others' units follow it by the type.
+            if moves && let Some(m) = duration_by_assignments(p, at) {
+                before_duration(p, at, minutes);
+                set_minutes(p, at, m);
+                after_duration(p, at);
             }
             Ok(())
         })
@@ -404,6 +502,53 @@ mod tests {
         // Undo takes each change back.
         run(&mut s, "edit.undo", Value::Null);
         assert_eq!(s.project.roles.len(), 1);
+    }
+
+    /// Units = units an hour × hours, held by the duration type. A10 takes 5 days of 8 hours:
+    /// Ana at one an hour has 40 hours on it.
+    #[test]
+    fn duration_types_say_what_follows() {
+        let fresh = |kind: &str| {
+            let mut s = Session::default();
+            run(&mut s, "resource.add", json!({"id": "R1", "name": "Ana"}));
+            run(&mut s, "activity.edit", json!({"id": "A10", "duration_type": kind}));
+            run(&mut s, "assignment.add", json!({"activity": "A10", "resource": "R1"}));
+            s
+        };
+        let a10 = |s: &Session| s.project.activities.iter().find(|a| a.id == "A10").unwrap().clone();
+        let x = |s: &Session| s.project.assignments[0].clone();
+        // Fixed duration and units an hour: 10 days are 80 hours at one an hour; then 20 hours
+        // over those 80 are a quarter of a unit an hour.
+        let mut s = fresh("fixed-duration-and-rate");
+        run(&mut s, "activity.edit", json!({"id": "A10", "duration": 10}));
+        assert_eq!((x(&s).planned, x(&s).rate), (80 * UNIT, Some(UNIT)));
+        run(&mut s, "assignment.edit", json!({"activity": "A10", "resource": "R1", "planned": 20}));
+        assert_eq!((a10(&s).duration, x(&s).rate), (10, Some(UNIT / 4)));
+        // Fixed duration and units: 10 days keep the 40 hours, half a unit an hour.
+        let mut s = fresh("fixed-duration-and-units");
+        run(&mut s, "activity.edit", json!({"id": "A10", "duration": 10}));
+        assert_eq!((x(&s).planned, x(&s).rate), (40 * UNIT, Some(UNIT / 2)));
+        // Fixed units an hour: 60 hours at one an hour take 7.5 days (3600 minutes).
+        let mut s = fresh("fixed-rate");
+        run(&mut s, "assignment.edit", json!({"activity": "A10", "resource": "R1", "planned": 60}));
+        assert_eq!((a10(&s).duration, a10(&s).duration_minutes), (8, Some(3600)));
+        // Fixed units: two an hour do the 40 hours in 20 hours, 2.5 days; then 10 days spread
+        // them at half a unit an hour.
+        let mut s = fresh("fixed-units");
+        run(&mut s, "assignment.edit", json!({"activity": "A10", "resource": "R1", "rate": 2}));
+        assert_eq!((a10(&s).duration_minutes, x(&s).planned), (Some(1200), 40 * UNIT));
+        run(&mut s, "activity.edit", json!({"id": "A10", "duration": 10}));
+        assert_eq!((x(&s).planned, x(&s).rate), (40 * UNIT, Some(UNIT / 2)));
+        // The longest assignment sets the pace: Bia's 80 hours at one an hour take 10 days, and
+        // Ana's 40 hours stay.
+        let mut s = fresh("fixed-rate");
+        run(&mut s, "resource.add", json!({"id": "R2", "name": "Bia"}));
+        run(&mut s, "assignment.add", json!({"activity": "A10", "resource": "R2"}));
+        run(&mut s, "assignment.edit", json!({"activity": "A10", "resource": "R2", "planned": 80}));
+        assert_eq!((a10(&s).duration, x(&s).planned), (10, 80 * UNIT), "Ana's units follow the duration at her rate");
+        // Undo takes the duration and the units back together.
+        run(&mut s, "edit.undo", Value::Null);
+        assert_eq!((a10(&s).duration, x(&s).planned), (5, 40 * UNIT));
     }
 
     #[test]

@@ -44,8 +44,13 @@ pub(crate) fn activity_assignments(
     if on.is_empty() {
         ui.label(egui::RichText::new(tr!("details-resources-none")).size(12.0).color(t.text_dim));
     } else {
-        egui::Grid::new("activity-assignments").striped(true).num_columns(5).spacing(egui::vec2(8.0, 6.0)).show(ui, |ui| {
-            for head in ["assignment-who", "assignment-planned", "assignment-actual", "assignment-remaining"] {
+        let minutes = project.activities.iter().find(|a| a.id == activity).map_or(0, |a| {
+            a.working_minutes(
+                a.calendar.as_deref().and_then(|n| project.calendars.iter().find(|c| c.name == n)).unwrap_or(&project.calendar).day_minutes(),
+            )
+        });
+        egui::Grid::new("activity-assignments").striped(true).num_columns(6).spacing(egui::vec2(8.0, 6.0)).show(ui, |ui| {
+            for head in ["assignment-who", "assignment-planned", "assignment-rate", "assignment-actual", "assignment-remaining"] {
                 ui.label(egui::RichText::new(tr!(head)).size(11.5).color(t.header_text).strong());
             }
             ui.label("");
@@ -69,8 +74,10 @@ pub(crate) fn activity_assignments(
                     None => json!({"activity": activity, "role": a.role}),
                 };
                 let key = |what: &str| format!("{activity}:{}:{what}", a.resource.clone().or(a.role.clone()).unwrap_or_default());
-                for (what, value) in [("planned", a.planned), ("actual", a.actual), ("remaining", a.remaining_units())] {
-                    if let Some(v) = field(ui, &mut form.typing, &key(what), units_text(value), l, 52.0) {
+                for (what, value) in
+                    [("planned", a.planned), ("rate", a.rate_over(minutes)), ("actual", a.actual), ("remaining", a.remaining_units())]
+                {
+                    if let Some(v) = field(ui, &mut form.typing, &key(what), units_text(value), l, 46.0) {
                         let mut params = target.clone();
                         if let Some(map) = params.as_object_mut() {
                             map.insert(what.into(), read_units(&v).map_or(json!("unreadable"), |u| json!(u)));

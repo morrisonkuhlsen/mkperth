@@ -359,6 +359,9 @@ impl Session {
         let duration = number(params, C, "duration", 0..=mkperth_sched::MAX_SPAN)?;
         let minutes = number(params, C, "duration_minutes", 0..=mkperth_sched::MAX_SPAN * 1440)?;
         let kind = text(params, C, "kind")?.map(|k| kind_of(&k).ok_or_else(|| EngineError::Value(C.into(), "kind".into()))).transpose()?;
+        let duration_type = text(params, C, "duration_type")?
+            .map(|d| mkperth_core::DurationType::from_code(&d).ok_or_else(|| EngineError::Value(C.into(), "duration_type".into())))
+            .transpose()?;
         let calendar = text(params, C, "calendar")?;
         let notes = match params.get("notes") {
             None | Some(Value::Null) => None,
@@ -408,9 +411,18 @@ impl Session {
                     c.activity = new.to_string();
                 }
             }
+            // Its assignments' units an hour, as they are before a new duration.
+            let resized = duration.is_some() || minutes.is_some();
+            if resized {
+                let before = crate::resources::activity_minutes(p, k);
+                crate::resources::before_duration(p, k, before);
+            }
             let Some(a) = p.activities.get_mut(k) else { return Err(EngineError::UnknownActivity(id.clone())) };
             if let Some(new) = new_id.filter(|n| !n.is_empty()) {
                 a.id = new;
+            }
+            if let Some(d) = duration_type {
+                a.duration_type = d;
             }
             if let Some(name) = name {
                 a.name = name;
@@ -471,6 +483,10 @@ impl Session {
             }
             if let Some(m) = remaining_minutes {
                 a.remaining_minutes = m;
+            }
+            // Its assignments by its duration type: their units follow, or their units an hour.
+            if resized {
+                crate::resources::after_duration(p, k);
             }
             Ok(())
         })

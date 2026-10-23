@@ -124,6 +124,51 @@ impl Constraint {
     }
 }
 
+/// How an activity's duration, its assignments' units and their units an hour hold together
+/// (units = units an hour × the activity's working hours) when one of them is changed: the two
+/// the type names stay, the third is worked out again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum DurationType {
+    /// A new duration changes the units; new units change the units an hour.
+    #[default]
+    FixedDurationAndRate,
+    /// A new duration or new units change the units an hour.
+    FixedDurationAndUnits,
+    /// A new duration changes the units; new units change the duration.
+    FixedRate,
+    /// A new duration changes the units an hour; new units or units an hour change the duration.
+    FixedUnits,
+}
+
+impl DurationType {
+    pub const ALL: [DurationType; 4] =
+        [DurationType::FixedDurationAndRate, DurationType::FixedDurationAndUnits, DurationType::FixedRate, DurationType::FixedUnits];
+
+    /// The commands' word for it.
+    pub fn code(self) -> &'static str {
+        match self {
+            DurationType::FixedDurationAndRate => "fixed-duration-and-rate",
+            DurationType::FixedDurationAndUnits => "fixed-duration-and-units",
+            DurationType::FixedRate => "fixed-rate",
+            DurationType::FixedUnits => "fixed-units",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<DurationType> {
+        DurationType::ALL.into_iter().find(|d| d.code() == code)
+    }
+
+    /// Whether a new duration keeps the units (and changes the units an hour).
+    pub fn keeps_units_on_duration(self) -> bool {
+        matches!(self, DurationType::FixedDurationAndUnits | DurationType::FixedUnits)
+    }
+
+    /// Whether new units (or, for fixed units, a new rate) move the duration.
+    pub fn moves_duration(self) -> bool {
+        matches!(self, DurationType::FixedRate | DurationType::FixedUnits)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Activity {
     /// Unique within the project (P6's Activity ID).
@@ -157,6 +202,9 @@ pub struct Activity {
     pub parent: Option<String>,
     /// Free text: what the team keeps about it.
     pub notes: String,
+    /// Which of its duration, its assignments' units and their units an hour hold when one
+    /// changes.
+    pub duration_type: DurationType,
     pub extra: Extra,
 }
 
@@ -272,6 +320,8 @@ pub struct Assignment {
     pub actual: i64,
     /// Work left; when `None`, the budget less what is done.
     pub remaining: Option<i64>,
+    /// Units an hour, in hundredths; when `None`, the budget over the activity's working hours.
+    pub rate: Option<i64>,
     pub extra: Extra,
 }
 
@@ -279,6 +329,12 @@ impl Assignment {
     /// The work left: as given, else the budget less what is done (never below nothing).
     pub fn remaining_units(&self) -> i64 {
         self.remaining.unwrap_or_else(|| self.planned.saturating_sub(self.actual).max(0))
+    }
+
+    /// Its units an hour on an activity of `minutes` working minutes: as given, else its budget
+    /// over those hours.
+    pub fn rate_over(&self, minutes: i64) -> i64 {
+        self.rate.unwrap_or_else(|| if minutes > 0 { self.planned.saturating_mul(60) / minutes } else { 0 })
     }
 }
 

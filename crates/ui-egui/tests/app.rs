@@ -386,10 +386,10 @@ fn an_activity_takes_resources_in_details() {
     h.run_steps(3);
     assert_eq!(h.state().session.project.assignments.len(), 1);
     assert_eq!(h.state().session.project.assignments[0].activity, "A10");
-    // Hours done, typed where they show: the second field on Ana's row (budgeted, actual, left).
-    h.get_all_by_role_and_label(Role::TextInput, "Ana (h)").nth(1).unwrap().click();
+    // Hours done, typed where they show: the third field on her row (budgeted, units/h, actual, left).
+    h.get_all_by_role_and_label(Role::TextInput, "Ana (h)").nth(2).unwrap().click();
     h.run_steps(1);
-    h.get_all_by_role_and_label(Role::TextInput, "Ana (h)").nth(1).unwrap().type_text("6");
+    h.get_all_by_role_and_label(Role::TextInput, "Ana (h)").nth(2).unwrap().type_text("6");
     h.key_press(egui::Key::Enter);
     h.run_steps(3);
     assert_eq!(h.state().session.project.assignments[0].actual, 600);

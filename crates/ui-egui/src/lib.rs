@@ -872,6 +872,25 @@ impl PerthApp {
                     fact(ui, tr!("detail-kind"), kind);
                     if !summary && !a.kind.is_milestone() {
                         fact(ui, tr!("detail-duration"), tr!("detail-days", n = days_text(a.working_minutes(day), day).as_str()));
+                        // What follows when its duration, its units or their units an hour change.
+                        ui.horizontal(|ui| {
+                            let label = ui.add_sized(
+                                egui::vec2(120.0, 18.0),
+                                egui::Label::new(egui::RichText::new(tr!("detail-duration-type")).size(12.0).color(t.text_dim)),
+                            );
+                            let name = |d: mkperth_engine::core::DurationType| tr!(&format!("duration-type-{}", d.code()));
+                            let mut chosen = a.duration_type;
+                            let combo = egui::ComboBox::from_id_salt("duration-type").selected_text(name(chosen)).width(190.0).show_ui(ui, |ui| {
+                                for d in mkperth_engine::core::DurationType::ALL {
+                                    ui.selectable_value(&mut chosen, d, name(d)).on_hover_text(tr!(&format!("duration-type-{}-tip", d.code())));
+                                }
+                            });
+                            combo.response.labelled_by(label.id);
+                            if chosen != a.duration_type {
+                                pending = Some(("activity.edit", json!({"id": a.id, "duration_type": chosen.code()})));
+                            }
+                        });
+                        ui.add_space(3.0);
                     }
                     fact(ui, tr!("detail-calendar"), a.calendar.clone().unwrap_or_else(|| project.calendar.name.clone()));
                     if let Some(parent) = a.parent.as_deref() {

@@ -236,11 +236,16 @@ fn resources_and_assignments_read_back() {
         ..Assignment::default()
     });
     p.assignments.push(Assignment { activity: task.clone(), resource: Some("CONC".into()), planned: 1275, ..Assignment::default() });
-    p.assignments.push(Assignment { activity: task, role: Some("MASON".into()), planned: 800, ..Assignment::default() });
+    p.assignments.push(Assignment { activity: task.clone(), role: Some("MASON".into()), planned: 800, rate: Some(25), ..Assignment::default() });
+    if let Some(a) = p.activities.iter_mut().find(|a| a.id == task) {
+        a.duration_type = DurationType::FixedUnits;
+    }
     let (text, _) = write(&p);
     assert!(text.contains("<MaxUnitsPerTime>2.5</MaxUnitsPerTime>") && text.contains("<PlannedUnits>12.75</PlannedUnits>"), "{text}");
     let back = read(&text).unwrap().project;
     assert_eq!(back.roles, p.roles);
     assert_eq!(back.resources, p.resources);
     assert_eq!(back.assignments, p.assignments);
+    let types = |p: &Project| p.activities.iter().map(|a| a.duration_type).collect::<Vec<_>>();
+    assert_eq!(types(&back), types(&p), "the duration types too");
 }

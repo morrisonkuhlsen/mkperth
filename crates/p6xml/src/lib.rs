@@ -18,8 +18,8 @@ mod tree;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use mkperth_core::{
-    Activity, ActivityKind, Assignment, Calendar, Constraint, Date, Period, Project, Relationship, RelationshipType, Resource, ResourceKind, Role,
-    UNIT, Weekday,
+    Activity, ActivityKind, Assignment, Calendar, Constraint, Date, DurationType, Period, Project, Relationship, RelationshipType, Resource,
+    ResourceKind, Role, UNIT, Weekday,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -61,6 +61,16 @@ fn units_of(text: &str) -> Option<i64> {
 /// Hundredths of a unit as P6 writes them: `40`, `12.5`.
 fn units_text(u: i64) -> String {
     if u % UNIT == 0 { (u / UNIT).to_string() } else { format!("{:.2}", u as f64 / UNIT as f64).trim_end_matches('0').to_string() }
+}
+
+/// P6's names for the duration types.
+fn duration_type_name(d: DurationType) -> &'static str {
+    match d {
+        DurationType::FixedDurationAndRate => "Fixed Duration and Units/Time",
+        DurationType::FixedDurationAndUnits => "Fixed Duration and Units",
+        DurationType::FixedRate => "Fixed Units/Time",
+        DurationType::FixedUnits => "Fixed Units",
+    }
 }
 
 /// `2026-11-02T08:00:00` (or a bare date) as a date.
@@ -279,6 +289,10 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             secondary_constraint: constraint("SecondaryConstraintType", "SecondaryConstraintDate"),
             calendar,
             parent: e.text_of("WBSObjectId").and_then(|w| wbs_id.get(w)).cloned(),
+            duration_type: e
+                .text_of("DurationType")
+                .and_then(|d| DurationType::ALL.into_iter().find(|x| duration_type_name(*x) == d))
+                .unwrap_or_default(),
             ..Activity::default()
         };
         // Progress: the actual dates, and the work left of an activity under way.
@@ -399,7 +413,8 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         let (planned, actual) = (units("PlannedUnits")?.unwrap_or(0), units("ActualUnits")?.unwrap_or(0));
         // What is left, kept only when it isn't the budget less what is done.
         let remaining = units("RemainingUnits")?.filter(|r| *r != planned.saturating_sub(actual).max(0));
-        assignments.push(Assignment { activity, resource, role, planned, actual, remaining, ..Assignment::default() });
+        let rate = units("PlannedUnitsPerTime")?;
+        assignments.push(Assignment { activity, resource, role, planned, actual, remaining, rate, ..Assignment::default() });
     }
     if unplaced > 0 {
         warnings.push(tr!("warn-p6-assignments", n = unplaced));
@@ -661,6 +676,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             (None, None) => "Not Started",
         };
         out.push_str(&format!("      <Status>{status}</Status>\n"));
+        out.push_str(&format!("      <DurationType>{}</DurationType>\n", duration_type_name(a.duration_type)));
         if let Some(d) = a.actual_start {
             out.push_str(&format!("      <ActualStartDate>{}</ActualStartDate>\n", timestamp(d, false)));
         }
@@ -716,9 +732,13 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         if let Some(r) = x.role.as_deref().and_then(role_object) {
             out.push_str(&format!("      <RoleObjectId>{r}</RoleObjectId>\n"));
         }
+        out.push_str(&format!("      <PlannedUnits>{}</PlannedUnits>\n", units_text(x.planned)));
+        // Units an hour when set; else they are the budget over the duration, as P6 works out.
+        if let Some(r) = x.rate {
+            out.push_str(&format!("      <PlannedUnitsPerTime>{}</PlannedUnitsPerTime>\n", units_text(r)));
+        }
         out.push_str(&format!(
-            "      <PlannedUnits>{}</PlannedUnits>\n      <ActualUnits>{}</ActualUnits>\n      <RemainingUnits>{}</RemainingUnits>\n      <ProjectObjectId>1</ProjectObjectId>\n    </ResourceAssignment>\n",
-            units_text(x.planned),
+            "      <ActualUnits>{}</ActualUnits>\n      <RemainingUnits>{}</RemainingUnits>\n      <ProjectObjectId>1</ProjectObjectId>\n    </ResourceAssignment>\n",
             units_text(x.actual),
             units_text(x.remaining_units())
         ));
