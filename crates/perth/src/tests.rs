@@ -261,3 +261,25 @@ fn mutated_files_never_panic() {
         }
     }
 }
+
+/// Task a's assignee, Ana, is a resource assigned for its effort (40 hours); written back as
+/// she was named. A second resource on the task is written beside her, with a warning.
+#[test]
+fn an_assignee_is_a_resource_assigned() {
+    let read = read(&full().to_string()).unwrap();
+    let p = read.project;
+    assert_eq!(p.resources.len(), 1);
+    assert_eq!((p.resources[0].id.as_str(), p.resources[0].name.as_str()), ("Ana", "Ana"));
+    assert_eq!(p.assignments.len(), 1);
+    let a = &p.assignments[0];
+    let task = p.activities.iter().find(|t| t.id == a.activity).unwrap();
+    assert_eq!(a.resource.as_deref(), Some("Ana"));
+    assert_eq!(a.planned, 40 * UNIT, "its effort");
+    assert_eq!(task.id, "a");
+    let mut two = p.clone();
+    two.resources.push(Resource { id: "R2".into(), name: "Bia".into(), ..Resource::default() });
+    two.assignments.push(Assignment { activity: a.activity.clone(), resource: Some("R2".into()), ..Assignment::default() });
+    let (text, warnings) = write(&two);
+    assert!(text.contains("\"assignee\":\"Ana, Bia\""), "{text}");
+    assert_eq!(warnings.len(), 1);
+}

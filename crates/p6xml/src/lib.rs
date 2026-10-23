@@ -4,7 +4,9 @@
 //! What maps: the first project's name, planned start and must-finish-by date; its WBS as
 //! summaries; each activity's ID, name, type (start and finish milestones; every other type as a
 //! task), planned duration, calendar, WBS and primary and secondary constraints; relationships of
-//! the four types with their lags; calendars' work weeks, holidays and worked exceptions. P6 keeps
+//! the four types with their lags; calendars' work weeks, holidays and worked exceptions;
+//! resources (their type, calendar, units an hour and a material's unit), roles, the roles each
+//! resource fills, and the project's resource assignments with their units. P6 keeps
 //! durations and lags in hours: they become working days by the calendar's hours per day, rounded
 //! up, with a warning when that isn't whole. Element names follow Oracle's published P6 XML schema
 //! (`APIBusinessObjects`); the format's other elements are left out, each kind named once in the
@@ -15,7 +17,10 @@ mod tree;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use mkperth_core::{Activity, ActivityKind, Calendar, Constraint, Date, Period, Project, Relationship, RelationshipType, Weekday};
+use mkperth_core::{
+    Activity, ActivityKind, Assignment, Calendar, Constraint, Date, Period, Project, Relationship, RelationshipType, Resource, ResourceKind, Role,
+    UNIT, Weekday,
+};
 use mkperth_i18n::tr;
 use thiserror::Error;
 
@@ -47,6 +52,16 @@ const HOURS_PER_DAY: f64 = 8.0;
 const NAMESPACE: &str = "http://xmlns.oracle.com/Primavera/P6/V8.3/API/BusinessObjects";
 /// Prefix of the extra keys this format keeps.
 const PREFIX: &str = "p6.";
+
+/// P6's units (hours, or a material's unit) as hundredths: finite, not below nothing.
+fn units_of(text: &str) -> Option<i64> {
+    text.trim().parse::<f64>().ok().filter(|u| u.is_finite() && (0.0..=1e9).contains(u)).map(|u| (u * UNIT as f64).round() as i64)
+}
+
+/// Hundredths of a unit as P6 writes them: `40`, `12.5`.
+fn units_text(u: i64) -> String {
+    if u % UNIT == 0 { (u / UNIT).to_string() } else { format!("{:.2}", u as f64 / UNIT as f64).trim_end_matches('0').to_string() }
+}
 
 /// `2026-11-02T08:00:00` (or a bare date) as a date.
 fn date_of(text: &str) -> Option<Date> {
@@ -314,9 +329,86 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
     if dangling > 0 {
         warnings.push(tr!("warn-p6-dangling", n = dangling));
     }
+    // Roles and resources, the file's own; the roles each resource fills.
+    let field = |what: &str, n: usize, name: &str| P6Error::Field(format!("{what} #{}", n + 1), name.to_string());
+    let mut roles: Vec<Role> = Vec::new();
+    let mut role_by_object: HashMap<&str, String> = HashMap::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (n, e) in root.all("Role").enumerate() {
+        let id = e.text_of("Id").ok_or_else(|| field("Role", n, "Id"))?.to_string();
+        if !seen.insert(id.clone()) {
+            return Err(P6Error::Field(format!("Role {id}"), "Id".into()));
+        }
+        if let Some(object) = e.text_of("ObjectId") {
+            role_by_object.insert(object, id.clone());
+        }
+        roles.push(Role { name: e.text_of("Name").unwrap_or(&id).to_string(), id, ..Role::default() });
+    }
+    let unit_of_measure: HashMap<&str, &str> =
+        root.all("UnitOfMeasure").filter_map(|u| Some((u.text_of("ObjectId")?, u.text_of("Abbreviation").or_else(|| u.text_of("Name"))?))).collect();
+    let mut resources: Vec<Resource> = Vec::new();
+    let mut resource_by_object: HashMap<&str, String> = HashMap::new();
+    seen.clear();
+    for (n, e) in root.all("Resource").enumerate() {
+        let id = e.text_of("Id").ok_or_else(|| field("Resource", n, "Id"))?.to_string();
+        if !seen.insert(id.clone()) {
+            return Err(P6Error::Field(format!("Resource {id}"), "Id".into()));
+        }
+        if let Some(object) = e.text_of("ObjectId") {
+            resource_by_object.insert(object, id.clone());
+        }
+        let kind = e.text_of("ResourceType").and_then(ResourceKind::from_code).unwrap_or_default();
+        let max_units = match e.text_of("MaxUnitsPerTime") {
+            Some(t) => units_of(t).ok_or_else(|| P6Error::Field(format!("Resource {id}"), "MaxUnitsPerTime".into()))?,
+            None => UNIT,
+        };
+        // Its calendar by name, unless it is the project's.
+        let calendar = e
+            .text_of("CalendarObjectId")
+            .and_then(|c| calendar_by_id.get(c))
+            .map(|(name, _)| name.to_string())
+            .filter(|n| *n != project_calendar.name);
+        let unit = e.text_of("UnitOfMeasureObjectId").and_then(|u| unit_of_measure.get(u)).map_or_else(String::new, |u| u.to_string());
+        resources.push(Resource { name: e.text_of("Name").unwrap_or(&id).to_string(), id, kind, unit, calendar, max_units, ..Resource::default() });
+    }
+    for e in root.all("ResourceRole") {
+        let resource = e.text_of("ResourceObjectId").and_then(|r| resource_by_object.get(r));
+        let role = e.text_of("RoleObjectId").and_then(|r| role_by_object.get(r));
+        if let (Some(resource), Some(role)) = (resource, role)
+            && let Some(r) = resources.iter_mut().find(|x| x.id == *resource)
+            && !r.roles.contains(role)
+        {
+            r.roles.push(role.clone());
+        }
+    }
+    // The project's assignments: an activity, a resource or a role (or both), and their units.
+    let mut assignments = Vec::new();
+    let mut unplaced = 0usize;
+    for e in p.all("ResourceAssignment").chain(root.all("ResourceAssignment")) {
+        let activity = e.text_of("ActivityObjectId").and_then(|o| by_object.get(o)).cloned();
+        let resource = e.text_of("ResourceObjectId").and_then(|r| resource_by_object.get(r)).cloned();
+        let role = e.text_of("RoleObjectId").and_then(|r| role_by_object.get(r)).cloned();
+        let Some(activity) = activity.filter(|_| resource.is_some() || role.is_some()) else {
+            unplaced += 1;
+            continue;
+        };
+        let units = |name: &str| match e.text_of(name) {
+            Some(t) => units_of(t).map(Some).ok_or_else(|| P6Error::Field(format!("ResourceAssignment {activity}"), name.to_string())),
+            None => Ok(None),
+        };
+        let (planned, actual) = (units("PlannedUnits")?.unwrap_or(0), units("ActualUnits")?.unwrap_or(0));
+        // What is left, kept only when it isn't the budget less what is done.
+        let remaining = units("RemainingUnits")?.filter(|r| *r != planned.saturating_sub(actual).max(0));
+        assignments.push(Assignment { activity, resource, role, planned, actual, remaining, ..Assignment::default() });
+    }
+    if unplaced > 0 {
+        warnings.push(tr!("warn-p6-assignments", n = unplaced));
+    }
+
     // What else the project and the file hold, each kind named once.
-    const READ: [&str; 6] = ["Project", "Calendar", "WBS", "Activity", "Relationship", "ProjectCodeType"];
-    const PROJECT_FIELDS_READ: [&str; 11] = [
+    const READ: [&str; 10] =
+        ["Project", "Calendar", "WBS", "Activity", "Relationship", "ProjectCodeType", "Resource", "Role", "ResourceRole", "UnitOfMeasure"];
+    const PROJECT_FIELDS_READ: [&str; 12] = [
         "ObjectId",
         "Id",
         "Name",
@@ -328,6 +420,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         "WBS",
         "Activity",
         "Relationship",
+        "ResourceAssignment",
     ];
     let mut skipped: BTreeSet<&str> = root.children.iter().map(|c| c.name.as_str()).filter(|n| !READ.contains(n)).collect();
     skipped.extend(p.children.iter().filter(|c| !c.children.is_empty()).map(|c| c.name.as_str()).filter(|n| !PROJECT_FIELDS_READ.contains(n)));
@@ -354,9 +447,9 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             bands: Vec::new(),
             markers: Vec::new(),
             month_marks: Vec::new(),
-            resources: Vec::new(),
-            roles: Vec::new(),
-            assignments: Vec::new(),
+            resources,
+            roles,
+            assignments,
             activities,
             relationships,
             extra,
@@ -461,6 +554,58 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         out.push_str("    </HolidayOrExceptions>\n  </Calendar>\n");
     }
+    // A material's units of measure, its roles and its resources: the file's, before the project.
+    let mut measures: Vec<&str> =
+        project.resources.iter().filter(|r| r.kind == ResourceKind::Material && !r.unit.is_empty()).map(|r| r.unit.as_str()).collect();
+    measures.sort_unstable();
+    measures.dedup();
+    for (k, u) in measures.iter().enumerate() {
+        out.push_str(&format!(
+            "  <UnitOfMeasure>\n    <ObjectId>{}</ObjectId>\n    <Abbreviation>{}</Abbreviation>\n    <Name>{}</Name>\n  </UnitOfMeasure>\n",
+            k + 1,
+            esc(u),
+            esc(u)
+        ));
+    }
+    let role_object = |id: &str| project.roles.iter().position(|r| r.id == id).map(|k| k + 1);
+    let resource_object = |id: &str| project.resources.iter().position(|r| r.id == id).map(|k| k + 1);
+    for (k, r) in project.roles.iter().enumerate() {
+        out.push_str(&format!(
+            "  <Role>\n    <ObjectId>{}</ObjectId>\n    <Id>{}</Id>\n    <Name>{}</Name>\n  </Role>\n",
+            k + 1,
+            esc(&r.id),
+            esc(&r.name)
+        ));
+    }
+    for (k, r) in project.resources.iter().enumerate() {
+        let kind = match r.kind {
+            ResourceKind::Labor => "Labor",
+            ResourceKind::Nonlabor => "Nonlabor",
+            ResourceKind::Material => "Material",
+        };
+        out.push_str(&format!(
+            "  <Resource>\n    <ObjectId>{}</ObjectId>\n    <Id>{}</Id>\n    <Name>{}</Name>\n    <ResourceType>{kind}</ResourceType>\n    <CalendarObjectId>{}</CalendarObjectId>\n    <MaxUnitsPerTime>{}</MaxUnitsPerTime>\n",
+            k + 1,
+            esc(&r.id),
+            esc(&r.name),
+            r.calendar.as_deref().map_or(1, calendar_object),
+            units_text(r.max_units)
+        ));
+        if let Some(u) = measures.iter().position(|u| *u == r.unit).filter(|_| r.kind == ResourceKind::Material) {
+            out.push_str(&format!("    <UnitOfMeasureObjectId>{}</UnitOfMeasureObjectId>\n", u + 1));
+        }
+        out.push_str("  </Resource>\n");
+    }
+    let mut pairs = 0usize;
+    for r in &project.resources {
+        for role in r.roles.iter().filter_map(|id| role_object(id)) {
+            pairs += 1;
+            out.push_str(&format!(
+                "  <ResourceRole>\n    <ObjectId>{pairs}</ObjectId>\n    <ResourceObjectId>{}</ResourceObjectId>\n    <RoleObjectId>{role}</RoleObjectId>\n  </ResourceRole>\n",
+                resource_object(&r.id).unwrap_or(0)
+            ));
+        }
+    }
     out.push_str(&format!(
         "  <Project>\n    <ObjectId>1</ObjectId>\n    <Id>{}</Id>\n    <Name>{}</Name>\n    <PlannedStartDate>{}</PlannedStartDate>\n    <ActivityDefaultCalendarObjectId>1</ActivityDefaultCalendarObjectId>\n",
         esc(project.extra.get("p6.id").map_or(project.name.as_str(), String::as_str)),
@@ -548,6 +693,34 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
                 r.lag.saturating_mul(day)
             }))
         ));
+    }
+    // Assignments to activities; a summary is a WBS element in P6 and takes none.
+    let mut on_summaries = 0usize;
+    for (k, x) in project.assignments.iter().enumerate() {
+        if summary(&x.activity) {
+            on_summaries += 1;
+            continue;
+        }
+        out.push_str(&format!(
+            "    <ResourceAssignment>\n      <ObjectId>{}</ObjectId>\n      <ActivityObjectId>{}</ActivityObjectId>\n",
+            k + 1,
+            object(&x.activity)
+        ));
+        if let Some(r) = x.resource.as_deref().and_then(resource_object) {
+            out.push_str(&format!("      <ResourceObjectId>{r}</ResourceObjectId>\n"));
+        }
+        if let Some(r) = x.role.as_deref().and_then(role_object) {
+            out.push_str(&format!("      <RoleObjectId>{r}</RoleObjectId>\n"));
+        }
+        out.push_str(&format!(
+            "      <PlannedUnits>{}</PlannedUnits>\n      <ActualUnits>{}</ActualUnits>\n      <RemainingUnits>{}</RemainingUnits>\n      <ProjectObjectId>1</ProjectObjectId>\n    </ResourceAssignment>\n",
+            units_text(x.planned),
+            units_text(x.actual),
+            units_text(x.remaining_units())
+        ));
+    }
+    if on_summaries > 0 {
+        warnings.push(tr!("warn-p6-summary-assignments", n = on_summaries));
     }
     out.push_str("  </Project>\n</APIBusinessObjects>\n");
     (out, warnings)

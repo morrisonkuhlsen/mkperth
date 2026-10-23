@@ -13,7 +13,8 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use mkperth_core::{
-    Activity, ActivityKind, Band, Calendar, Constraint, Date, Extra, Marker, MonthMark, Project, Region, Relationship, RelationshipType,
+    Activity, ActivityKind, Assignment, Band, Calendar, Constraint, Date, Extra, Marker, MonthMark, Project, Region, Relationship, RelationshipType,
+    Resource, UNIT,
 };
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
@@ -75,7 +76,7 @@ const TASK_FIELDS: [&str; 22] = [
 const PROJECT_FIELDS: [&str; 12] =
     ["id", "name", "tasks", "calendar", "people", "bands", "markers", "month_marks", "file_path", "baseline_at", "created_at", "updated_at"];
 /// The fields the model holds itself; the rest go to `extra`.
-const TASK_MAPPED: [&str; 9] = ["id", "name", "start", "duration", "dependencies", "milestone", "deadline", "parent", "notes"];
+const TASK_MAPPED: [&str; 10] = ["id", "name", "start", "duration", "dependencies", "milestone", "deadline", "parent", "notes", "assignee"];
 const PROJECT_MAPPED: [&str; 6] = ["name", "tasks", "calendar", "bands", "markers", "month_marks"];
 /// The most bands, markers or marked months a project may have.
 pub const MAX_ANNOTATIONS: usize = 10_000;
@@ -200,6 +201,8 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
 
     let mut activities = Vec::with_capacity(tasks.len());
     let mut dependencies: Vec<(String, Vec<String>)> = Vec::with_capacity(tasks.len());
+    // Each task's assignee: a person or resource by name, the same one wherever it is named.
+    let mut assignees: Vec<(String, String, Option<f64>)> = Vec::new();
     for (k, task) in tasks.iter().enumerate() {
         let Value::Object(t) = task else { return Err(PerthError::Field(format!("#{}", k + 1), "task".into())) };
         let label = match t.get("id") {
@@ -256,6 +259,12 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             warnings.push(tr!("warn-perth-duration", task = label.as_str()));
         }
         let parent = text_of("parent")?;
+        let assignee = text_of("assignee")?;
+        if !assignee.trim().is_empty() {
+            // Perth's effort, in hours, when it gives one.
+            let effort = t.get("effort").and_then(Value::as_f64).filter(|e| e.is_finite() && *e > 0.0 && *e <= 1e9);
+            assignees.push((label.clone(), assignee, effort));
+        }
         activities.push(Activity {
             id: label.clone(),
             name: text_of("name")?,
@@ -302,6 +311,18 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         Some(Marker { name: t("name")?, date: date(t, "date")?, color: t("color")?, label_at })
     })?;
     let month_marks = notes(&root, "month_marks", |t| Some(MonthMark { month: date(t, "month")?, name: t("name")?, color: t("color")? }))?;
+    // An assignee is a resource named as written (one for each name), assigned for the task's
+    // effort, else its working hours at one an hour.
+    let mut resources: Vec<Resource> = Vec::new();
+    let mut assignments = Vec::with_capacity(assignees.len());
+    for (task, name, effort) in assignees {
+        if !resources.iter().any(|r| r.id == name) {
+            resources.push(Resource { id: name.clone(), name: name.clone(), ..Resource::default() });
+        }
+        let minutes = activities.iter().find(|a| a.id == task).map_or(0, |a| a.working_minutes(calendar.day_minutes()));
+        let planned = effort.map_or(minutes.saturating_mul(UNIT) / 60, |hours| (hours * UNIT as f64).round() as i64);
+        assignments.push(Assignment { activity: task, resource: Some(name), planned, ..Assignment::default() });
+    }
     Ok(Read {
         project: Project {
             name,
@@ -317,9 +338,9 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             bands,
             markers,
             month_marks,
-            resources: Vec::new(),
+            resources,
             roles: Vec::new(),
-            assignments: Vec::new(),
+            assignments,
             activities,
             relationships,
             extra,
@@ -388,6 +409,18 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         known.insert("milestone".into(), Value::Bool(a.kind.is_milestone()));
         known.insert("parent".into(), Value::String(a.parent.clone().unwrap_or_default()));
         known.insert("notes".into(), Value::String(a.notes.clone()));
+        // Perth names one assignee: the resources on the task, by name.
+        let names: Vec<&str> = project
+            .assignments
+            .iter()
+            .filter(|x| x.activity == a.id)
+            .filter_map(|x| x.resource.as_deref())
+            .map(|id| project.resources.iter().find(|r| r.id == id).map_or(id, |r| r.name.as_str()))
+            .collect();
+        if names.len() > 1 {
+            warnings.push(tr!("warn-perth-assignees", task = a.id.as_str()));
+        }
+        known.insert("assignee".into(), Value::String(names.join(", ")));
         match a.secondary_constraint {
             Some(Constraint::FinishOnOrBefore(d)) => {
                 known.insert("deadline".into(), Value::String(d.to_string()));
@@ -404,7 +437,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             "dependencies" => value.as_array().is_some_and(|d| !d.is_empty()),
             "milestone" => value.as_bool() == Some(true),
             "deadline" => !value.is_null(),
-            "parent" | "notes" => value.as_str().is_some_and(|p| !p.is_empty()),
+            "parent" | "notes" | "assignee" => value.as_str().is_some_and(|p| !p.is_empty()),
             _ => true,
         };
         let mut fields: Vec<(String, Value)> = Vec::new();

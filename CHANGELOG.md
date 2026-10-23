@@ -23,7 +23,9 @@ Read it before re-scheduling a plan with a new version.
 - Resources, roles and assignments (#20): `resource.add`, `.edit`, `.delete`; `role.add`,
   `.delete`; `assignment.add`, `.edit`, `.delete`, with undo. An assignment's budget defaults
   to the activity's working hours at the resource's units an hour; renaming or deleting an
-  activity or a resource carries or takes its assignments.
+  activity or a resource carries or takes its assignments. P6 XML reads and writes them
+  (Resource, Role, ResourceRole, UnitOfMeasure, ResourceAssignment); a Perth task's assignee is a
+  resource assigned for its effort (else its working hours) and is written back as named.
 - The Calendars pane (the strip at the right, or Project > Calendars…): a calendar's working
   week, its work periods, Brazil's national holidays, and its days off and worked days, edited
   in the app and undoable. Chart notes take a pin for their icon, leaving the calendar to it.

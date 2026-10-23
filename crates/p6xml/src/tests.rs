@@ -115,12 +115,10 @@ fn reads_a_project() {
     // A relationship to an activity that isn't there.
     assert_eq!(read.warnings.len(), 1, "{:?}", read.warnings);
     // What isn't read is named once.
-    let more = file().replace(
-        "<Project>",
-        "<Resource><ObjectId>5</ObjectId></Resource><Resource/><Project><ResourceAssignment><ObjectId>9</ObjectId></ResourceAssignment>",
-    );
+    let more = file()
+        .replace("<Project>", "<Currency><ObjectId>5</ObjectId></Currency><Currency/><Project><ActivityNote><ObjectId>9</ObjectId></ActivityNote>");
     let warned = super::read(&more).unwrap().warnings;
-    assert!(warned.iter().any(|w| w.contains("Resource, ResourceAssignment")), "{warned:?}");
+    assert!(warned.iter().any(|w| w.contains("ActivityNote, Currency")), "{warned:?}");
 }
 
 #[test]
@@ -216,4 +214,33 @@ fn mutated_files_never_panic() {
             let _ = read(&String::from_utf8_lossy(&huge));
         }
     }
+}
+
+/// Resources, roles, the roles a resource fills and assignments: written, read back the same.
+#[test]
+fn resources_and_assignments_read_back() {
+    let mut p = read(&file()).unwrap().project;
+    let task = p.activities.iter().find(|a| !p.activities.iter().any(|c| c.parent.as_deref() == Some(a.id.as_str()))).unwrap().id.clone();
+    p.roles.push(Role { id: "MASON".into(), name: "Mason & co".into(), ..Role::default() });
+    p.resources.push(Resource { id: "R1".into(), name: "Ana".into(), roles: vec!["MASON".into()], ..Resource::default() });
+    p.resources.push(Resource { id: "CR".into(), name: "Crane".into(), kind: ResourceKind::Nonlabor, max_units: 250, ..Resource::default() });
+    p.resources
+        .push(Resource { id: "CONC".into(), name: "Concrete".into(), kind: ResourceKind::Material, unit: "m³".into(), ..Resource::default() });
+    p.assignments.push(Assignment {
+        activity: task.clone(),
+        resource: Some("R1".into()),
+        role: Some("MASON".into()),
+        planned: 4000,
+        actual: 1250,
+        remaining: Some(3000),
+        ..Assignment::default()
+    });
+    p.assignments.push(Assignment { activity: task.clone(), resource: Some("CONC".into()), planned: 1275, ..Assignment::default() });
+    p.assignments.push(Assignment { activity: task, role: Some("MASON".into()), planned: 800, ..Assignment::default() });
+    let (text, _) = write(&p);
+    assert!(text.contains("<MaxUnitsPerTime>2.5</MaxUnitsPerTime>") && text.contains("<PlannedUnits>12.75</PlannedUnits>"), "{text}");
+    let back = read(&text).unwrap().project;
+    assert_eq!(back.roles, p.roles);
+    assert_eq!(back.resources, p.resources);
+    assert_eq!(back.assignments, p.assignments);
 }
