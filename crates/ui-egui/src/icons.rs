@@ -58,6 +58,8 @@ pub enum Icon {
     Pin,
     /// Two people, one before the other: resources.
     People,
+    /// A screen on its stand with a play mark: presenting.
+    Present,
     ChevronUp,
     ChevronDown,
     ChevronLeft,
@@ -422,6 +424,12 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, t: &Tokens) {
             fill(&[(9.0, 1.5), (14.5, 7.0), (12.0, 8.0), (8.0, 4.0)], ink.color);
             fill(&[(5.0, 6.0), (10.0, 11.0), (11.0, 9.5), (6.5, 5.0)], ink.color);
             line((7.5, 8.5), (2.0, 14.0), Stroke::new(w * 1.2, ink.color));
+        }
+        Icon::Present => {
+            frame(r(1.5, 2.5, 14.5, 11.5), t.text_dim);
+            fill(&[(6.5, 4.8), (6.5, 9.2), (10.3, 7.0)], t.accent);
+            line((8.0, 11.5), (8.0, 13.5), Stroke::new(w, t.text_dim));
+            line((5.0, 14.0), (11.0, 14.0), Stroke::new(w, t.text_dim));
         }
         Icon::People => {
             // The one behind, then the one in front: a head over shoulders each.

@@ -140,6 +140,8 @@ pub struct PerthApp {
     pub status: Option<Status>,
     /// The toolbar under the menus is hidden (Ctrl+F1).
     pub toolbar_hidden: bool,
+    /// Presenting: the activities and the chart alone, full screen (F5; Esc ends it).
+    pub presenting: bool,
     /// The File backstage, when it is open, and the page it shows.
     pub backstage: Option<backstage::Page>,
     /// The projects opened or saved lately, newest first.
@@ -255,6 +257,7 @@ impl PerthApp {
             selected: None,
             status: None,
             toolbar_hidden: false,
+            presenting: false,
             backstage: None,
             recent: Vec::new(),
             view: View::default(),
@@ -486,6 +489,7 @@ impl PerthApp {
             Action::ToggleToolbar => self.toolbar_hidden = !self.toolbar_hidden,
             Action::Search => self.side = Some(Side::Filters),
             Action::Calendars => self.side = Some(Side::Calendars),
+            Action::Present => self.present(ctx, true),
             Action::Comment => {
                 if self.selected.is_some() {
                     self.side = Some(Side::Details);
@@ -613,6 +617,12 @@ impl PerthApp {
         if shortcut(egui::Modifiers::COMMAND, egui::Key::N) {
             self.new_project();
         }
+        if ctx.input_mut(|i| i.consume_shortcut(&chrome::PRESENT)) {
+            self.present(ctx, !self.presenting);
+        }
+        if self.presenting && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            self.present(ctx, false);
+        }
         if ctx.input_mut(|i| i.consume_shortcut(&chrome::COMMENT)) && self.selected.is_some() {
             self.side = Some(Side::Details);
             self.details_tab = DetailsTab::Comments;
@@ -647,6 +657,10 @@ impl PerthApp {
         let t = Tokens::get(ui.ctx());
         let whole = ui.max_rect().expand(8.0);
         ui.painter().rect_filled(whole, 0.0, t.window);
+        if self.presenting {
+            self.presentation(ui);
+            return;
+        }
         // The chrome — header and toolbar — is one surface, painted once its height is known.
         let chrome = ui.painter().add(egui::Shape::Noop);
         ui.spacing_mut().item_spacing.y = 0.0;
@@ -764,6 +778,51 @@ impl PerthApp {
         }
         if self.autosave && self.session.modified && self.session.path.is_some() {
             self.run("project.save", json!(null));
+        }
+    }
+
+    /// Starts presenting (full screen, the chrome away) or ends it.
+    pub fn present(&mut self, ctx: &egui::Context, on: bool) {
+        self.presenting = on;
+        self.quick_note = None;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));
+    }
+
+    /// Presenting: the project's name over the activities and the chart on the whole window, a
+    /// quiet way out in the corner.
+    fn presentation(&mut self, ui: &mut egui::Ui) {
+        let t = Tokens::get(ui.ctx());
+        let mut leave = false;
+        ui.horizontal(|ui| {
+            ui.set_height(40.0);
+            ui.add_space(12.0);
+            icons::show(ui, Icon::Mark, 22.0);
+            ui.add_space(6.0);
+            let name = if self.session.project.name.is_empty() { tr!("untitled") } else { self.session.project.name.clone() };
+            ui.label(egui::RichText::new(name).size(19.0).color(t.text));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(8.0);
+                leave = theme::ghost(ui, &tr!("present-leave"), "Esc", true);
+            });
+        });
+        let grid = egui::Frame::new().fill(t.grid_bg).stroke(egui::Stroke::new(1.0, t.border)).inner_margin(egui::Margin::same(1));
+        let mut events = activities::Events::default();
+        grid.show(ui, |ui| {
+            let size = ui.available_size();
+            ui.allocate_ui(size, |ui| {
+                ui.set_min_size(size);
+                if self.session.schedule.is_ok() {
+                    events = activities::show(ui, &self.session, &mut self.options, self.selected, &self.marked, &mut self.editing);
+                }
+            });
+        });
+        // Choosing still works, to point at an activity; nothing opens over the picture.
+        if let Some(i) = events.clicked {
+            self.selected = Some(i);
+            self.marked = std::iter::once(i).collect();
+        }
+        if leave {
+            self.present(ui.ctx(), false);
         }
     }
 

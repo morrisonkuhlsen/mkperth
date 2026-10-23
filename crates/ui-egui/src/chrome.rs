@@ -35,6 +35,8 @@ pub(crate) enum Action {
     Calendars,
     /// The selected activity's comments.
     Comment,
+    /// The schedule alone, full screen.
+    Present,
     Language(Lang),
 }
 
@@ -71,6 +73,8 @@ const TOOLBAR_HEIGHT: f32 = 36.0;
 /// Corners of the hover tints on the menus and the toolbar's buttons.
 const ROUND: f32 = 4.0;
 
+/// Presenting: the schedule alone on the whole screen, as slides start.
+pub(crate) const PRESENT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F5);
 /// A comment on the selected activity, as spreadsheets have it.
 pub(crate) const COMMENT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::M);
 pub(crate) const TOGGLE_TOOLBAR: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::F1);
@@ -221,6 +225,10 @@ pub(crate) fn header(ui: &mut egui::Ui, state: &State) -> Option<Action> {
                 action = Some(Action::Theme(p));
             }
         });
+        let tip = format!("{} ({})", tr!("present-tip"), ui.ctx().format_shortcut(&PRESENT));
+        if tool(ui, Icon::Present, &tr!("present"), &tip, true, false) {
+            action = Some(Action::Present);
+        }
         if tool(ui, Icon::Search, &tr!("search"), &tr!("search-tip"), true, false) {
             action = Some(Action::Search);
         }
@@ -348,6 +356,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
             }
         });
         ui.separator();
+        if item(ui, &tr!("present"), Some(PRESENT), true) {
+            set(Action::Present);
+        }
         let toggle = if state.toolbar_hidden { tr!("toolbar-show") } else { tr!("toolbar-hide") };
         if item(ui, &toggle, Some(TOGGLE_TOOLBAR), true) {
             set(Action::ToggleToolbar);

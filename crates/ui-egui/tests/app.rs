@@ -503,3 +503,17 @@ fn double_clicks_on_the_chart_add_notes_and_open_details() {
     double_click(&mut h, egui::pos2(960.0, ROW_A20));
     assert_eq!((h.state().selected, h.state().side), (Some(3), Some(mkperth_ui_egui::Side::Details)));
 }
+
+/// F5 presents: the header and the panes away, the activities alone; Esc ends it.
+#[test]
+fn presenting_shows_the_schedule_alone() {
+    let mut h = harness(PerthApp::default());
+    h.key_press(egui::Key::F5);
+    h.run_steps(2);
+    assert!(h.state().presenting);
+    assert!(h.query_by_label("File").is_none() && h.query_by_label("Details").is_none(), "the chrome is away");
+    assert!(h.query_by_label("Leave the presentation").is_some());
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    assert!(!h.state().presenting && h.query_by_label("File").is_some());
+}

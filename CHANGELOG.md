@@ -24,6 +24,9 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Presentation mode (the screen icon in the header, View > Presentation mode, F5): the
+  project's name over the activities and the chart, full screen, the menus, toolbar, rail and
+  panes away; Esc, F5 or Leave the presentation ends it.
 - Clicking and dragging on the activities: drag over rows to choose them (in the table every
   row spanned, on the chart the bars touched), Ctrl and a click to add or take one, Shift and a
   click for a run of them, Ctrl+A for all, Esc to keep only the selected; Delete takes every one
