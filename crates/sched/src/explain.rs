@@ -138,6 +138,12 @@ impl Explanation {
             None if m.evening => tr!("ex-evening", date = date(m.date).as_str()),
             None => tr!("ex-morning", date = date(m.date).as_str()),
         };
+        // A moment after "before" or "after": Portuguese joins "de" to its article (da manhã).
+        let of = |m: Moment| match m.time {
+            Some(t) => tr!("ex-of-at-time", date = date(m.date).as_str(), time = format!("{:02}:{:02}", t / 60, t % 60).as_str()),
+            None if m.evening => tr!("ex-of-evening", date = date(m.date).as_str()),
+            None => tr!("ex-of-morning", date = date(m.date).as_str()),
+        };
         // Working minutes in days, with a decimal when they aren't whole.
         let in_days = |minutes: i64| {
             let d = self.day_minutes.max(1);
@@ -192,8 +198,8 @@ impl Explanation {
                 "  ".to_string()
                     + &capitalized(match (b.via, b.overrides) {
                         (_, true) => tr!("ex-early-mandatory", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
-                        (Some(v), _) => tr!("ex-early-via", source = source(&b.source).as_str(), via = at(v).as_str(), at = at(b.moment).as_str()),
-                        (None, _) => tr!("ex-early-bound", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
+                        (Some(v), _) => tr!("ex-early-via", source = source(&b.source).as_str(), via = of(v).as_str(), at = of(b.moment).as_str()),
+                        (None, _) => tr!("ex-early-bound", source = source(&b.source).as_str(), at = of(b.moment).as_str()),
                     }),
             );
         }
@@ -218,8 +224,8 @@ impl Explanation {
                 "  ".to_string()
                     + &capitalized(match (b.via, b.overrides) {
                         (_, true) => tr!("ex-late-mandatory", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
-                        (Some(v), _) => tr!("ex-late-via", source = source(&b.source).as_str(), via = at(v).as_str(), at = at(b.moment).as_str()),
-                        (None, _) => tr!("ex-late-bound", source = source(&b.source).as_str(), at = at(b.moment).as_str()),
+                        (Some(v), _) => tr!("ex-late-via", source = source(&b.source).as_str(), via = of(v).as_str(), at = of(b.moment).as_str()),
+                        (None, _) => tr!("ex-late-bound", source = source(&b.source).as_str(), at = of(b.moment).as_str()),
                     }),
             );
         }

@@ -37,7 +37,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   mandatory nor as late as possible; other pairs are refused with a catalogued message. An
   expected finish sets the work, or the work left, from the start to that evening (P6 XML's
   `ExpectedFinishDate`).
-- **Next:** an exception day's own work periods; #5.
+  Every date with its calculation (#5): the bounds of each pass, the one that wins, the calendar's
+  placing, the floats; held against the schedule for every hand network, and exported as a
+  LaTeX document (ASCII, accents as TeX's commands) that pdflatex compiles in both languages
+  (`activity.export-tex`, the Calculation pane's LaTeX button).
+- **Next:** an exception day's own work periods.
 
 ## M1 — data in and out
 - *Done:* Perth.jl's project JSON (`mkperth-perth`), read and written back byte for byte: a

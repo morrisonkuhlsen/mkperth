@@ -34,11 +34,12 @@ fn main() -> eframe::Result {
                 .pick_file()
         })),
         pick_save: Some(Box::new(|suggested: &str| {
-            rfd::FileDialog::new()
-                .add_filter("Perth.jl project (.json)", &["json"])
-                .add_filter("Primavera P6 XML (.xml)", &["xml"])
-                .set_file_name(suggested)
-                .save_file()
+            let dialog = if suggested.ends_with(".tex") {
+                rfd::FileDialog::new().add_filter("LaTeX (.tex)", &["tex"])
+            } else {
+                rfd::FileDialog::new().add_filter("Perth.jl project (.json)", &["json"]).add_filter("Primavera P6 XML (.xml)", &["xml"])
+            };
+            dialog.set_file_name(suggested).save_file()
         })),
     };
     let mut app = PerthApp::new(services);

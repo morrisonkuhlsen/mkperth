@@ -649,3 +649,43 @@ fn an_expected_finish_sets_the_work() {
     p.activities[1].expected_finish = Some(day(2026, 10, 9));
     assert_eq!(get(&schedule(&p).unwrap(), "B").remaining_minutes, 0);
 }
+
+#[test]
+fn latex_is_plain_ascii_with_accents_as_commands() {
+    assert_eq!(latex::escape("Concluída: ação & 50% — A → B ≤ 0"), "Conclu\\'{i}da: a\\c{c}\\~{a}o \\& 50\\% --- A $\\to$ B $\\le$ 0");
+    assert_eq!(latex::escape("日本 x_1 {y}"), "?? x\\_1 \\{y\\}");
+}
+
+/// Every activity of the hand networks, in both languages, as a document: ASCII, and it compiles
+/// where pdflatex is installed.
+#[test]
+fn the_calculation_as_latex_compiles() {
+    let mut p = progressed(ProgressMode::RetainedLogic);
+    p.activities[0].actual_start = Some(day(2026, 10, 5));
+    p.activities[1].name = "Fundação & 100% — açúcar".into();
+    p.activities[2].expected_finish = Some(day(2026, 10, 9));
+    let dir = std::env::temp_dir().join(format!("mkperth-tex-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let pdflatex = std::process::Command::new("pdflatex").arg("--version").output().is_ok();
+    for lang in mkperth_i18n::Lang::ALL {
+        mkperth_i18n::set(lang);
+        for a in &p.activities {
+            let tex = explain(&p, &a.id).unwrap().to_latex("test", &a.name, &|d: Date| d.to_string());
+            assert!(tex.is_ascii(), "{tex}");
+            assert!(tex.contains("\\begin{document}") && tex.contains("\\subsection*"));
+            if pdflatex {
+                let file = dir.join(format!("{}-{}.tex", a.id, lang.code()));
+                std::fs::write(&file, &tex).unwrap();
+                let run = std::process::Command::new("pdflatex")
+                    .args(["-interaction=nonstopmode", "-halt-on-error", "-output-directory"])
+                    .arg(&dir)
+                    .arg(&file)
+                    .output()
+                    .unwrap();
+                assert!(run.status.success(), "{}\n{tex}", String::from_utf8_lossy(&run.stdout));
+            }
+        }
+    }
+    mkperth_i18n::set(mkperth_i18n::Lang::En);
+    std::fs::remove_dir_all(&dir).ok();
+}

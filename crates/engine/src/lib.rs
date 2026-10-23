@@ -58,11 +58,12 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 12] = [
+pub const COMMANDS: [&str; 13] = [
     "project.open",
     "project.save",
     "project.sample",
     "project.schedule",
+    "activity.export-tex",
     "activity.add",
     "activity.edit",
     "activity.delete",
@@ -128,6 +129,12 @@ impl Session {
                 self.reschedule();
                 Ok(())
             }
+            // The calculation of an activity as LaTeX, dates as 2026-11-02.
+            "activity.export-tex" => {
+                let param = |name: &str| params.get(name).and_then(Value::as_str).ok_or_else(|| EngineError::Param(id.to_string(), name.to_string()));
+                let (activity, path) = (param("id")?, param("path")?);
+                self.export_latex(activity, Path::new(path), &|d| d.to_string())
+            }
             other => Err(EngineError::UnknownCommand(other.to_string())),
         }
     }
@@ -167,6 +174,14 @@ impl Session {
     /// How the scheduler reached the dates of the activity `id`.
     pub fn explain(&self, id: &str) -> Result<mkperth_sched::Explanation, EngineError> {
         Ok(mkperth_sched::explain(&self.project, id)?)
+    }
+
+    /// Writes the calculation of the activity `id` as a LaTeX document at `path`, dates written
+    /// by `date`.
+    pub fn export_latex(&self, id: &str, path: &Path, date: &dyn Fn(mkperth_core::Date) -> String) -> Result<(), EngineError> {
+        let name = self.project.activities.iter().find(|a| a.id == id).map_or("", |a| a.name.as_str());
+        let tex = self.explain(id)?.to_latex(&self.project.name, name, date);
+        write_atomic(path, tex.as_bytes()).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))
     }
 
     /// Schedules the project again.
@@ -234,6 +249,20 @@ mod tests {
         s.run("edit.undo", &Value::Null).unwrap();
         s.run("edit.undo", &Value::Null).unwrap();
         assert_eq!(critical(&s), before);
+    }
+
+    #[test]
+    fn the_calculation_exports_as_latex() {
+        let mut s = Session::default();
+        let dir = std::env::temp_dir().join(format!("mkperth-engine-tex-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a10.tex");
+        s.run("activity.export-tex", &json!({"id": "A10", "path": path.display().to_string()})).unwrap();
+        let tex = std::fs::read_to_string(&path).unwrap();
+        assert!(tex.contains("\\documentclass") && tex.contains("A10") && tex.contains("2026-11-"));
+        assert!(matches!(s.run("activity.export-tex", &json!({"id": "nope", "path": path.display().to_string()})), Err(EngineError::Schedule(_))));
+        assert!(matches!(s.run("activity.export-tex", &json!({"id": "A10"})), Err(EngineError::Param(..))));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -27,6 +27,7 @@
 
 mod clock;
 mod explain;
+mod latex;
 
 use std::collections::{HashMap, VecDeque};
 
@@ -39,6 +40,7 @@ use thiserror::Error;
 
 use clock::Clock;
 pub use explain::{Bound, Explanation, Moment, Slack, Source, constraint_name};
+pub use latex::escape as latex_escape;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ScheduleError {

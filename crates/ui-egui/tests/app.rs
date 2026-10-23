@@ -133,3 +133,22 @@ fn dates_are_read_as_each_language_writes_them() {
     assert_eq!(read_date("tomorrow"), None);
     assert_eq!(read_date("10/99/2026"), None);
 }
+
+#[test]
+fn the_calculation_saves_as_latex() {
+    let dir = std::env::temp_dir().join(format!("mkperth-ui-tex-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let target = dir.join("calc.tex");
+    let picked = target.clone();
+    let services =
+        Services { pick_save: Some(Box::new(move |suggested: &str| (suggested == "A10.tex").then(|| picked.clone()))), ..Services::default() };
+    let mut h = harness(PerthApp::new(services));
+    h.state_mut().selected = Some(2);
+    h.run_steps(2);
+    h.get_by_label("LaTeX").click();
+    h.run_steps(2);
+    let tex = std::fs::read_to_string(&target).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(tex.starts_with('%') && tex.contains("A10"), "{tex}");
+    assert!(matches!(h.state().status, Some(mkperth_ui_egui::Status::Info(_))));
+}

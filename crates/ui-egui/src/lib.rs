@@ -516,10 +516,16 @@ impl PerthApp {
         }
         ui.add_space(6.0);
         let mut schedule = false;
+        let mut export = false;
         theme::card(&t).show(ui, |ui| {
             ui.set_min_size(egui::vec2(ui.available_width(), ui.available_height()));
             schedule = theme::pane_header(ui, Icon::List, &tr!("pane-calculation"), &tr!("pane-calculation-tip"), |ui| {
-                ribbon::accent_button(ui, Icon::Run, &tr!("schedule")).on_hover_text(tr!("schedule-tip")).clicked()
+                let run = ribbon::accent_button(ui, Icon::Run, &tr!("schedule")).on_hover_text(tr!("schedule-tip")).clicked();
+                if self.selected.is_some() {
+                    ui.add_space(6.0);
+                    export = ui.button(tr!("export-tex")).on_hover_text(tr!("export-tex-tip")).clicked();
+                }
+                run
             });
             let Some(i) = self.selected else {
                 ui.label(egui::RichText::new(tr!("pane-calculation-empty")).color(t.text_dim));
@@ -551,6 +557,21 @@ impl PerthApp {
         });
         if schedule {
             self.run("project.schedule", json!(null));
+        }
+        if export {
+            self.export_latex();
+        }
+    }
+
+    /// The selected activity's calculation as a LaTeX document, where the person picks.
+    pub fn export_latex(&mut self) {
+        let Some(id) = self.selected.and_then(|i| self.session.project.activities.get(i)).map(|a| a.id.clone()) else { return };
+        let suggested = format!("{}.tex", id.replace(['/', '\\'], "-"));
+        if let Some(path) = self.services.pick_save.as_ref().and_then(|pick| pick(&suggested)) {
+            self.status = Some(match self.session.export_latex(&id, &path, &show_date) {
+                Ok(()) => Status::Info(tr!("status-exported", name = path.display().to_string().as_str())),
+                Err(e) => Status::Error(e.to_string()),
+            });
         }
     }
 
