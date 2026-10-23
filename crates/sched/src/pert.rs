@@ -187,6 +187,8 @@ mod tests {
             assignments: Vec::new(),
             comments: Vec::new(),
             levelling: Default::default(),
+            baselines: Vec::new(),
+            baseline_in_use: None,
             extra: Default::default(),
         };
         let a = pert(&project).unwrap();

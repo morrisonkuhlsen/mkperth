@@ -7,6 +7,7 @@
 
 mod activities;
 pub mod backstage;
+mod baselines_ui;
 mod calendars;
 mod chrome;
 mod comments_ui;
@@ -105,6 +106,8 @@ pub enum Side {
     Levelling,
     /// PERT's analysis: the expected finish, its spread and its chances.
     Pert,
+    /// The baselines: assigned, the one in use, deleted.
+    Baselines,
 }
 
 /// The note the Notes pane is making: its kind (0 a band, 1 a marker, 2 a month), name, dates
@@ -199,6 +202,8 @@ pub struct PerthApp {
     /// PERT's analysis and the project it was worked out for; the day its chance is asked for.
     pert_cache: Option<(mkperth_engine::core::Project, Result<mkperth_engine::sched::PertAnalysis, String>)>,
     pert_target: Option<Date>,
+    /// The name typed for the next baseline.
+    baseline_name: String,
     /// The resource selected in the Resources view, by index, and what that view is typing.
     pub resource_selected: Option<usize>,
     pub resource_form: ResourceForm,
@@ -291,7 +296,7 @@ impl PerthApp {
             recent: Vec::new(),
             view: View::default(),
             open_views: vec![View::Activities],
-            options: Options { late_bars: true, links: true, ..Options::default() },
+            options: Options { late_bars: true, links: true, baseline_bars: true, hidden: activities::HIDDEN, ..Options::default() },
             side: None,
             autosave: false,
             zoom: 100,
@@ -305,6 +310,7 @@ impl PerthApp {
             level_form: None,
             pert_cache: None,
             pert_target: None,
+            baseline_name: String::new(),
             resource_selected: None,
             resource_form: ResourceForm::default(),
             comment_form: CommentForm::default(),
@@ -554,6 +560,8 @@ impl PerthApp {
             Action::DeleteActivity => self.delete_activity(),
             Action::CriticalOnly => self.options.critical_only = !self.options.critical_only,
             Action::LateBars => self.options.late_bars = !self.options.late_bars,
+            Action::BaselineBars => self.options.baseline_bars = !self.options.baseline_bars,
+            Action::Baselines => self.side = Some(Side::Baselines),
             Action::Links => self.options.links = !self.options.links,
             Action::Table => self.options.table_hidden = !self.options.table_hidden,
             Action::Options(params) => self.run("project.options", params),
@@ -843,6 +851,7 @@ impl PerthApp {
             font_families: self.font_families.as_deref().unwrap_or_default(),
             critical_only: self.options.critical_only,
             late_bars: self.options.late_bars,
+            baseline_bars: self.options.baseline_bars,
             links: self.options.links,
             table_hidden: self.options.table_hidden,
             float_kind: self.session.project.float_kind,
@@ -936,6 +945,7 @@ impl PerthApp {
                             Side::Calendars => self.calendars_pane(ui),
                             Side::Levelling => self.levelling_pane(ui),
                             Side::Pert => self.pert_pane(ui),
+                            Side::Baselines => self.baselines_pane(ui),
                         }
                     });
                 });

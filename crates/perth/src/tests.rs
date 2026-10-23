@@ -284,6 +284,28 @@ fn an_assignee_is_a_resource_assigned() {
     assert_eq!(warnings.len(), 1);
 }
 
+/// Perth's baseline (task `a` from 1 September, 5 days, on Brazil's calendar: the 1st to the
+/// 8th, the 7th a holiday) is read as a baseline in use, and written back as it was; one taken
+/// in MK Perth travels in a field of its own.
+#[test]
+fn baselines_from_perth_and_our_own() {
+    let p = read(&full().to_string()).unwrap().project;
+    assert_eq!(p.baseline_in_use.as_deref(), Some(PERTH_BASELINE));
+    let b = p.baseline().unwrap();
+    assert_eq!(b.activities.len(), 1);
+    assert_eq!((b.activities[0].start, b.activities[0].finish), (day(2026, 9, 1), day(2026, 9, 8)));
+    assert!(!write(&p).0.contains("mkperth_baselines"), "Perth's own fields say it");
+    let mut q = p.clone();
+    q.baselines.push(Baseline {
+        name: "Contract".into(),
+        activities: vec![BaselineActivity { id: "b".into(), start: day(2026, 9, 10), finish: day(2026, 9, 21), duration: 3840 }],
+    });
+    q.baseline_in_use = Some("Contract".into());
+    let (text, _) = write(&q);
+    let back = read(&text).unwrap().project;
+    assert_eq!((back.baselines, back.baseline_in_use), (q.baselines, q.baseline_in_use));
+}
+
 /// PERT's estimates are Perth's own fields: read as hundredths of a day, written back as they
 /// were; a task without them writes none, one with decimals keeps them.
 #[test]

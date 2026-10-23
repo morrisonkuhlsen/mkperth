@@ -50,6 +50,10 @@ pub(crate) enum Action {
     Levelling,
     /// The PERT pane.
     Pert,
+    /// The Baselines pane.
+    Baselines,
+    /// The baseline's bars under the schedule's.
+    BaselineBars,
     /// The selected activity's comments.
     Comment,
     /// The schedule alone, full screen.
@@ -74,6 +78,7 @@ pub(crate) struct State<'a> {
     pub font_families: &'a [String],
     pub critical_only: bool,
     pub late_bars: bool,
+    pub baseline_bars: bool,
     pub links: bool,
     pub table_hidden: bool,
     pub float_kind: FloatKind,
@@ -349,6 +354,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         if item(ui, &tr!("pert-menu"), None, true) {
             set(Action::Pert);
         }
+        if item(ui, &tr!("baselines-menu"), None, true) {
+            set(Action::Baselines);
+        }
     });
     menu(ui, &tr!("menu-view"), |ui| {
         if ui.radio(state.view == View::Activities, tr!("activities-view")).on_hover_text(tr!("activities-view-tip")).clicked() {
@@ -369,6 +377,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         }
         if check(ui, state.links, &tr!("links")) {
             set(Action::Links);
+        }
+        if check(ui, state.baseline_bars, &tr!("baseline-bars")) {
+            set(Action::BaselineBars);
         }
         ui.separator();
         if item(ui, &tr!("time-wider"), None, true) {

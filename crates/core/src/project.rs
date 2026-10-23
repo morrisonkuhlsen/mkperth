@@ -255,6 +255,24 @@ impl Default for LevellingOptions {
     }
 }
 
+/// An activity as a baseline froze it: its dates and its duration then.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaselineActivity {
+    pub id: String,
+    pub start: Date,
+    pub finish: Date,
+    /// Working minutes.
+    pub duration: i64,
+}
+
+/// The plan frozen, to measure the schedule against: each activity's dates when it was taken.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Baseline {
+    /// Unique among the project's baselines.
+    pub name: String,
+    pub activities: Vec<BaselineActivity>,
+}
+
 /// Three estimates of an activity's duration, in hundredths of a working day (`UNIT` is a day),
 /// for PERT's analysis: they never move its dates, which its duration sets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -572,7 +590,19 @@ pub struct Project {
     pub comments: Vec<Comment>,
     /// How resources are levelled.
     pub levelling: LevellingOptions,
+    /// The plans frozen so far, oldest first.
+    pub baselines: Vec<Baseline>,
+    /// The baseline the schedule is compared with, by name: its bars and the variances.
+    pub baseline_in_use: Option<String>,
     pub extra: Extra,
+}
+
+impl Project {
+    /// The baseline the schedule is compared with, if it is still there.
+    pub fn baseline(&self) -> Option<&Baseline> {
+        let name = self.baseline_in_use.as_deref()?;
+        self.baselines.iter().find(|b| b.name == name)
+    }
 }
 
 /// A stretch of days shaded behind the bars, its name along its left edge: a rainy season, a

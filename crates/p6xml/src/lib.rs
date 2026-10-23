@@ -18,8 +18,8 @@ mod tree;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use mkperth_core::{
-    Activity, ActivityKind, Assignment, Calendar, Constraint, Date, DurationType, LevellingPriority, Period, Project, Relationship, RelationshipType,
-    Resource, ResourceKind, Role, UNIT, Weekday,
+    Activity, ActivityKind, Assignment, Baseline, BaselineActivity, Calendar, Constraint, Date, DurationType, LevellingPriority, Period, Project,
+    Relationship, RelationshipType, Resource, ResourceKind, Role, UNIT, Weekday,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -463,6 +463,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
     if let Some(id) = p.text_of("Id") {
         extra.insert(format!("{PREFIX}id"), id.to_string());
     }
+    let (baselines, baseline_in_use) = baselines_of(&root, p);
     Ok(Read {
         project: Project {
             name: p.text_of("Name").or_else(|| p.text_of("Id")).unwrap_or_default().to_string(),
@@ -483,12 +484,45 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             assignments,
             comments: Vec::new(),
             levelling: Default::default(),
+            baselines,
+            baseline_in_use,
             activities,
             relationships,
             extra,
         },
         warnings,
     })
+}
+
+/// The project's baselines, P6's `BaselineProject` elements: each one's activities with their
+/// planned dates and duration; and the one the project compares with
+/// (`CurrentBaselineProjectObjectId`).
+fn baselines_of(root: &Element, p: &Element) -> (Vec<Baseline>, Option<String>) {
+    let mut by_object: HashMap<&str, String> = HashMap::new();
+    let mut list = Vec::new();
+    for b in root.all("BaselineProject").take(1000) {
+        let name = b.text_of("Name").or_else(|| b.text_of("Id")).unwrap_or("Baseline").to_string();
+        let activities = b
+            .all("Activity")
+            .filter_map(|a| {
+                let id = a.text_of("Id")?.to_string();
+                let start = a.text_of("PlannedStartDate").or_else(|| a.text_of("StartDate")).and_then(date_of)?;
+                let finish = a.text_of("PlannedFinishDate").or_else(|| a.text_of("FinishDate")).and_then(date_of)?;
+                let hours = a
+                    .text_of("PlannedDuration")
+                    .and_then(|h| h.parse::<f64>().ok())
+                    .filter(|h| h.is_finite() && *h >= 0.0 && *h < 1e9)
+                    .unwrap_or(0.0);
+                Some(BaselineActivity { id, start, finish, duration: (hours * 60.0).round() as i64 })
+            })
+            .collect();
+        if let Some(o) = b.text_of("ObjectId") {
+            by_object.insert(o, name.clone());
+        }
+        list.push(Baseline { name, activities });
+    }
+    let in_use = p.text_of("CurrentBaselineProjectObjectId").and_then(|o| by_object.get(o).cloned());
+    (list, in_use)
 }
 
 /// Text for XML: `&`, `<`, `>`, quotes escaped.
@@ -654,6 +688,11 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     if let Some(d) = project.data_date {
         out.push_str(&format!("    <DataDate>{}</DataDate>\n", timestamp(d, false)));
     }
+    // A baseline's object number: 2 and on, after the project's 1.
+    let baseline_object = |name: &str| project.baselines.iter().position(|b| b.name == name).map(|k| k + 2);
+    if let Some(k) = project.baseline_in_use.as_deref().and_then(baseline_object) {
+        out.push_str(&format!("    <CurrentBaselineProjectObjectId>{k}</CurrentBaselineProjectObjectId>\n"));
+    }
     // Summaries are WBS elements; every other activity an Activity under its WBS. An activity's
     // object number is its place in the list, from 1000.
     let summary = |id: &str| project.activities.iter().any(|a| a.parent.as_deref() == Some(id));
@@ -767,7 +806,30 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     if on_summaries > 0 {
         warnings.push(tr!("warn-p6-summary-assignments", n = on_summaries));
     }
-    out.push_str("  </Project>\n</APIBusinessObjects>\n");
+    out.push_str("  </Project>\n");
+    // Each baseline as P6 keeps one: a project of its own, its activities at their planned dates.
+    let mut next = 1000 + project.activities.len();
+    for (k, b) in project.baselines.iter().enumerate() {
+        out.push_str(&format!(
+            "  <BaselineProject>\n    <ObjectId>{}</ObjectId>\n    <Id>{}</Id>\n    <Name>{}</Name>\n",
+            k + 2,
+            esc(&b.name),
+            esc(&b.name)
+        ));
+        for a in &b.activities {
+            next += 1;
+            out.push_str(&format!(
+                "    <Activity>\n      <ObjectId>{next}</ObjectId>\n      <Id>{}</Id>\n      <PlannedStartDate>{}</PlannedStartDate>\n      <PlannedFinishDate>{}</PlannedFinishDate>\n      <PlannedDuration>{}</PlannedDuration>\n      <ProjectObjectId>{}</ProjectObjectId>\n    </Activity>\n",
+                esc(&a.id),
+                timestamp(a.start, false),
+                timestamp(a.finish, true),
+                hours(a.duration),
+                k + 2
+            ));
+        }
+        out.push_str("  </BaselineProject>\n");
+    }
+    out.push_str("</APIBusinessObjects>\n");
     (out, warnings)
 }
 

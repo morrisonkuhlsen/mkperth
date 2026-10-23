@@ -14,7 +14,7 @@ const ROW: f32 = 24.0;
 const HEADER: f32 = 44.0;
 
 /// The table's columns: a message id and a width. The ID and the name are always shown.
-pub const COLUMNS: [(&str, f32); 9] = [
+pub const COLUMNS: [(&str, f32); 14] = [
     ("col-id", 84.0),
     ("col-name", 230.0),
     ("col-duration", 60.0),
@@ -24,7 +24,15 @@ pub const COLUMNS: [(&str, f32); 9] = [
     ("col-late-finish", 84.0),
     ("col-total-float", 72.0),
     ("col-free-float", 72.0),
+    ("col-bl-start", 84.0),
+    ("col-bl-finish", 84.0),
+    ("col-start-variance", 72.0),
+    ("col-finish-variance", 72.0),
+    ("col-duration-variance", 72.0),
 ];
+
+/// The columns hidden at first: the baseline's, until asked for.
+pub const HIDDEN: [bool; 14] = [false, false, false, false, false, false, false, false, false, true, true, true, true, true];
 
 /// A table cell that can be edited in place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,7 +139,9 @@ pub struct Options {
     /// Rows whose ID or name holds this text (any case), with their summaries.
     pub search: String,
     /// The columns hidden, by their place in `COLUMNS`.
-    pub hidden: [bool; 9],
+    pub hidden: [bool; 14],
+    /// The baseline in use as thin bars under the schedule's.
+    pub baseline_bars: bool,
     /// The whole table hidden: the chart takes its width, the names beside the bars.
     pub table_hidden: bool,
     /// Today, drawn as a line on the chart.
@@ -259,6 +269,11 @@ pub(crate) fn show(
     let rows = visible(session, options);
     let acts = &session.project.activities;
     let s_of = |i: usize| schedule.activities.get(i);
+    // The baseline in use: each activity's frozen dates, and its variances.
+    let baseline: std::collections::HashMap<&str, &mkperth_engine::core::BaselineActivity> =
+        session.project.baseline().map(|b| b.activities.iter().map(|x| (x.id.as_str(), x)).collect()).unwrap_or_default();
+    let compared = !baseline.is_empty() && (options.baseline_bars || (9..14).any(|k| !options.hidden.get(k).copied().unwrap_or(true)));
+    let variances = if compared { mkperth_engine::sched::variances(&session.project, schedule) } else { Vec::new() };
     let columns = if options.table_hidden { Vec::new() } else { options.columns() };
     let table_width: f32 = columns.iter().map(|(_, _, w)| w).sum();
     // Where a column starts, if shown.
@@ -669,6 +684,11 @@ pub(crate) fn show(
                 .map_or(session.project.calendar.day_minutes(), |c| c.day_minutes());
             let duration = if summary { String::new() } else { crate::days_text(a.working_minutes(day), day) };
             let float_color = if s.critical && !summary { t.red } else { t.cell_text };
+            let b = baseline.get(a.id.as_str()).copied();
+            let v = variances.get(i).copied().flatten();
+            // Late (a negative variance) in red.
+            let late = |x: Option<i64>| if x.is_some_and(|x| x < 0) { t.red } else { t.cell_text };
+            let signed = |m: i64| if m < 0 { format!("-{}", crate::days_text(-m, day)) } else { crate::days_text(m, day) };
             let cells = [
                 (a.id.clone(), t.cell_text, 0.0),
                 (a.name.clone(), if summary { t.text } else { t.cell_text }, depth as f32 * 14.0),
@@ -679,6 +699,11 @@ pub(crate) fn show(
                 (show_date(s.late_finish), t.text_dim, 0.0),
                 (crate::days_text(s.total_float_minutes, day), float_color, 0.0),
                 (crate::days_text(s.free_float_minutes, day), t.cell_text, 0.0),
+                (b.map(|b| show_date(b.start)).unwrap_or_default(), t.text_dim, 0.0),
+                (b.map(|b| show_date(b.finish)).unwrap_or_default(), t.text_dim, 0.0),
+                (v.map(|v| v.start.to_string()).unwrap_or_default(), late(v.map(|v| v.start)), 0.0),
+                (v.map(|v| v.finish.to_string()).unwrap_or_default(), late(v.map(|v| v.finish)), 0.0),
+                (v.map(|v| signed(v.duration)).unwrap_or_default(), late(v.map(|v| v.duration)), 0.0),
             ];
             let mut x = rect.left();
             for (k, (text, color, indent)) in cells.into_iter().enumerate() {
@@ -771,6 +796,14 @@ pub(crate) fn show(
             let chosen = selected == Some(i) || marked.contains(&i) || banded.contains(&i);
             let background = if chosen { t.accent_soft } else { t.grid_bg };
             let look = Look { summary, selected: chosen, float: options.late_bars, background, data_date };
+            // The baseline's bar, thin, under the schedule's.
+            if options.baseline_bars
+                && let Some(b) = b
+            {
+                let (l, r) = (x_of(b.start.days(), chart_left), x_of(b.finish.days(), chart_left) + scale);
+                let y = rect.center().y + 6.0;
+                chart.rect_filled(Rect::from_min_max(pos2(l, y), pos2(r.max(l + 3.0), y + 3.5)), 1.0, t.orange.gamma_multiply(0.85));
+            }
             bar(&chart, a.kind, &a.name, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, look, &t);
         }
         // The bar where it would go, over its row, with its new days beside the pointer.

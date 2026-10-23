@@ -11,7 +11,7 @@ pub use calendar::{Calendar, CalendarError, DEFAULT_PERIODS, MINUTES_PER_DAY, Pe
 pub use date::{Date, Weekday};
 pub use holidays::{Region, easter};
 pub use project::{
-    Activity, ActivityKind, Assignment, Band, Comment, Constraint, CriticalBy, DurationType, Extra, FloatKind, LagCalendar, LevelBy, Levelled,
-    LevellingOptions, LevellingPriority, Marker, MonthMark, Pert, ProgressMode, Project, Relationship, RelationshipType, Resource, ResourceKind,
-    Role, UNIT,
+    Activity, ActivityKind, Assignment, Band, Baseline, BaselineActivity, Comment, Constraint, CriticalBy, DurationType, Extra, FloatKind,
+    LagCalendar, LevelBy, Levelled, LevellingOptions, LevellingPriority, Marker, MonthMark, Pert, ProgressMode, Project, Relationship,
+    RelationshipType, Resource, ResourceKind, Role, UNIT,
 };

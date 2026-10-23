@@ -29,6 +29,8 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
         assignments: Vec::new(),
         comments: Vec::new(),
         levelling: Default::default(),
+        baselines: Vec::new(),
+        baseline_in_use: None,
         activities: activities
             .iter()
             .map(|(id, d)| Activity { id: id.to_string(), name: id.to_string(), duration: *d, ..Activity::default() })

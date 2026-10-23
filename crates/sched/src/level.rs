@@ -275,6 +275,8 @@ mod tests {
             assignments: vec![on("A", 24), on("B", 16)],
             comments: Vec::new(),
             levelling: Default::default(),
+            baselines: Vec::new(),
+            baseline_in_use: None,
             extra: Default::default(),
         }
     }

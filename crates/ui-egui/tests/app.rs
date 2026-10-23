@@ -722,3 +722,22 @@ fn pert_estimates_and_their_analysis() {
     assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::Pert));
     assert!(h.query_by_label("Expected").is_some() && h.query_by_label("The expected path").is_some());
 }
+
+/// The Baselines pane: the schedule frozen as "Baseline 1" and put in use, then compared with
+/// none.
+#[test]
+fn baselines_are_assigned_in_their_pane() {
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Project").click();
+    h.run_steps(2);
+    h.get_by_label("Baselines…").click();
+    h.run_steps(2);
+    assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::Baselines));
+    h.get_by_label("Assign baseline").click();
+    h.run_steps(2);
+    let p = &h.state().session.project;
+    assert_eq!((p.baselines.len(), p.baseline_in_use.as_deref()), (1, Some("Baseline 1")));
+    h.get_by_label("No baseline").click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project.baseline_in_use, None);
+}

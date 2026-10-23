@@ -13,8 +13,8 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use mkperth_core::{
-    Activity, ActivityKind, Assignment, Band, Calendar, Comment, Constraint, Date, Extra, LevelBy, Levelled, LevellingOptions, LevellingPriority,
-    Marker, MonthMark, Pert, Project, Region, Relationship, RelationshipType, Resource, UNIT,
+    Activity, ActivityKind, Assignment, Band, Baseline, BaselineActivity, Calendar, Comment, Constraint, Date, Extra, LevelBy, Levelled,
+    LevellingOptions, LevellingPriority, Marker, MonthMark, Pert, Project, Region, Relationship, RelationshipType, Resource, UNIT,
 };
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
@@ -93,7 +93,11 @@ const TASK_MAPPED: [&str; 13] = [
 ];
 /// The longest a PERT estimate may be, in days.
 const MAX_ESTIMATE: f64 = 1e6;
-const PROJECT_MAPPED: [&str; 8] = ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING];
+const PROJECT_MAPPED: [&str; 9] = ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING, BASELINES];
+/// MK Perth's baselines, written only when they aren't the one Perth's own task fields hold.
+const BASELINES: &str = "mkperth_baselines";
+/// The name of the baseline Perth's `baseline_start` and `baseline_duration` make.
+pub const PERTH_BASELINE: &str = "Perth.jl";
 /// MK Perth's levelling, which Perth has no fields for: a task's priority and where levelling
 /// held it, and the project's options; each written only when it says something.
 const PRIORITY: &str = "mkperth_levelling_priority";
@@ -402,6 +406,34 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         }
         Some(_) => return Err(PerthError::Field(String::new(), LEVELLING.into())),
     };
+    // Baselines: MK Perth's own when the file has them, else the one in Perth's task fields.
+    let (baselines, baseline_in_use) = match root.get(BASELINES) {
+        Some(Value::Object(o)) => {
+            let bad = || PerthError::Field(String::new(), BASELINES.into());
+            let mut list = Vec::new();
+            for b in o.get("list").and_then(Value::as_array).ok_or_else(bad)?.iter().take(MAX_ANNOTATIONS) {
+                let name = b.get("name").and_then(Value::as_str).ok_or_else(bad)?.to_string();
+                let mut acts = Vec::new();
+                for x in b.get("activities").and_then(Value::as_array).ok_or_else(bad)?.iter().take(MAX_TASKS) {
+                    let text = |k: &str| x.get(k).and_then(Value::as_str);
+                    let (Some(id), Some(start), Some(finish)) =
+                        (text("id"), text("start").and_then(Date::parse), text("finish").and_then(Date::parse))
+                    else {
+                        return Err(bad());
+                    };
+                    let duration = x.get("duration_minutes").and_then(Value::as_i64).filter(|m| *m >= 0).ok_or_else(bad)?;
+                    acts.push(BaselineActivity { id: id.to_string(), start, finish, duration });
+                }
+                list.push(Baseline { name, activities: acts });
+            }
+            (list, o.get("in_use").and_then(Value::as_str).map(str::to_string))
+        }
+        Some(Value::Null) | None => match perth_baseline(&activities, &calendar) {
+            Some(b) => (vec![b], Some(PERTH_BASELINE.to_string())),
+            None => (Vec::new(), None),
+        },
+        Some(_) => return Err(PerthError::Field(String::new(), BASELINES.into())),
+    };
     // An assignee is a resource named as written (one for each name), assigned for the task's
     // effort, else its working hours at one an hour.
     let mut resources: Vec<Resource> = Vec::new();
@@ -434,12 +466,42 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             assignments,
             comments,
             levelling,
+            baselines,
+            baseline_in_use,
             activities,
             relationships,
             extra,
         },
         warnings,
     })
+}
+
+/// The baseline Perth.jl keeps in its tasks (`baseline_start` and `baseline_duration`, in days,
+/// kept in `extra`), as one of MK Perth's: a task with a baseline start, finishing on the last of
+/// its days on `calendar`. `None` when no task has one.
+fn perth_baseline(activities: &[Activity], calendar: &Calendar) -> Option<Baseline> {
+    let day = calendar.day_minutes();
+    let list: Vec<BaselineActivity> = activities
+        .iter()
+        .filter_map(|a| {
+            let start = a.extra.get("perth.baseline_start").and_then(|v| serde_json::from_str::<String>(v).ok()).and_then(|s| Date::parse(&s))?;
+            let days =
+                a.extra.get("perth.baseline_duration").and_then(|v| v.parse::<f64>().ok()).filter(|d| d.is_finite() && *d >= 0.0).unwrap_or(0.0);
+            let days = (days.round() as i64).min(100_000);
+            // The last of its working days: the start, then a working day more for each after it.
+            let (mut finish, mut left, mut steps) = (start, days - 1, 0);
+            while left > 0 && steps < 400_000 {
+                match finish.succ() {
+                    Some(next) => finish = next,
+                    None => break,
+                }
+                steps += 1;
+                left -= i64::from(calendar.is_working(finish));
+            }
+            Some(BaselineActivity { id: a.id.clone(), start, finish, duration: days.saturating_mul(day) })
+        })
+        .collect();
+    (!list.is_empty()).then(|| Baseline { name: PERTH_BASELINE.into(), activities: list })
 }
 
 /// The calendar as Perth.jl names it: empty for calendar days, a BusinessDays.jl name for working
@@ -591,6 +653,24 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         .collect();
     if !comments.is_empty() {
         fields.push((COMMENTS.into(), Value::Array(comments)));
+    }
+    // The baselines, unless they are just the one Perth's task fields already say.
+    let from_tasks = perth_baseline(&project.activities, &project.calendar);
+    let said = (from_tasks.iter().cloned().collect::<Vec<_>>(), from_tasks.as_ref().map(|_| PERTH_BASELINE.to_string()));
+    if !project.baselines.is_empty() && (project.baselines.clone(), project.baseline_in_use.clone()) != said {
+        let list: Vec<Value> = project
+            .baselines
+            .iter()
+            .map(|b| {
+                let acts: Vec<Value> = b
+                    .activities
+                    .iter()
+                    .map(|x| serde_json::json!({"id": x.id, "start": x.start.to_string(), "finish": x.finish.to_string(), "duration_minutes": x.duration}))
+                    .collect();
+                serde_json::json!({"name": b.name, "activities": acts})
+            })
+            .collect();
+        fields.push((BASELINES.into(), serde_json::json!({"in_use": project.baseline_in_use, "list": list})));
     }
     if project.levelling != LevellingOptions::default() {
         let l = &project.levelling;

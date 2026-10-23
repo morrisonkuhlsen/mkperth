@@ -25,6 +25,7 @@
 //! *Practice Standard for Scheduling*).
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod baseline;
 mod clock;
 mod explain;
 mod latex;
@@ -32,6 +33,7 @@ mod level;
 mod pert;
 mod usage;
 
+pub use baseline::{Variance, variances, working_days_between};
 pub use level::{Levelling, MAX_ROUNDS, Overload, level, overloads};
 pub use pert::{PertActivity, PertAnalysis, normal, pert};
 pub use usage::{by_week, capacity, usage};

@@ -98,7 +98,13 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   run `mkperth-cli` (on PATH or `ENV["MKPERTH_CLI"]`), no FFI and no dependency; Perth.jl's
   tests hold MK Perth's dates and float against its own `schedule!` and `slack`.
 - **Next:** the CLI's contract (verbs, `--format json` keys, exit codes) kept stable for the
-  bridge; `baseline.assign` with baselines (#22); resources (M4).
+  bridge; resources (M4).
+- *Done (#22):* baselines: `baseline.assign` freezes each activity's dates and duration under
+  a name (up to 50), `baseline.use` picks the one compared with, `baseline.delete`; the
+  baseline's bars under the schedule's and the BL start, BL finish and start, finish and
+  duration variance columns (P6's sign: baseline less schedule, in working days); in Perth's
+  JSON (its own `baseline_start` and `baseline_duration` read as a baseline) and as P6 XML's
+  `BaselineProject` with the project's current baseline.
 
 ## M3 — the Activities window
 - *Started:* a quiet header as in an online spreadsheet (the mark, the project's name and
@@ -172,6 +178,6 @@ measure work. A module of its own, after costs reach parity.
 ## Later
 - Progress beyond dates: percent complete, suspend and resume; the progress
   mode in P6 XML.
-- Baselines, earned value, S-curves.
+- Earned value, S-curves; a cost variance once costs exist (#23).
 - Activity codes, user-defined fields, EPS and OBS, multiple projects.
 - The network (logic) view; reports; the web build of the whole app.

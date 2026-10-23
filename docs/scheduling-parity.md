@@ -26,6 +26,7 @@ ideas.
 | Constraints | a secondary constraint beside the primary | done: both hold; a secondary needs a dated primary and bounds the other end (a start's with a finish's), never mandatory nor as late as possible — MK Perth's rule, as Oracle publishes no table of pairs (#4) |
 | Constraints | expected finish | done: the work (left, once started) runs from the start to that evening (#4) |
 | Project | must finish by date | done |
+| Project | baselines: assigned, the one in use, variances | done (#22): each activity's early dates and duration frozen; start and finish variances in working days of its calendar and the duration's in working days, baseline less schedule (negative is late), as P6 counts them; P6 XML's baseline projects and current baseline; the cost variance waits for costs (#23) |
 | Progress | data date; actual start and finish; remaining duration | done (#19) |
 | Progress | retained logic, progress override, actual dates | done (#19); percent complete, suspend and resume later |
 | Resources | duration types (fixed duration and units/time, fixed duration and units, fixed units/time, fixed units) | done: units = units an hour × the activity's working hours; a new duration changes the units (both "units/time" types) or the units an hour (both "units" types); new units change the units an hour (both "fixed duration" types) or the duration (the other two); a new rate changes the units, or the duration for fixed units; a duration from assignments is the longest they take. MK Perth's rule from P6's published idea of the four types (#20) |

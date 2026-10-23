@@ -3,6 +3,7 @@
 //! parameters, so they all behave the same.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod baselines;
 mod comments;
 mod edit;
 mod notes;
@@ -80,7 +81,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 37] = [
+pub const COMMANDS: [&str; 40] = [
     "project.new",
     "project.open",
     "project.save",
@@ -105,6 +106,9 @@ pub const COMMANDS: [&str; 37] = [
     "assignment.delete",
     "resource.level",
     "resource.unlevel",
+    "baseline.assign",
+    "baseline.use",
+    "baseline.delete",
     "comment.add",
     "comment.reply",
     "comment.edit",
@@ -178,6 +182,7 @@ impl Session {
             .or_else(|| self.note_command(id, params))
             .or_else(|| self.resource_command(id, params))
             .or_else(|| self.comment_command(id, params))
+            .or_else(|| self.baseline_command(id, params))
         {
             return result;
         }

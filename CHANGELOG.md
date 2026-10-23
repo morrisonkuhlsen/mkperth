@@ -41,6 +41,11 @@ Read it before re-scheduling a plan with a new version.
   finish; a ghost bar with the new days follows the pointer, the cursor says move or resize,
   and the dates, floats and calculation follow on release, one undo each. Summaries and
   activities already begun don't drag.
+- Baselines (#22, Project > Baselines…): the schedule frozen under a name, one of them in use;
+  its bars, thin and orange, under the schedule's (View > Baseline bars), and the columns BL
+  start, BL finish and the start, finish and duration variances (in Filters; a negative variance
+  is late, in working days). `baseline.assign`, `baseline.use` and `baseline.delete`; kept in
+  Perth's JSON (Perth.jl's own baseline read as one) and in P6 XML as baseline projects.
 - PERT as an analysis (Project > PERT analysis…): an activity's optimistic, most likely and
   pessimistic durations in Details (`activity.edit`'s `pert`; Perth's own fields in its JSON); the
   pane shows the finish planned and expected (each estimated activity at (O + 4M + P) / 6, on a

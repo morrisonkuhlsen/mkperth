@@ -257,3 +257,27 @@ fn resources_and_assignments_read_back() {
     let priorities = |p: &Project| p.activities.iter().map(|a| a.levelling_priority).collect::<Vec<_>>();
     assert_eq!(priorities(&back), priorities(&p), "levelling priorities, Normal unwritten");
 }
+
+/// Baselines are P6's baseline projects: written and read back with their activities' dates
+/// and durations, and the one in use as the project's current baseline.
+#[test]
+fn baselines_read_back() {
+    use mkperth_core::{Baseline, BaselineActivity};
+    let mut p = read(&file()).unwrap().project;
+    let id = p.activities[0].id.clone();
+    p.baselines = vec![
+        Baseline {
+            name: "Contract".into(),
+            activities: vec![BaselineActivity { id: id.clone(), start: day(2026, 11, 3), finish: day(2026, 11, 9), duration: 2400 }],
+        },
+        Baseline {
+            name: "Revised & <later>".into(),
+            activities: vec![BaselineActivity { id, start: day(2026, 11, 10), finish: day(2026, 11, 16), duration: 2430 }],
+        },
+    ];
+    p.baseline_in_use = Some("Revised & <later>".into());
+    let (text, _) = write(&p);
+    assert!(text.contains("<BaselineProject>") && text.contains("<CurrentBaselineProjectObjectId>3</CurrentBaselineProjectObjectId>"), "{text}");
+    let back = read(&text).unwrap().project;
+    assert_eq!((back.baselines, back.baseline_in_use), (p.baselines, p.baseline_in_use));
+}
