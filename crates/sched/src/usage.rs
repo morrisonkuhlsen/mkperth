@@ -10,12 +10,12 @@ use mkperth_core::{Calendar, Date, Project};
 use crate::{MAX_SPAN, Schedule};
 
 /// The calendar named `name` in the project; the project's own when `None` or unknown.
-fn calendar_named<'a>(project: &'a Project, name: Option<&str>) -> &'a Calendar {
+pub(crate) fn calendar_named<'a>(project: &'a Project, name: Option<&str>) -> &'a Calendar {
     name.and_then(|n| project.calendars.iter().find(|c| c.name == n)).unwrap_or(&project.calendar)
 }
 
 /// The working days from `from` to `to` on `calendar`, at most `MAX_SPAN` of them.
-fn working_days(calendar: &Calendar, from: Date, to: Date) -> Vec<Date> {
+pub(crate) fn working_days(calendar: &Calendar, from: Date, to: Date) -> Vec<Date> {
     let mut days = Vec::new();
     let mut d = from;
     while d <= to && days.len() < MAX_SPAN as usize {
@@ -113,6 +113,7 @@ mod tests {
                 Assignment { activity: "B10".into(), resource: Some("CONC".into()), planned: 1250, ..Assignment::default() },
             ],
             comments: Vec::new(),
+            levelling: Default::default(),
             extra: Default::default(),
         };
         let s = crate::schedule(&p).unwrap();

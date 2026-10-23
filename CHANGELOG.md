@@ -24,6 +24,17 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Resource levelling (#21): Project > Level resources…, or the Levelling pane on the right
+  strip, delays activities so that no resource (but a material) is asked, on any day, for more
+  units an hour than its max units. Day by day from the first over-allocation, the activities on
+  the resource keep it in an order the project chooses (levelling priority, total float, early or
+  late start, remaining duration; the ID last), the others waiting for the first to finish;
+  begun activities and mandatory dates don't move. Within float only, the finish stays and what
+  can't be resolved stays over. Each wait is a start no earlier than a day, shown in the
+  calculation ("Levelling, so Ana stays within its limit"); one undo, Clear levelling takes it
+  back. `resource.level` and `resource.unlevel` commands, `levelling_priority` on
+  `activity.edit`; the priority in Details; P6 XML's LevelingPriority; Perth's JSON keeps the
+  priority, the holds and the options in fields of MK Perth's own.
 - Bars are dragged on the chart: the whole bar moves the activity (it starts on or after its
   new day, a finish milestone finishes on or after it), its finish edge stretches or shortens it
   (working days from its start on its calendar), its start edge moves its start and keeps its

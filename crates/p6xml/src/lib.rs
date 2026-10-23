@@ -18,8 +18,8 @@ mod tree;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use mkperth_core::{
-    Activity, ActivityKind, Assignment, Calendar, Constraint, Date, DurationType, Period, Project, Relationship, RelationshipType, Resource,
-    ResourceKind, Role, UNIT, Weekday,
+    Activity, ActivityKind, Assignment, Calendar, Constraint, Date, DurationType, LevellingPriority, Period, Project, Relationship, RelationshipType,
+    Resource, ResourceKind, Role, UNIT, Weekday,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -70,6 +70,17 @@ fn duration_type_name(d: DurationType) -> &'static str {
         DurationType::FixedDurationAndUnits => "Fixed Duration and Units",
         DurationType::FixedRate => "Fixed Units/Time",
         DurationType::FixedUnits => "Fixed Units",
+    }
+}
+
+/// P6's names for the levelling priorities.
+fn levelling_priority_name(p: LevellingPriority) -> &'static str {
+    match p {
+        LevellingPriority::Top => "Top",
+        LevellingPriority::High => "High",
+        LevellingPriority::Normal => "Normal",
+        LevellingPriority::Low => "Low",
+        LevellingPriority::Lowest => "Lowest",
     }
 }
 
@@ -294,6 +305,10 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
                 .and_then(|d| DurationType::ALL.into_iter().find(|x| duration_type_name(*x) == d))
                 .unwrap_or_default(),
             resource_dependent: e.text_of("Type") == Some("Resource Dependent"),
+            levelling_priority: e
+                .text_of("LevelingPriority")
+                .and_then(|l| LevellingPriority::ALL.into_iter().find(|x| levelling_priority_name(*x) == l))
+                .unwrap_or_default(),
             ..Activity::default()
         };
         // Progress: the actual dates, and the work left of an activity under way.
@@ -467,6 +482,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             roles,
             assignments,
             comments: Vec::new(),
+            levelling: Default::default(),
             activities,
             relationships,
             extra,
@@ -679,6 +695,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         };
         out.push_str(&format!("      <Status>{status}</Status>\n"));
         out.push_str(&format!("      <DurationType>{}</DurationType>\n", duration_type_name(a.duration_type)));
+        if a.levelling_priority != LevellingPriority::default() {
+            out.push_str(&format!("      <LevelingPriority>{}</LevelingPriority>\n", levelling_priority_name(a.levelling_priority)));
+        }
         if let Some(d) = a.actual_start {
             out.push_str(&format!("      <ActualStartDate>{}</ActualStartDate>\n", timestamp(d, false)));
         }

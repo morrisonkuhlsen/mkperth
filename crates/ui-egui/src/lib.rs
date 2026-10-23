@@ -12,6 +12,7 @@ mod chrome;
 mod comments_ui;
 pub mod fonts;
 pub mod icons;
+mod levelling_ui;
 mod resources_view;
 pub mod splash;
 pub mod theme;
@@ -98,6 +99,8 @@ pub enum Side {
     Notes,
     /// The calendars: weeks, work periods, holidays.
     Calendars,
+    /// Resource levelling: what is over-allocated, the options, what was held.
+    Levelling,
 }
 
 /// The note the Notes pane is making: its kind (0 a band, 1 a marker, 2 a month), name, dates
@@ -187,6 +190,8 @@ pub struct PerthApp {
     pub quick_note: Option<QuickNote>,
     /// What the Calendars pane is editing.
     pub calendar_form: CalendarForm,
+    /// The levelling options as the Levelling pane edits them, and the project's they began as.
+    level_form: Option<(mkperth_engine::core::LevellingOptions, levelling_ui::LevelForm)>,
     /// The resource selected in the Resources view, by index, and what that view is typing.
     pub resource_selected: Option<usize>,
     pub resource_form: ResourceForm,
@@ -290,6 +295,7 @@ impl PerthApp {
             marked: std::collections::BTreeSet::new(),
             quick_note: None,
             calendar_form: CalendarForm::default(),
+            level_form: None,
             resource_selected: None,
             resource_form: ResourceForm::default(),
             comment_form: CommentForm::default(),
@@ -548,6 +554,7 @@ impl PerthApp {
             Action::ToggleToolbar => self.toolbar_hidden = !self.toolbar_hidden,
             Action::Search => self.side = Some(Side::Filters),
             Action::Calendars => self.side = Some(Side::Calendars),
+            Action::Levelling => self.side = Some(Side::Levelling),
             Action::Present => self.present(ctx, true),
             Action::Font(choice) => {
                 if let Some(save) = &self.services.save_font {
@@ -835,6 +842,7 @@ impl PerthApp {
                             Side::Filters => self.filters(ui),
                             Side::Notes => self.notes_pane(ui),
                             Side::Calendars => self.calendars_pane(ui),
+                            Side::Levelling => self.levelling_pane(ui),
                         }
                     });
                 });
@@ -1254,6 +1262,26 @@ impl PerthApp {
                             }
                         });
                         ui.add_space(3.0);
+                        // Which of two activities keeps a resource both want when levelling.
+                        ui.horizontal(|ui| {
+                            let label = ui.add_sized(
+                                egui::vec2(120.0, 18.0),
+                                egui::Label::new(egui::RichText::new(tr!("detail-levelling-priority")).size(12.0).color(t.text_dim)),
+                            );
+                            let name = |l: mkperth_engine::core::LevellingPriority| tr!(&format!("levelling-priority-{}", l.code()));
+                            let mut chosen = a.levelling_priority;
+                            let combo =
+                                egui::ComboBox::from_id_salt("levelling-priority").selected_text(name(chosen)).width(190.0).show_ui(ui, |ui| {
+                                    for l in mkperth_engine::core::LevellingPriority::ALL {
+                                        ui.selectable_value(&mut chosen, l, name(l));
+                                    }
+                                });
+                            combo.response.labelled_by(label.id).on_hover_text(tr!("detail-levelling-priority-tip"));
+                            if chosen != a.levelling_priority {
+                                pending = Some(("activity.edit", json!({"id": a.id, "levelling_priority": chosen.code()})));
+                            }
+                        });
+                        ui.add_space(3.0);
                     }
                     fact(ui, tr!("detail-calendar"), a.calendar.clone().unwrap_or_else(|| project.calendar.name.clone()));
                     if let Some(parent) = a.parent.as_deref() {
@@ -1454,6 +1482,7 @@ impl PerthApp {
             (Side::Filters, Icon::Filter, tr!("filters"), count),
             (Side::Notes, Icon::Pin, tr!("pane-notes"), 0),
             (Side::Calendars, Icon::Calendar, tr!("pane-calendars"), 0),
+            (Side::Levelling, Icon::Level, tr!("pane-levelling"), 0),
         ]
         .into_iter()
         .enumerate()

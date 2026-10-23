@@ -13,8 +13,8 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use mkperth_core::{
-    Activity, ActivityKind, Assignment, Band, Calendar, Comment, Constraint, Date, Extra, Marker, MonthMark, Project, Region, Relationship,
-    RelationshipType, Resource, UNIT,
+    Activity, ActivityKind, Assignment, Band, Calendar, Comment, Constraint, Date, Extra, LevelBy, Levelled, LevellingOptions, LevellingPriority,
+    Marker, MonthMark, Project, Region, Relationship, RelationshipType, Resource, UNIT,
 };
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
@@ -77,7 +77,12 @@ const PROJECT_FIELDS: [&str; 12] =
     ["id", "name", "tasks", "calendar", "people", "bands", "markers", "month_marks", "file_path", "baseline_at", "created_at", "updated_at"];
 /// The fields the model holds itself; the rest go to `extra`.
 const TASK_MAPPED: [&str; 10] = ["id", "name", "start", "duration", "dependencies", "milestone", "deadline", "parent", "notes", "assignee"];
-const PROJECT_MAPPED: [&str; 7] = ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS];
+const PROJECT_MAPPED: [&str; 8] = ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING];
+/// MK Perth's levelling, which Perth has no fields for: a task's priority and where levelling
+/// held it, and the project's options; each written only when it says something.
+const PRIORITY: &str = "mkperth_levelling_priority";
+const LEVELLED: &str = "mkperth_levelled";
+const LEVELLING: &str = "mkperth_levelling";
 /// MK Perth's comments, which Perth has no field for: a field of their own, written only when
 /// there are some, so a file without them is written back as it was.
 const COMMENTS: &str = "mkperth_comments";
@@ -247,9 +252,25 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             None => Vec::new(),
             Some(_) => return Err(PerthError::Field(label.clone(), "dependencies".into())),
         };
+        let levelling_priority = match t.get(PRIORITY) {
+            None | Some(Value::Null) => LevellingPriority::default(),
+            Some(v) => v.as_str().and_then(LevellingPriority::from_code).ok_or_else(|| PerthError::Field(label.clone(), PRIORITY.into()))?,
+        };
+        let levelled = match t.get(LEVELLED) {
+            None | Some(Value::Null) => None,
+            Some(Value::Object(o)) => {
+                let start = o.get("start").and_then(Value::as_str).and_then(Date::parse);
+                let resource = o.get("resource").and_then(Value::as_str);
+                match (start, resource) {
+                    (Some(start), Some(r)) => Some(Levelled { start, resource: r.to_string() }),
+                    _ => return Err(PerthError::Field(label.clone(), LEVELLED.into())),
+                }
+            }
+            Some(_) => return Err(PerthError::Field(label.clone(), LEVELLED.into())),
+        };
         let mut extra = Extra::new();
         for (key, value) in t {
-            if !TASK_MAPPED.contains(&key.as_str()) {
+            if !TASK_MAPPED.contains(&key.as_str()) && key != PRIORITY && key != LEVELLED {
                 extra.insert(format!("{PREFIX}{key}"), value.to_string());
             }
         }
@@ -285,6 +306,8 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             notes: text_of("notes")?,
             duration_type: Default::default(),
             resource_dependent: false,
+            levelling_priority,
+            levelled,
             extra,
         });
         dependencies.push((label, deps));
@@ -328,6 +351,27 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             resolved: t("resolved").as_deref() == Some("true"),
         })
     })?;
+    let levelling = match root.get(LEVELLING) {
+        None | Some(Value::Null) => LevellingOptions::default(),
+        Some(Value::Object(o)) => {
+            let bad = || PerthError::Field(String::new(), LEVELLING.into());
+            let texts = |k: &str| -> Result<Vec<String>, PerthError> {
+                match o.get(k) {
+                    None => Ok(Vec::new()),
+                    Some(Value::Array(items)) if items.len() <= MAX_ANNOTATIONS => {
+                        items.iter().map(|i| i.as_str().map(str::to_string).ok_or_else(bad)).collect()
+                    }
+                    Some(_) => Err(bad()),
+                }
+            };
+            let order = match o.get("order") {
+                None => LevellingOptions::default().order,
+                Some(_) => texts("order")?.iter().map(|c| LevelBy::from_code(c).ok_or_else(bad)).collect::<Result<_, _>>()?,
+            };
+            LevellingOptions { within_float: o.get("within_float").and_then(Value::as_bool).unwrap_or(false), resources: texts("resources")?, order }
+        }
+        Some(_) => return Err(PerthError::Field(String::new(), LEVELLING.into())),
+    };
     // An assignee is a resource named as written (one for each name), assigned for the task's
     // effort, else its working hours at one an hour.
     let mut resources: Vec<Resource> = Vec::new();
@@ -359,6 +403,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             roles: Vec::new(),
             assignments,
             comments,
+            levelling,
             activities,
             relationships,
             extra,
@@ -464,6 +509,12 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
                 fields.push((key, value));
             }
         }
+        if a.levelling_priority != LevellingPriority::default() {
+            fields.push((PRIORITY.into(), Value::String(a.levelling_priority.code().into())));
+        }
+        if let Some(l) = &a.levelled {
+            fields.push((LEVELLED.into(), serde_json::json!({"start": l.start.to_string(), "resource": l.resource})));
+        }
         for (key, value) in &a.extra {
             if let Some(field) = key.strip_prefix(PREFIX)
                 && !field.starts_with('~')
@@ -503,6 +554,11 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         .collect();
     if !comments.is_empty() {
         fields.push((COMMENTS.into(), Value::Array(comments)));
+    }
+    if project.levelling != LevellingOptions::default() {
+        let l = &project.levelling;
+        let order: Vec<&str> = l.order.iter().map(|b| b.code()).collect();
+        fields.push((LEVELLING.into(), serde_json::json!({"within_float": l.within_float, "resources": l.resources, "order": order})));
     }
     for (field, list) in [("bands", bands), ("markers", markers), ("month_marks", months)] {
         if !list.is_empty() || had(field) {

@@ -588,3 +588,31 @@ fn bars_are_dragged_and_stretched() {
     assert_eq!(s2.early_start, s0.early_start, "the start stays");
     assert!(stretched.constraint == before.constraint, "no constraint for a finish dragged");
 }
+
+/// The Levelling pane: two activities on one person at once; Level holds the one with float to
+/// wait, the status bar says so; Clear levelling takes it back.
+#[test]
+fn resources_are_levelled_in_their_pane() {
+    let mut h = harness(PerthApp::default());
+    for (id, params) in [
+        ("project.new", serde_json::json!({"start": "2026-10-05"})),
+        ("activity.add", serde_json::json!({"id": "A", "duration": 3})),
+        ("activity.add", serde_json::json!({"id": "B", "duration": 2})),
+        ("resource.add", serde_json::json!({"id": "ANA", "name": "Ana"})),
+        ("assignment.add", serde_json::json!({"activity": "A", "resource": "ANA"})),
+        ("assignment.add", serde_json::json!({"activity": "B", "resource": "ANA"})),
+    ] {
+        h.state_mut().run(id, params);
+    }
+    h.get_by_label("Levelling").click();
+    h.run_steps(2);
+    assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::Levelling));
+    h.get_by_label("Level").click();
+    h.run_steps(2);
+    let held = |h: &Harness<'static, PerthApp>| h.state().session.project.activities.iter().filter_map(|a| a.levelled.clone()).collect::<Vec<_>>();
+    assert_eq!(held(&h).iter().map(|l| l.start.to_string()).collect::<Vec<_>>(), ["2026-10-08"]);
+    assert!(matches!(&h.state().status, Some(mkperth_ui_egui::Status::Info(s)) if s.contains("1 activity waits")), "{:?}", h.state().status);
+    h.get_by_label("Clear levelling").click();
+    h.run_steps(2);
+    assert!(held(&h).is_empty());
+}

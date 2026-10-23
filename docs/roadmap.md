@@ -144,8 +144,12 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   An activity's assignments in Details' Resources tab.
   Duration types: a duration, units and units an hour worked out from each other by the type.
   Resource-dependent activities: each resource on its own calendar, the last one finishing it.
-- **Next:** prices that change over time (#23); levelling
-  with priorities (#21).
+  Levelling (#21): the parallel method day by day (Kelley 1963; Davis and Patterson 1975), the
+  activities on an over-allocated resource kept by a chosen order of priorities, the others
+  held to start after the first finishes; within float or not; every hold explained, one undo;
+  the Levelling pane, `resource.level` and `resource.unlevel`.
+- **Next:** prices that change over time (#23); levelling against a resource's limit that
+  changes over time, and with the activity codes of #26 as priorities.
 
 ## M5 — costs and earned value
 - **Next:** each activity's budgeted, actual, remaining and at-completion costs, from its
@@ -165,7 +169,6 @@ measure work. A module of its own, after costs reach parity.
 ## Later
 - Progress beyond dates: percent complete, suspend and resume; the progress
   mode in P6 XML.
-- Resources and roles, resource levelling, histograms.
 - Baselines, earned value, S-curves.
 - Activity codes, user-defined fields, EPS and OBS, multiple projects.
 - The network (logic) view; reports; the web build of the whole app.

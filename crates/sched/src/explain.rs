@@ -30,6 +30,8 @@ pub enum Source {
         lag: i64,
     },
     Constraint(Constraint),
+    /// Levelling held it, so that the resource (by ID) stays within its limit.
+    Levelled(String),
     ProjectFinish,
     MustFinishBy,
 }
@@ -173,6 +175,7 @@ impl Explanation {
             Source::ProjectFinish => tr!("ex-src-project-finish"),
             Source::MustFinishBy => tr!("ex-src-must-finish-by"),
             Source::Constraint(c) => constraint_name(*c, date),
+            Source::Levelled(resource) => tr!("ex-src-levelled", resource = resource.as_str()),
             Source::Relationship { other, kind, lag: l } => {
                 tr!("ex-src-relationship", kind = kind_name(*kind).as_str(), other = other.as_str(), lag = lag(*l).as_str())
             }

@@ -33,6 +33,8 @@ pub(crate) enum Action {
     ToggleToolbar,
     Search,
     Calendars,
+    /// The Levelling pane.
+    Levelling,
     /// The selected activity's comments.
     Comment,
     /// The schedule alone, full screen.
@@ -314,6 +316,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         ui.separator();
         if item(ui, &tr!("calendars-menu"), None, true) {
             set(Action::Calendars);
+        }
+        if item(ui, &tr!("level-menu"), None, true) {
+            set(Action::Levelling);
         }
     });
     menu(ui, &tr!("menu-view"), |ui| {

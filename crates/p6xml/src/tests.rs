@@ -240,6 +240,7 @@ fn resources_and_assignments_read_back() {
     if let Some(a) = p.activities.iter_mut().find(|a| a.id == task) {
         a.duration_type = DurationType::FixedUnits;
         a.resource_dependent = true;
+        a.levelling_priority = mkperth_core::LevellingPriority::Lowest;
     }
     let (text, _) = write(&p);
     assert!(text.contains("<MaxUnitsPerTime>2.5</MaxUnitsPerTime>") && text.contains("<PlannedUnits>12.75</PlannedUnits>"), "{text}");
@@ -252,4 +253,7 @@ fn resources_and_assignments_read_back() {
     assert!(text.contains("<Type>Resource Dependent</Type>"));
     let dependent = |p: &Project| p.activities.iter().map(|a| a.resource_dependent).collect::<Vec<_>>();
     assert_eq!(dependent(&back), dependent(&p), "resource dependent, as P6's type");
+    assert!(text.contains("<LevelingPriority>Lowest</LevelingPriority>"));
+    let priorities = |p: &Project| p.activities.iter().map(|a| a.levelling_priority).collect::<Vec<_>>();
+    assert_eq!(priorities(&back), priorities(&p), "levelling priorities, Normal unwritten");
 }

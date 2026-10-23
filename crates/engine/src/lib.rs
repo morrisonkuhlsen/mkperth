@@ -80,7 +80,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 35] = [
+pub const COMMANDS: [&str; 37] = [
     "project.new",
     "project.open",
     "project.save",
@@ -103,6 +103,8 @@ pub const COMMANDS: [&str; 35] = [
     "assignment.add",
     "assignment.edit",
     "assignment.delete",
+    "resource.level",
+    "resource.unlevel",
     "comment.add",
     "comment.reply",
     "comment.edit",

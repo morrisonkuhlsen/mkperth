@@ -363,6 +363,9 @@ impl Session {
             .map(|d| mkperth_core::DurationType::from_code(&d).ok_or_else(|| EngineError::Value(C.into(), "duration_type".into())))
             .transpose()?;
         let calendar = text(params, C, "calendar")?;
+        let priority = text(params, C, "levelling_priority")?
+            .map(|d| mkperth_core::LevellingPriority::from_code(&d).ok_or_else(|| EngineError::Value(C.into(), "levelling_priority".into())))
+            .transpose()?;
         let resource_dependent = match params.get("resource_dependent") {
             None | Some(Value::Null) => None,
             Some(v) => Some(v.as_bool().ok_or_else(|| EngineError::Value(C.into(), "resource_dependent".into()))?),
@@ -430,6 +433,9 @@ impl Session {
             }
             if let Some(r) = resource_dependent {
                 a.resource_dependent = r;
+            }
+            if let Some(l) = priority {
+                a.levelling_priority = l;
             }
             if let Some(name) = name {
                 a.name = name;

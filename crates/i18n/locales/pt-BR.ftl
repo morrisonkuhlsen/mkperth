@@ -286,6 +286,8 @@ undo-edit-resource = editar o recurso { $id }
 undo-delete-resource = excluir o recurso { $id }
 undo-add-role = adicionar a função { $id }
 undo-delete-role = excluir a função { $id }
+undo-level = nivelar recursos
+undo-unlevel = desfazer o nivelamento
 undo-add-assignment = alocar { $resource } em { $activity }
 undo-edit-assignment = editar uma alocação em { $activity }
 undo-delete-assignment = remover uma alocação de { $activity }
@@ -344,6 +346,7 @@ critical-threshold-tip = Crítica com folga total até este número de dias úte
 detail-longest-path = No caminho mais longo
 ex-at-time = { $date } às { $time }
 ex-src-data-date = A data de status
+ex-src-levelled = O nivelamento, para { $resource } ficar dentro do limite
 ex-completed = Concluída: começou em { $start } e terminou em { $finish }; suas datas são as reais, sem folga.
 ex-in-progress = Em andamento desde { $start }, faltam { $left } dias úteis: os cálculos agendam o que falta.
 option-data-date = Data de status
@@ -394,6 +397,50 @@ pane-notes = Anotações
 pane-calendars = Calendários
 pane-calendars-tip = Os calendários do projeto: semana de trabalho, turnos, feriados
 calendars-menu = Calendários…
+level-menu = Nivelar recursos…
+pane-levelling = Nivelamento
+pane-levelling-tip = Adiar atividades para nenhum recurso ser pedido além do que tem
+level-over = Acima do limite
+level-none-over = Nenhum recurso é pedido além do que tem.
+level-over-line = { $name }: { $n ->
+    [one] 1 dia
+   *[other] { $n } dias
+} acima, desde { $from }
+level-options = Opções
+level-within-float = Só dentro da folga
+level-within-float-tip = Adiar uma atividade só até onde vai a folga total: o término do projeto fica, e o que não se resolve continua acima
+level-resources = Recursos nivelados
+level-all-resources = Todos os recursos (menos materiais)
+level-order = Quem fica com o recurso primeiro
+level-order-tip = Um de cada vez; o seguinte só desempata, o ID por último.
+level-by-priority = Prioridade de nivelamento, a maior primeiro
+level-by-total-float = Folga total, a menor primeiro
+level-by-early-start = Início cedo, o mais cedo primeiro
+level-by-late-start = Início tarde, o mais cedo primeiro
+level-by-duration = Duração restante, a mais curta primeiro
+level-sooner = Subir { $name }
+level-later = Descer { $name }
+level-run = Nivelar
+level-run-tip = Nivelar agora, a partir do cronograma sem as retenções do último nivelamento
+level-clear = Desfazer o nivelamento
+level-clear-tip = Cada atividade de volta aonde a lógica a põe
+level-held = Retidas pelo nivelamento
+level-held-line = { $id }: a partir de { $date } ({ $resource })
+level-done = Nivelado: { $n ->
+    [one] 1 atividade espera
+   *[other] { $n } atividades esperam
+}; o projeto termina em { $finish }.
+level-left = { $n ->
+    [one] 1 dia continua
+   *[other] { $n } dias continuam
+} acima de um limite.
+detail-levelling-priority = Prioridade de nivelamento
+detail-levelling-priority-tip = De duas atividades que querem um recurso no mesmo dia, a de maior prioridade fica com ele
+levelling-priority-top = Máxima
+levelling-priority-high = Alta
+levelling-priority-normal = Normal
+levelling-priority-low = Baixa
+levelling-priority-lowest = Mínima
 calendar-which = Calendário
 calendar-project = { $name } (o do projeto)
 calendar-week = Semana de trabalho

@@ -58,6 +58,8 @@ pub enum Icon {
     Pin,
     /// Two people, one before the other: resources.
     People,
+    /// Three even bars under a line: resources levelled within their limit.
+    Level,
     /// A screen on its stand with a play mark: presenting.
     Present,
     ChevronUp,
@@ -431,6 +433,13 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, t: &Tokens) {
             line((8.0, 11.5), (8.0, 13.5), Stroke::new(w, t.text_dim));
             line((5.0, 14.0), (11.0, 14.0), Stroke::new(w, t.text_dim));
         }
+        Icon::Level => {
+            for x in [2.0, 6.5, 11.0] {
+                painter.rect_filled(r(x, 7.0, x + 3.0, 13.5), 0.5 * s, t.accent);
+            }
+            line((1.0, 5.0), (15.0, 5.0), Stroke::new(w, t.text_dim));
+            line((1.0, 14.5), (15.0, 14.5), Stroke::new(w, t.text_dim));
+        }
         Icon::People => {
             // The one behind, then the one in front: a head over shoulders each.
             painter.circle_filled(p(10.5, 4.5), 2.2 * s, t.text_dim);
@@ -461,7 +470,7 @@ pub fn show(ui: &mut egui::Ui, icon: Icon, size: f32) -> egui::Response {
 
 /// For tests: every icon stays inside its square.
 #[cfg(test)]
-pub(crate) const ALL: [Icon; 54] = [
+pub(crate) const ALL: [Icon; 55] = [
     Icon::Dashboard,
     Icon::Mark,
     Icon::Gantt,
@@ -516,6 +525,7 @@ pub(crate) const ALL: [Icon; 54] = [
     Icon::Nominal,
     Icon::Info,
     Icon::Close,
+    Icon::Level,
 ];
 
 #[cfg(test)]

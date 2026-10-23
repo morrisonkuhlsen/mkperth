@@ -284,6 +284,31 @@ fn an_assignee_is_a_resource_assigned() {
     assert_eq!(warnings.len(), 1);
 }
 
+/// Levelling travels in fields of MK Perth's own: a task's priority and hold, the project's
+/// options; a file without them is written back without them.
+#[test]
+fn levelling_is_written_and_read_back() {
+    let mut p = read(&full().to_string()).unwrap().project;
+    assert!(!write(&p).0.contains("mkperth_level"));
+    p.activities[0].levelling_priority = LevellingPriority::High;
+    p.activities[1].levelled = Some(Levelled { start: day(2026, 3, 9), resource: "Ana".into() });
+    p.levelling = LevellingOptions { within_float: true, resources: vec!["Ana".into()], order: vec![LevelBy::LateStart, LevelBy::Priority] };
+    let (text, warnings) = write(&p);
+    assert!(warnings.is_empty() && text.contains("\"mkperth_levelling_priority\":\"high\""), "{text}");
+    let back = read(&text).unwrap().project;
+    assert_eq!((back.activities[0].levelling_priority, &back.activities[1].levelled), (LevellingPriority::High, &p.activities[1].levelled));
+    assert_eq!(back.levelling, p.levelling);
+    assert_eq!(write(&back).0, text);
+    for bad in [r#"{"mkperth_levelled": 3}"#, r#"{"mkperth_levelling_priority": "urgent"}"#] {
+        let mut v = full();
+        let extra: Value = serde_json::from_str(bad).unwrap();
+        for (k, x) in extra.as_object().unwrap() {
+            v["tasks"][0][k] = x.clone();
+        }
+        assert!(read(&v.to_string()).is_err(), "{bad}");
+    }
+}
+
 /// Comments travel in a field of MK Perth's own, a thread with its replies and resolution.
 #[test]
 fn comments_are_written_and_read_back() {

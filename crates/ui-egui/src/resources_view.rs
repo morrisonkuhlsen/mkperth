@@ -238,11 +238,16 @@ impl PerthApp {
         let selected = self.resource_selected;
         let form = &mut self.resource_form;
         let label = |ui: &mut egui::Ui, text: String| ui.label(egui::RichText::new(text).size(12.0).color(t.text_dim)).id;
+        let mut open_levelling = false;
         // The table of resources, then the roles.
         let top = (height * 0.4).max(200.0);
         theme::card(&t).show(ui, |ui| {
             ui.set_min_size(egui::vec2(ui.available_width(), top));
-            theme::pane_header(ui, Icon::People, &tr!("resources-view"), &tr!("resources-view-tip"), |_| {});
+            if theme::pane_header(ui, Icon::People, &tr!("resources-view"), &tr!("resources-view-tip"), |ui| {
+                theme::ghost(ui, &tr!("level-menu"), &tr!("pane-levelling-tip"), true)
+            }) {
+                open_levelling = true;
+            }
             egui::ScrollArea::vertical().id_salt("resources-table").max_height(top - 110.0).auto_shrink([false, true]).show(ui, |ui| {
                 egui::Grid::new("resources").striped(true).num_columns(9).spacing(egui::vec2(14.0, 6.0)).show(ui, |ui| {
                     for head in [
@@ -452,6 +457,9 @@ impl PerthApp {
         });
         for (command, params) in pending {
             self.run(command, params);
+        }
+        if open_levelling {
+            self.side = Some(crate::Side::Levelling);
         }
     }
 }

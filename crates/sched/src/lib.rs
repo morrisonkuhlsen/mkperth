@@ -28,8 +28,10 @@
 mod clock;
 mod explain;
 mod latex;
+mod level;
 mod usage;
 
+pub use level::{Levelling, MAX_ROUNDS, Overload, level, overloads};
 pub use usage::{by_week, capacity, usage};
 
 use std::collections::{HashMap, VecDeque};
@@ -547,6 +549,16 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
                         overrides,
                     });
                 }
+            }
+        }
+        // Held by the last levelling: no start before the day it gave.
+        if status(i) == Status::NotStarted
+            && let Some(l) = acts.get(i).filter(|_| !is_summary(i)).and_then(|a| a.levelled.as_ref())
+            && let Some(t) = constraint_time(Constraint::StartOnOrAfter(l.start), &clock(cal_of(i)))?.map(bounded).transpose()?
+        {
+            start = start.max(t);
+            if traced(i) {
+                early_bounds.push(Bound { source: Source::Levelled(l.resource.clone()), moment: at(t, false)?, via: None, overrides: false });
             }
         }
         // Under way: the work left goes on from the data date, after its predecessors with

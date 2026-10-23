@@ -169,6 +169,100 @@ impl DurationType {
     }
 }
 
+/// How much an activity matters when resources are levelled: of two wanting a resource on the
+/// same day, the higher goes first (P6's levelling priority).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
+pub enum LevellingPriority {
+    Top,
+    High,
+    #[default]
+    Normal,
+    Low,
+    Lowest,
+}
+
+impl LevellingPriority {
+    /// From the highest to the lowest.
+    pub const ALL: [LevellingPriority; 5] =
+        [LevellingPriority::Top, LevellingPriority::High, LevellingPriority::Normal, LevellingPriority::Low, LevellingPriority::Lowest];
+
+    /// The commands' word for it.
+    pub fn code(self) -> &'static str {
+        match self {
+            LevellingPriority::Top => "top",
+            LevellingPriority::High => "high",
+            LevellingPriority::Normal => "normal",
+            LevellingPriority::Low => "low",
+            LevellingPriority::Lowest => "lowest",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<LevellingPriority> {
+        LevellingPriority::ALL.into_iter().find(|p| p.code() == code)
+    }
+}
+
+/// What decides, among activities wanting an over-allocated resource on the same day, which keep
+/// it: each in turn, the next only to break a tie (the activity's ID breaks the last).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LevelBy {
+    /// The higher levelling priority first.
+    Priority,
+    /// The smaller total float first.
+    TotalFloat,
+    /// The earlier early start first.
+    EarlyStart,
+    /// The earlier late start first.
+    LateStart,
+    /// The shorter first.
+    Duration,
+}
+
+impl LevelBy {
+    pub const ALL: [LevelBy; 5] = [LevelBy::Priority, LevelBy::TotalFloat, LevelBy::EarlyStart, LevelBy::LateStart, LevelBy::Duration];
+
+    /// The commands' word for it.
+    pub fn code(self) -> &'static str {
+        match self {
+            LevelBy::Priority => "priority",
+            LevelBy::TotalFloat => "total-float",
+            LevelBy::EarlyStart => "early-start",
+            LevelBy::LateStart => "late-start",
+            LevelBy::Duration => "duration",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<LevelBy> {
+        LevelBy::ALL.into_iter().find(|b| b.code() == code)
+    }
+}
+
+/// How resources are levelled.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LevellingOptions {
+    /// Delay an activity only as far as its total float allows: the project's finish stays, and
+    /// what can't be resolved within float stays over-allocated.
+    pub within_float: bool,
+    /// The resources levelled, by their IDs; every one (but materials) when empty.
+    pub resources: Vec<String>,
+    /// Which activities keep a resource first.
+    pub order: Vec<LevelBy>,
+}
+
+impl Default for LevellingOptions {
+    fn default() -> Self {
+        LevellingOptions { within_float: false, resources: Vec::new(), order: vec![LevelBy::Priority, LevelBy::TotalFloat, LevelBy::EarlyStart] }
+    }
+}
+
+/// Where levelling held an activity: to start on or after `start`, so that `resource` stays
+/// within its limit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Levelled {
+    pub start: Date,
+    pub resource: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Activity {
     /// Unique within the project (P6's Activity ID).
@@ -209,6 +303,11 @@ pub struct Activity {
     /// last of them does (P6's resource dependent activities); else it works its duration on
     /// its calendar, whoever is on it.
     pub resource_dependent: bool,
+    /// Which of two activities keeps a resource both want on a day when resources are levelled.
+    pub levelling_priority: LevellingPriority,
+    /// Where the last levelling held it; it starts no earlier until levelling is run again or
+    /// cleared.
+    pub levelled: Option<Levelled>,
     pub extra: Extra,
 }
 
@@ -443,6 +542,8 @@ pub struct Project {
     pub assignments: Vec<Assignment>,
     /// Remarks on activities, in the order they were written.
     pub comments: Vec<Comment>,
+    /// How resources are levelled.
+    pub levelling: LevellingOptions,
     pub extra: Extra,
 }
 

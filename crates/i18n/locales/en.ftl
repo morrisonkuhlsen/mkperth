@@ -286,6 +286,8 @@ undo-edit-resource = edit resource { $id }
 undo-delete-resource = delete resource { $id }
 undo-add-role = add role { $id }
 undo-delete-role = delete role { $id }
+undo-level = level resources
+undo-unlevel = clear levelling
 undo-add-assignment = assign { $resource } to { $activity }
 undo-edit-assignment = edit an assignment on { $activity }
 undo-delete-assignment = remove an assignment from { $activity }
@@ -344,6 +346,7 @@ critical-threshold-tip = Critical at or below this many working days of total fl
 detail-longest-path = On the longest path
 ex-at-time = { $date } at { $time }
 ex-src-data-date = The data date
+ex-src-levelled = Levelling, so { $resource } stays within its limit
 ex-completed = Completed: it started on { $start } and finished on { $finish }; its dates are what happened, with no float.
 ex-in-progress = Under way since { $start }, { $left } working days left: the passes schedule the work left.
 option-data-date = Data date
@@ -394,6 +397,50 @@ pane-notes = Chart notes
 pane-calendars = Calendars
 pane-calendars-tip = The project's calendars: working week, work periods, holidays
 calendars-menu = Calendars…
+level-menu = Level resources…
+pane-levelling = Levelling
+pane-levelling-tip = Delay activities so no resource is asked for more than it has
+level-over = Over their limit
+level-none-over = No resource is asked for more than it has.
+level-over-line = { $name }: { $n ->
+    [one] 1 day
+   *[other] { $n } days
+} over, from { $from }
+level-options = Options
+level-within-float = Within float only
+level-within-float-tip = Delay an activity only as far as its total float: the project's finish stays, and what can't be resolved stays over
+level-resources = Resources levelled
+level-all-resources = All resources (but materials)
+level-order = Who keeps a resource first
+level-order-tip = Each in turn; the next only breaks a tie, the ID the last.
+level-by-priority = Levelling priority, highest first
+level-by-total-float = Total float, least first
+level-by-early-start = Early start, earliest first
+level-by-late-start = Late start, earliest first
+level-by-duration = Remaining duration, shortest first
+level-sooner = Move { $name } up
+level-later = Move { $name } down
+level-run = Level
+level-run-tip = Level now, from the schedule without the last levelling's holds
+level-clear = Clear levelling
+level-clear-tip = Every activity back where its logic puts it
+level-held = Held by levelling
+level-held-line = { $id }: from { $date } ({ $resource })
+level-done = Levelled: { $n ->
+    [one] 1 activity waits
+   *[other] { $n } activities wait
+}; the project finishes on { $finish }.
+level-left = { $n ->
+    [one] 1 day is
+   *[other] { $n } days are
+} still over a limit.
+detail-levelling-priority = Levelling priority
+detail-levelling-priority-tip = Of two activities wanting a resource on the same day, the higher keeps it
+levelling-priority-top = Top
+levelling-priority-high = High
+levelling-priority-normal = Normal
+levelling-priority-low = Low
+levelling-priority-lowest = Lowest
 calendar-which = Calendar
 calendar-project = { $name } (the project's)
 calendar-week = Working week

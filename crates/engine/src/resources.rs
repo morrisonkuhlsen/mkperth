@@ -1,7 +1,7 @@
 //! Resources, roles and their assignments to activities: who and what does the work. Each change
 //! is a command with undo; units come in as numbers (`7.5` hours) and are kept in hundredths.
 
-use mkperth_core::{Assignment, DurationType, Project, Resource, ResourceKind, Role, UNIT};
+use mkperth_core::{Assignment, DurationType, LevelBy, Project, Resource, ResourceKind, Role, UNIT};
 use mkperth_i18n::tr;
 use serde_json::Value;
 
@@ -155,6 +155,8 @@ impl Session {
             "assignment.add" => self.add_assignment(params),
             "assignment.edit" => self.edit_assignment(params),
             "assignment.delete" => self.delete_assignment(params),
+            "resource.level" => self.level(params),
+            "resource.unlevel" => self.unlevel(),
             _ => return None,
         })
     }
@@ -228,6 +230,12 @@ impl Session {
                 for a in p.assignments.iter_mut().filter(|a| a.resource.as_deref() == Some(id.as_str())) {
                     a.resource = Some(new.to_string());
                 }
+                for l in p.activities.iter_mut().filter_map(|a| a.levelled.as_mut()).filter(|l| l.resource == id) {
+                    l.resource = new.to_string();
+                }
+                for r in p.levelling.resources.iter_mut().filter(|r| **r == id) {
+                    *r = new.to_string();
+                }
             }
             let Some(r) = p.resources.get_mut(k) else { return Err(EngineError::UnknownResource(id.clone())) };
             if let Some(new) = new_id.filter(|n| !n.is_empty()) {
@@ -263,6 +271,72 @@ impl Session {
             let k = p.resources.iter().position(|r| r.id == id).ok_or_else(|| EngineError::UnknownResource(id.clone()))?;
             p.resources.remove(k);
             p.assignments.retain(|a| a.resource.as_deref() != Some(id.as_str()));
+            p.levelling.resources.retain(|r| *r != id);
+            Ok(())
+        })
+    }
+
+    /// Levels the resources (P6's Level Resources). First the options given, kept with the
+    /// project: `within_float`, the `resources` levelled (IDs; all when empty) and the `order`
+    /// that decides who keeps a resource (`priority`, `total-float`, `early-start`,
+    /// `late-start`, `duration`, each at most once). Then each activity that has to wait is held
+    /// to start no earlier than where levelling put it, the holds of any levelling before gone.
+    /// One change.
+    fn level(&mut self, params: &Value) -> Result<(), EngineError> {
+        const C: &str = "resource.level";
+        let within = match params.get("within_float") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(v.as_bool().ok_or_else(|| bad(C, "within_float"))?),
+        };
+        let only = ids(params, C, "resources")?;
+        let order = match params.get("order") {
+            None | Some(Value::Null) => None,
+            Some(Value::Array(items)) if items.len() <= LevelBy::ALL.len() => {
+                let order =
+                    items.iter().map(|i| i.as_str().and_then(LevelBy::from_code)).collect::<Option<Vec<_>>>().ok_or_else(|| bad(C, "order"))?;
+                if order.iter().enumerate().any(|(k, b)| order.get(..k).is_some_and(|before| before.contains(b))) {
+                    return Err(bad(C, "order"));
+                }
+                Some(order)
+            }
+            Some(_) => return Err(bad(C, "order")),
+        };
+        self.change(tr!("undo-level"), |p| {
+            if let Some(w) = within {
+                p.levelling.within_float = w;
+            }
+            if let Some(rs) = only {
+                if let Some(missing) = rs.iter().find(|r| !p.resources.iter().any(|x| x.id == **r)) {
+                    return Err(EngineError::UnknownResource(missing.clone()));
+                }
+                p.levelling.resources = rs;
+            }
+            if let Some(o) = order {
+                p.levelling.order = o;
+            }
+            let result = mkperth_sched::level(p)?;
+            for a in &mut p.activities {
+                a.levelled = None;
+            }
+            for (i, l) in result.held {
+                if let Some(a) = p.activities.get_mut(i) {
+                    a.levelled = Some(l);
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Takes back what levelling held: every activity back to where its logic puts it. Nothing
+    /// to do when none is held.
+    fn unlevel(&mut self) -> Result<(), EngineError> {
+        if self.project.activities.iter().all(|a| a.levelled.is_none()) {
+            return Ok(());
+        }
+        self.change(tr!("undo-unlevel"), |p| {
+            for a in &mut p.activities {
+                a.levelled = None;
+            }
             Ok(())
         })
     }
@@ -502,6 +576,49 @@ mod tests {
         // Undo takes each change back.
         run(&mut s, "edit.undo", Value::Null);
         assert_eq!(s.project.roles.len(), 1);
+    }
+
+    /// From Monday 5 October 2026: A (3 days) and B (2) both on Ana, one full time. A, with no
+    /// float, keeps her; B waits for A and is held to start on Thursday the 8th. One undo puts
+    /// it back; a rename carries the hold; clearing takes it away.
+    #[test]
+    fn levelling_holds_what_must_wait() {
+        let mut s = Session::default();
+        run(&mut s, "project.new", json!({"start": "2026-10-05"}));
+        run(&mut s, "activity.add", json!({"id": "A", "duration": 3}));
+        run(&mut s, "activity.add", json!({"id": "B", "duration": 2}));
+        run(&mut s, "resource.add", json!({"id": "ANA", "name": "Ana"}));
+        run(&mut s, "assignment.add", json!({"activity": "A", "resource": "ANA"}));
+        run(&mut s, "assignment.add", json!({"activity": "B", "resource": "ANA"}));
+        let schedule = |s: &Session| s.schedule.clone().unwrap();
+        assert_eq!(mkperth_sched::overloads(&s.project, &schedule(&s)).len(), 2, "the 5th and the 6th");
+        run(&mut s, "resource.level", json!({"order": ["total-float", "priority"]}));
+        assert_eq!(s.project.levelling.order, [LevelBy::TotalFloat, LevelBy::Priority]);
+        let b = |s: &Session| s.project.activities.iter().find(|a| a.id == "B").unwrap().clone();
+        assert_eq!(b(&s).levelled.map(|l| (l.start.to_string(), l.resource)), Some(("2026-10-08".into(), "ANA".into())));
+        assert_eq!(schedule(&s).activities[1].early_start.to_string(), "2026-10-08");
+        assert!(mkperth_sched::overloads(&s.project, &schedule(&s)).is_empty());
+        assert_eq!(s.undo_label(), Some("level resources"));
+        run(&mut s, "resource.edit", json!({"id": "ANA", "new_id": "ANNA"}));
+        assert_eq!(b(&s).levelled.map(|l| l.resource).as_deref(), Some("ANNA"));
+        // B at top priority, levelled again: A waits instead, B's old hold gone.
+        run(&mut s, "activity.edit", json!({"id": "B", "levelling_priority": "top"}));
+        run(&mut s, "resource.level", json!({"order": ["priority"]}));
+        assert!(b(&s).levelled.is_none());
+        assert_eq!(s.project.activities[0].levelled.as_ref().map(|l| l.start.to_string()).as_deref(), Some("2026-10-07"));
+        run(&mut s, "resource.unlevel", Value::Null);
+        assert!(s.project.activities.iter().all(|a| a.levelled.is_none()));
+        run(&mut s, "edit.undo", Value::Null);
+        assert!(s.project.activities[0].levelled.is_some());
+        // Refused: an order twice over or unknown, a resource that isn't there.
+        let before = s.project.clone();
+        for bad in
+            [json!({"order": ["priority", "priority"]}), json!({"order": ["colour"]}), json!({"resources": ["NOBODY"]}), json!({"within_float": 1})]
+        {
+            assert!(s.run("resource.level", &bad).is_err(), "{bad}");
+        }
+        assert!(s.run("activity.edit", &json!({"id": "A", "levelling_priority": "urgent"})).is_err());
+        assert_eq!(s.project, before);
     }
 
     /// Units = units an hour × hours, held by the duration type. A10 takes 5 days of 8 hours:
