@@ -20,6 +20,9 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- `project.new`: an empty project from a given start (File > New, Ctrl+N, from today).
+- `calendar.edit`: a calendar's working week, its work periods, holidays and worked days added
+  or taken away, and its region's holidays, by command (the app, the CLI and MCP), undoable.
 - A splash screen as MK Sigma's and MK aeGIS's, in MK Perth's lilac: the mark, the name, the
   version and the parts loading on Morrison Kühlsen's ink, beside artwork drawn in code (a
   schedule cascading down to a milestone); a click or Esc closes it, `--no-splash` skips it.

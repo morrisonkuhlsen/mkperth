@@ -63,7 +63,8 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 19] = [
+pub const COMMANDS: [&str; 21] = [
+    "project.new",
     "project.open",
     "project.save",
     "project.sample",
@@ -75,6 +76,7 @@ pub const COMMANDS: [&str; 19] = [
     "relationship.add",
     "relationship.delete",
     "project.options",
+    "calendar.edit",
     "edit.undo",
     "edit.redo",
     "band.add",
@@ -153,6 +155,21 @@ impl Session {
             }
             "project.sample" => {
                 *self = Session::default();
+                Ok(())
+            }
+            // An empty project from `start` (the engine reads no clock: the caller gives the day),
+            // named `name`, on a Monday-to-Friday calendar; a fresh history, nothing to save.
+            "project.new" => {
+                let start = params.get("start").and_then(Value::as_str).ok_or_else(|| EngineError::Param(id.to_string(), "start".to_string()))?;
+                let start = mkperth_core::Date::parse(start).ok_or_else(|| EngineError::Value(id.to_string(), "start".to_string()))?;
+                let name = match params.get("name") {
+                    None | Some(Value::Null) => String::new(),
+                    Some(Value::String(n)) if n.chars().count() <= 2000 => n.clone(),
+                    Some(_) => return Err(EngineError::Value(id.to_string(), "name".to_string())),
+                };
+                let project = sample::empty(name, start);
+                let schedule = mkperth_sched::schedule(&project);
+                *self = Session { project, path: None, schedule, warnings: Vec::new(), modified: false, undo: Vec::new(), redo: Vec::new() };
                 Ok(())
             }
             "project.schedule" => {
@@ -459,6 +476,62 @@ mod tests {
         // The session goes on: undo still takes back the edit before.
         s.run("edit.undo", &Value::Null).unwrap();
         assert_ne!(s.project, project);
+    }
+
+    /// A new project is empty, from its start, with nothing to undo or save.
+    #[test]
+    fn a_new_project_starts_empty() {
+        let mut s = Session::default();
+        s.run("activity.edit", &json!({"id": "A10", "name": "Survey"})).unwrap();
+        assert!(matches!(s.run("project.new", &json!({})), Err(EngineError::Param(..))), "the start is needed");
+        assert!(matches!(s.run("project.new", &json!({"start": "soon"})), Err(EngineError::Value(..))));
+        s.run("project.new", &json!({"start": "2026-11-06", "name": "Warehouse"})).unwrap();
+        assert_eq!((s.project.name.as_str(), s.project.start.to_string().as_str()), ("Warehouse", "2026-11-06"));
+        assert!(s.project.activities.is_empty() && s.path.is_none() && !s.modified && s.undo_label().is_none());
+        assert!(s.schedule.is_ok(), "an empty project schedules");
+    }
+
+    /// The week, the holidays, the work periods and the region of a calendar, each undoable.
+    /// A10 takes 5 days from Friday 6 November 2026: Monday to Friday, it works the 6th, 9th,
+    /// 10th, 11th and 12th; seven days a week, the 6th to the 10th; with the 9th a holiday, the
+    /// 6th, 7th, 8th, 10th and 11th.
+    #[test]
+    fn calendars_are_edited_by_command() {
+        let day = |y, m, d| mkperth_core::Date::from_ymd(y, m, d).unwrap();
+        let mut s = Session::default();
+        s.run("project.new", &json!({"start": "2026-11-06"})).unwrap();
+        s.run("activity.add", &json!({"id": "A10", "duration": 5})).unwrap();
+        let finish = |s: &Session| s.schedule.as_ref().unwrap().activities[0].early_finish;
+        assert_eq!(finish(&s), day(2026, 11, 12));
+        s.run("calendar.edit", &json!({"week": [true, true, true, true, true, true, true]})).unwrap();
+        assert_eq!(finish(&s), day(2026, 11, 10));
+        s.run("calendar.edit", &json!({"holidays_add": ["2026-11-09"]})).unwrap();
+        assert_eq!(finish(&s), day(2026, 11, 11));
+        assert_eq!(s.undo_label(), Some("edit calendar Standard"));
+        s.run("edit.undo", &Value::Null).unwrap();
+        assert_eq!(finish(&s), day(2026, 11, 10));
+        s.run("calendar.edit", &json!({"periods": [[480, 720], [780, 960]], "region": "brazil", "calendar": "Standard"})).unwrap();
+        assert_eq!(s.project.calendar.periods[0], [(480, 720), (780, 960)]);
+        assert_eq!(s.project.calendar.region, Some(mkperth_core::Region::Brazil));
+        s.run("calendar.edit", &json!({"region": null, "worked_add": ["2026-11-14"], "worked_remove": ["2026-11-14"]})).unwrap();
+        assert_eq!(s.project.calendar.region, None);
+        // Refused, and the project as it was: no change asked for, no working day, periods that
+        // overlap or run backwards, a calendar the project doesn't have, a date that isn't one.
+        let before = s.project.clone();
+        for params in [
+            json!({}),
+            json!({"week": [false, false, false, false, false, false, false]}),
+            json!({"week": [true, true]}),
+            json!({"periods": [[480, 720], [700, 900]]}),
+            json!({"periods": [[720, 480]]}),
+            json!({"periods": [[0, 1441]]}),
+            json!({"calendar": "Night shift", "week": [true, true, true, true, true, true, true]}),
+            json!({"holidays_add": ["2026-02-30"]}),
+            json!({"region": "Atlantis"}),
+        ] {
+            assert!(s.run("calendar.edit", &params).is_err(), "{params}");
+            assert_eq!(s.project, before, "{params}");
+        }
     }
 
     #[test]

@@ -4,6 +4,28 @@
 
 use mkperth_core::{Activity, ActivityKind, Band, Calendar, Constraint, Date, Marker, MonthMark, Project, Region, Relationship, RelationshipType};
 
+/// A project with nothing in it yet, from `start`, on a Monday-to-Friday calendar.
+pub(crate) fn empty(name: String, start: Date) -> Project {
+    Project {
+        name,
+        start,
+        calendar: Calendar::default(),
+        calendars: Vec::new(),
+        lag_calendar: Default::default(),
+        float_kind: Default::default(),
+        critical_by: Default::default(),
+        data_date: None,
+        progress_mode: Default::default(),
+        must_finish_by: None,
+        activities: Vec::new(),
+        relationships: Vec::new(),
+        bands: Vec::new(),
+        markers: Vec::new(),
+        month_marks: Vec::new(),
+        extra: Default::default(),
+    }
+}
+
 pub(crate) fn project() -> Project {
     use RelationshipType::*;
     let start = Date::from_ymd(2026, 11, 2).unwrap_or(Date::EPOCH);

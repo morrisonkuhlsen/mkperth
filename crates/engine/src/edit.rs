@@ -2,7 +2,9 @@
 //! kept only if it holds together (no loop of relationships, no repeated ID); the project before
 //! it goes on the undo stack.
 
-use mkperth_core::{Activity, ActivityKind, Constraint, CriticalBy, Date, FloatKind, ProgressMode, Project, Relationship, RelationshipType};
+use mkperth_core::{
+    Activity, ActivityKind, Calendar, Constraint, CriticalBy, Date, FloatKind, Period, ProgressMode, Project, Region, Relationship, RelationshipType,
+};
 use mkperth_i18n::tr;
 use mkperth_sched::ScheduleError;
 use serde_json::Value;
@@ -15,6 +17,9 @@ pub const UNDO_DEPTH: usize = 200;
 const MAX_TEXT: usize = 2000;
 /// The longest an activity's notes may be, in characters.
 const MAX_NOTES: usize = 100_000;
+/// The most dates one calendar edit adds or removes, and the most work periods in a day.
+const MAX_DATES: usize = 10_000;
+const MAX_PERIODS: usize = 8;
 
 /// A command's parameter as text, if given; an error if given and not text.
 fn text(params: &Value, command: &str, name: &str) -> Result<Option<String>, EngineError> {
@@ -48,6 +53,34 @@ fn clearable(params: &Value, command: &str, name: &str, range: std::ops::RangeIn
         Some(Value::Null) => Ok(Some(None)),
         _ => Ok(number(params, command, name, range)?.map(Some)),
     }
+}
+
+/// A list of dates (`["2026-12-24", …]`), if given.
+fn dates(params: &Value, command: &str, name: &str) -> Result<Vec<Date>, EngineError> {
+    let bad = || EngineError::Value(command.to_string(), name.to_string());
+    match params.get(name) {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(items)) if items.len() <= MAX_DATES => items.iter().map(|d| d.as_str().and_then(Date::parse).ok_or_else(bad)).collect(),
+        Some(_) => Err(bad()),
+    }
+}
+
+/// A day's work periods, `[[480, 720], [780, 1020]]` in minutes after midnight: each starts before
+/// it ends, within the day, after the one before; if given.
+fn periods(params: &Value, command: &str) -> Result<Option<Vec<Period>>, EngineError> {
+    let bad = || EngineError::Value(command.to_string(), "periods".to_string());
+    let Some(value) = params.get("periods").filter(|v| !v.is_null()) else { return Ok(None) };
+    let items = value.as_array().filter(|a| !a.is_empty() && a.len() <= MAX_PERIODS).ok_or_else(bad)?;
+    let mut out: Vec<Period> = Vec::with_capacity(items.len());
+    for item in items {
+        let minute = |k: usize| item.get(k).and_then(Value::as_u64).filter(|m| *m <= 1440).and_then(|m| u16::try_from(m).ok());
+        let (from, to) = (minute(0).ok_or_else(bad)?, minute(1).ok_or_else(bad)?);
+        if from >= to || out.last().is_some_and(|(_, end)| *end > from) {
+            return Err(bad());
+        }
+        out.push((from, to));
+    }
+    Ok(Some(out))
 }
 
 fn required(value: Option<String>, command: &str, name: &str) -> Result<String, EngineError> {
@@ -161,6 +194,7 @@ impl Session {
             "relationship.add" => self.add_relationship(params),
             "relationship.delete" => self.delete_relationship(params),
             "project.options" => self.set_options(params),
+            "calendar.edit" => self.edit_calendar(params),
             "edit.undo" => self.undo_change(),
             "edit.redo" => self.redo_change(),
             _ => return None,
@@ -212,6 +246,70 @@ impl Session {
                 (Some(c), _) => p.critical_by = c,
                 (None, Some(t)) => p.critical_by = CriticalBy::TotalFloat(t),
                 (None, None) => {}
+            }
+            Ok(())
+        })
+    }
+
+    /// Changes a calendar: the project's own, or the one named `calendar`. `week` (seven
+    /// booleans, Monday first), `periods` (each worked weekday's work periods), dates added to or
+    /// taken from its holidays (`holidays_add`, `holidays_remove`) and its worked days off the
+    /// week (`worked_add`, `worked_remove`), and the `region` whose holidays it keeps
+    /// (`"brazil"`, or `null` for none). A week with no working day is refused.
+    fn edit_calendar(&mut self, params: &Value) -> Result<(), EngineError> {
+        const C: &str = "calendar.edit";
+        let bad = |name: &str| EngineError::Value(C.into(), name.into());
+        let name = text(params, C, "calendar")?;
+        let week = match params.get("week") {
+            None | Some(Value::Null) => None,
+            Some(v) => {
+                let days: Vec<bool> =
+                    v.as_array().filter(|a| a.len() == 7).map(|a| a.iter().filter_map(Value::as_bool).collect()).ok_or_else(|| bad("week"))?;
+                let week: [bool; 7] = days.try_into().map_err(|_| bad("week"))?;
+                if !week.contains(&true) {
+                    return Err(bad("week"));
+                }
+                Some(week)
+            }
+        };
+        let periods = periods(params, C)?;
+        let (holidays_add, holidays_remove) = (dates(params, C, "holidays_add")?, dates(params, C, "holidays_remove")?);
+        let (worked_add, worked_remove) = (dates(params, C, "worked_add")?, dates(params, C, "worked_remove")?);
+        let region = match params.get("region") {
+            None => None,
+            Some(Value::Null) => Some(None),
+            Some(v) => Some(Some(v.as_str().and_then(Region::named).ok_or_else(|| bad("region"))?)),
+        };
+        let nothing = week.is_none()
+            && periods.is_none()
+            && region.is_none()
+            && [&holidays_add, &holidays_remove, &worked_add, &worked_remove].iter().all(|d| d.is_empty());
+        if nothing {
+            return Err(EngineError::Param(C.into(), "week".into()));
+        }
+        let shown = name.clone().unwrap_or_else(|| self.project.calendar.name.clone());
+        self.change(tr!("undo-edit-calendar", name = shown.as_str()), |p| {
+            let calendar: &mut Calendar = match name.as_deref() {
+                None => &mut p.calendar,
+                Some(n) if n == p.calendar.name => &mut p.calendar,
+                Some(n) => p.calendars.iter_mut().find(|c| c.name == n).ok_or_else(|| bad("calendar"))?,
+            };
+            if let Some(w) = week {
+                calendar.week = w;
+            }
+            if let Some(ps) = periods {
+                calendar.periods = std::array::from_fn(|_| ps.clone());
+            }
+            for d in holidays_remove {
+                calendar.holidays.remove(&d);
+            }
+            calendar.holidays.extend(holidays_add);
+            for d in worked_remove {
+                calendar.extra_days.remove(&d);
+            }
+            calendar.extra_days.extend(worked_add);
+            if let Some(r) = region {
+                calendar.region = r;
             }
             Ok(())
         })

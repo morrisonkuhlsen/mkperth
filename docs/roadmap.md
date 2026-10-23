@@ -78,7 +78,10 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   `project.schedule`; editing (`activity.add`, `activity.edit`, `activity.delete`,
   `relationship.add`, `relationship.delete`) with undo and redo (`edit.undo`, `edit.redo`, two
   hundred deep), each change made on a copy and refused if it makes a loop or repeats an ID;
-  every command fuzzed with empty and hostile parameters; `project.save`; the sample project built in code (a small building on Brazil's calendar,
+  every command fuzzed with empty and hostile parameters; `project.save`; `project.new` (an
+  empty project from a given start; File > New, Ctrl+N); `calendar.edit` (a calendar's week,
+  work periods, holidays, worked days and region, undoable; #12); a command that panics is
+  caught and the session put back; the sample project built in code (a small building on Brazil's calendar,
   with a WBS, every kind of relationship, a lag and a lead, milestones, a constraint and a
   seven-day cure).
   `mkperth-cli` (#13): `schedule` prints the schedule as a table in the person's language, JSON
@@ -93,7 +96,7 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   run `mkperth-cli` (on PATH or `ENV["MKPERTH_CLI"]`), no FFI and no dependency; Perth.jl's
   tests hold MK Perth's dates and float against its own `schedule!` and `slack`.
 - **Next:** the CLI's contract (verbs, `--format json` keys, exit codes) kept stable for the
-  bridge; resources (M4).
+  bridge; `baseline.assign` with baselines (#22); resources (M4).
 
 ## M3 — the Activities window
 - *Started:* a quiet header as in an online spreadsheet (the mark, the project's name and

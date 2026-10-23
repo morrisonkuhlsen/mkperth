@@ -13,6 +13,7 @@ use mkperth_engine::i18n::{self, Lang, tr};
 /// What was asked for in the header, a menu or the toolbar this frame.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Action {
+    New,
     Open,
     Save,
     SaveAs,
@@ -233,6 +234,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     let mut action = None;
     let mut set = |a: Action| action = Some(a);
     menu(ui, &tr!("file"), |ui| {
+        if item(ui, &tr!("new-menu"), Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::N)), true) {
+            set(Action::New);
+        }
         if item(ui, &tr!("open-menu"), Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::O)), true) {
             set(Action::Open);
         }

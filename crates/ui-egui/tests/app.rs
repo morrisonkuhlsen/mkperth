@@ -255,3 +255,19 @@ fn the_rail_hides_and_shows_the_table() {
     h.run_steps(2);
     assert!(!h.state().options.table_hidden);
 }
+
+/// File > New: an empty project from the day the app is told is today.
+#[test]
+fn a_new_project_from_the_file_menu() {
+    let services = Services { today: Some(Box::new(|| mkperth_ui_egui::Date::from_ymd(2026, 11, 6))), ..Services::default() };
+    let mut h = harness(PerthApp::new(services));
+    // The toolbar's New activity would match too.
+    h.state_mut().toolbar_hidden = true;
+    h.get_by_label("File").click();
+    h.run_steps(2);
+    h.get_by_label_contains("New").click();
+    h.run_steps(3);
+    assert!(h.state().session.project.activities.is_empty());
+    assert_eq!(h.state().session.project.start.to_string(), "2026-11-06");
+    assert_eq!(h.state().status, Some(mkperth_ui_egui::Status::Info("New project".into())));
+}

@@ -223,6 +223,7 @@ impl PerthApp {
                     self.session.warnings.join("; ")
                 )),
                 "project.open" | "project.sample" => Status::Info(tr!("status-opened", name = self.session.project.name.as_str())),
+                "project.new" => Status::Info(tr!("status-new")),
                 "project.save" => {
                     Status::Info(tr!("status-saved", path = self.session.path.as_deref().map(|p| p.display().to_string()).unwrap_or_default()))
                 }
@@ -234,7 +235,7 @@ impl PerthApp {
             },
             Err(e) => Status::Error(e.to_string()),
         });
-        if matches!(id, "project.open" | "project.sample") {
+        if matches!(id, "project.new" | "project.open" | "project.sample") {
             self.selected = None;
         }
         // A selection past the end (an activity deleted, an undo) goes.
@@ -242,6 +243,12 @@ impl PerthApp {
             self.selected = None;
         }
         self.calculation = None;
+    }
+
+    /// A new, empty project from today (or, without a clock, from the open project's start).
+    pub fn new_project(&mut self) {
+        let start = self.services.today.as_ref().and_then(|today| today()).unwrap_or(self.session.project.start);
+        self.run("project.new", json!({"start": start.to_string()}));
     }
 
     pub fn open(&mut self, path: &Path) {
@@ -272,6 +279,7 @@ impl PerthApp {
     fn act(&mut self, ctx: &egui::Context, action: chrome::Action) {
         use chrome::Action;
         match action {
+            Action::New => self.new_project(),
             Action::Open => self.pick_and_open(),
             Action::Save => self.save(),
             Action::SaveAs => self.save_as(),
@@ -394,6 +402,9 @@ impl PerthApp {
         }
         if shortcut(egui::Modifiers::COMMAND, egui::Key::O) {
             self.pick_and_open();
+        }
+        if shortcut(egui::Modifiers::COMMAND, egui::Key::N) {
+            self.new_project();
         }
         if ctx.input_mut(|i| i.consume_shortcut(&chrome::TOGGLE_TOOLBAR)) {
             self.toolbar_hidden = !self.toolbar_hidden;
