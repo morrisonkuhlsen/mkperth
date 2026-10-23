@@ -43,7 +43,7 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   (`activity.export-tex`, the Calculation pane's LaTeX button).
   An exception day works periods of its own (a short Christmas Eve, a Saturday morning), read
   and written as P6 XML's `HolidayOrException` work times.
-- **Next:** calendars edited in the app (#16).
+- **Next:** calendars edited in the app.
 
 ## M1 — data in and out
 - *Done:* Perth.jl's project JSON (`mkperth-perth`), read and written back byte for byte: a
@@ -98,9 +98,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   beneath, the float as a line, summaries as brackets, milestones as diamonds), in WBS order,
   scrolling together; Open (Ctrl+O), Sample, Schedule (F9); a status line; English and
   Brazilian Portuguese, light and dark; an offscreen snapshot example and kittest tests.
-- **Next:** the activity table beside the Gantt chart in egui, grouped by WBS; the details
-  below (General, Status, Relationships); F9 schedules; every date's calculation by hand beside
-  it; English and Brazilian Portuguese.
+  The Activities window (#16): Details in tabs (General, Status, Relationships, Notes), notes per
+  activity, the columns chosen in Filters, today and the data date on the chart, progress drawn
+  green; the calculation exported as LaTeX. 10 000 activities scroll at about 3 ms a frame
+  (`crates/ui-egui/tests/large.rs`, run in release).
+- **Next:** calendars edited in the app; the network view (#17); the brand (#18, the user's).
 
 ## M4 — resources
 - **Next:** resources and roles with units per time and prices that change over time; assignments

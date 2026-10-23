@@ -76,3 +76,8 @@ Read it before re-scheduling a plan with a new version.
 - Every date with its calculation: the bounds of each pass, the winner, the calendar's placing,
   the floats.
 - Messages in English and Brazilian Portuguese.
+
+### Fixed
+
+- A project of 10 000 activities scrolls at about 3 ms a frame (it took 300: which rows are
+  summaries was worked out against every activity, for every activity, every frame).

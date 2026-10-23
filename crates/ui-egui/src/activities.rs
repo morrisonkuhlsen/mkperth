@@ -85,6 +85,12 @@ impl Options {
 pub const MIN_SCALE: f32 = 0.5;
 pub const MAX_SCALE: f32 = 80.0;
 
+/// Which activities are summaries (have children), in one pass.
+pub(crate) fn summaries(acts: &[mkperth_engine::core::Activity]) -> Vec<bool> {
+    let parents: std::collections::HashSet<&str> = acts.iter().filter_map(|a| a.parent.as_deref()).collect();
+    acts.iter().map(|a| parents.contains(a.id.as_str())).collect()
+}
+
 /// The rows: each activity's index and its depth in the WBS, depth first.
 pub(crate) fn rows(session: &Session) -> Vec<(usize, usize)> {
     let acts = &session.project.activities;
@@ -126,7 +132,7 @@ pub(crate) fn visible(session: &Session, options: &Options) -> Vec<(usize, usize
     let Ok(schedule) = &session.schedule else { return all };
     let needle = options.search.trim().to_lowercase();
     let acts = &session.project.activities;
-    let summary: Vec<bool> = (0..acts.len()).map(|i| acts.iter().any(|c| c.parent.as_deref() == acts.get(i).map(|a| a.id.as_str()))).collect();
+    let summary = summaries(acts);
     let matches = |i: usize| {
         let (Some(a), Some(s)) = (acts.get(i), schedule.activities.get(i)) else { return false };
         (!options.critical_only || s.critical)
@@ -271,7 +277,8 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
     let data_date = session.project.data_date;
     let row_of: std::collections::HashMap<usize, usize> = rows.iter().enumerate().map(|(n, &(i, _))| (i, n)).collect();
     let index_of: std::collections::HashMap<&str, usize> = acts.iter().enumerate().map(|(i, a)| (a.id.as_str(), i)).collect();
-    let is_summary = |i: usize| acts.get(i).is_some_and(|a| acts.iter().any(|c| c.parent.as_deref() == Some(a.id.as_str())));
+    let summary_of = summaries(acts);
+    let is_summary = |i: usize| summary_of.get(i).copied().unwrap_or(false);
     let mut clicked = None;
     let mut double = None;
     egui::ScrollArea::vertical().id_salt("activities").auto_shrink(false).show_rows(ui, ROW, rows.len(), |ui, range| {
@@ -377,7 +384,7 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
         for (i, depth, rect) in placed {
             let (Some(a), Some(s)) = (acts.get(i), schedule.activities.get(i)) else { continue };
             let painter = ui.painter_at(rect);
-            let summary = acts.iter().any(|c| c.parent.as_deref() == Some(a.id.as_str()));
+            let summary = is_summary(i);
             let day = session
                 .project
                 .activities
@@ -460,7 +467,7 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
         ui.painter().text(full.center(), Align2::CENTER_CENTER, tr!("activities-none"), FontId::proportional(13.0), t.text_dim);
     }
     if let Some((i, column)) = double {
-        let summary = acts.get(i).is_some_and(|a| acts.iter().any(|c| c.parent.as_deref() == Some(a.id.as_str())));
+        let summary = is_summary(i);
         if let Some(a) = acts.get(i).filter(|_| !(summary && column == Column::Duration)) {
             let text = match column {
                 Column::Id => a.id.clone(),
