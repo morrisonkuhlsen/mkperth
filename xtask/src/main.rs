@@ -15,7 +15,7 @@ use std::process::{Command, ExitCode};
 
 /// Each internal crate's layer: L0 `i18n`/`core` → L1 `sched`/`perth` → L2 `engine` → L3 `ui-egui`/`mcp`
 /// → L4 `apps/*`. A crate added without a row here fails the gate.
-const LAYERS: [(&str, u8); 9] = [
+const LAYERS: [(&str, u8); 10] = [
     ("mkperth-i18n", 0),
     ("mkperth-core", 0),
     ("mkperth-sched", 1),
@@ -25,6 +25,7 @@ const LAYERS: [(&str, u8); 9] = [
     ("mkperth-ui-egui", 3),
     ("mkperth", 4),
     ("mkperth-cli", 4),
+    ("mkperth-mcp", 4),
 ];
 
 /// Crates only the UI layer and above may use.

@@ -1,0 +1,18 @@
+[package]
+name = "mkperth-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "MK Perth as a Model Context Protocol server: agents open, schedule, explain and edit projects"
+
+[lints]
+workspace = true
+
+[dependencies]
+mkperth-engine = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "mkperth-mcp"
+path = "src/main.rs"

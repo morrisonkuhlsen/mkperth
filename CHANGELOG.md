@@ -25,6 +25,8 @@ Read it before re-scheduling a plan with a new version.
   XML; typed in Details and on the Project tab, drawn on the Gantt chart, explained in the
   calculation.
 - The ribbon's groups carry their names underneath.
+- `mkperth-mcp`: agents open a project, read its schedule, change it with any engine command,
+  ask how a date came about, save it and export the calculation, over the Model Context Protocol.
 - Chart notes from Perth.jl: bands (a stretch shaded behind the bars), markers (a named day as a
   dashed line) and marked months (painted in the ruler); in the Chart notes pane, by command,
   and in Perth.jl's JSON. P6 XML has no place for them and says so when written.

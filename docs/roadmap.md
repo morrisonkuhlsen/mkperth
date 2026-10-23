@@ -85,7 +85,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   or CSV; `run` applies commands (`--cmd 'id=JSON'`) and `--out` saves the project, all or
   nothing and only when every command held; `explain` says an activity's calculation and writes
   it as LaTeX; exit codes 0, 1 and 2; integration tests run the binary on files built in code.
-- **Next:** `mkperth-mcp` (#14); the Perth.jl bridge (#15) on the CLI.
+  `mkperth-mcp` (#14): a Model Context Protocol server over stdio with six tools (open_project,
+  get_schedule, run_command with every engine command, explain_activity, save_project,
+  export_latex); JSON-RPC's error codes, batches, lines that aren't UTF-8 or JSON or are too
+  long answered and survived; a test drives the binary end to end.
+- **Next:** the Perth.jl bridge (#15) on the CLI.
 
 ## M3 — the Activities window
 - *Started:* the house's layout (MK Sigma's): a title row (the mark, AutoSave, Save, Undo and

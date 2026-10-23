@@ -1796,6 +1796,14 @@ name = "mkperth-i18n"
 version = "0.1.0"
 
 [[package]]
+name = "mkperth-mcp"
+version = "0.1.0"
+dependencies = [
+ "mkperth-engine",
+ "serde_json",
+]
+
+[[package]]
 name = "mkperth-p6xml"
 version = "0.1.0"
 dependencies = [

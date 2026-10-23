@@ -89,6 +89,7 @@ cargo run --release -p mkperth -- project.json         # a Perth.jl project
 cargo run -p mkperth-cli -- schedule --in project.json --format csv     # the schedule for scripts
 cargo run -p mkperth-cli -- run --in p.xml --cmd 'activity.add={"name": "Survey"}' --out p.xml
 cargo run -p mkperth-cli -- explain --in project.json --activity A100 --tex a100.tex
+claude mcp add mkperth -- /path/to/mkperth-mcp        # agents open, schedule, explain and edit projects
 cargo xtask ci                                         # fmt, clippy, tests, assets, layers, panics, wasm
 ```
 
