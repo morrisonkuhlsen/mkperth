@@ -517,3 +517,30 @@ fn presenting_shows_the_schedule_alone() {
     h.run_steps(2);
     assert!(!h.state().presenting && h.query_by_label("File").is_some());
 }
+
+/// View > Font: a family the system offers is asked for and kept; a size set; a face that
+/// doesn't read leaves egui's own in its place, and nothing breaks.
+#[test]
+fn the_font_is_chosen_from_the_view_menu() {
+    use std::sync::{Arc, Mutex};
+    let saved = Arc::new(Mutex::new(Vec::new()));
+    let keep = saved.clone();
+    let services = Services {
+        fonts: Some(Box::new(|| vec!["Segoe UI".to_string()])),
+        load_font: Some(Box::new(|_: &str, _: bool, _: bool| Some(b"not a font at all".to_vec()))),
+        save_font: Some(Box::new(move |c: &mkperth_ui_egui::fonts::FontChoice| keep.lock().unwrap().push(c.to_line()))),
+        ..Services::default()
+    };
+    let mut h = harness(PerthApp::new(services));
+    h.get_by_label("View").click();
+    h.run_steps(2);
+    h.get_by_label_contains("Font").click();
+    h.run_steps(2);
+    h.get_by_label("Segoe UI").click();
+    h.run_steps(3);
+    assert_eq!(h.state().font.family.as_deref(), Some("Segoe UI"));
+    assert_eq!(saved.lock().unwrap().last().map(String::as_str), Some("Segoe UI|100||"));
+    h.state_mut().font.size = 130;
+    h.run_steps(3);
+    assert!(h.query_by_label("File").is_some(), "still drawn");
+}

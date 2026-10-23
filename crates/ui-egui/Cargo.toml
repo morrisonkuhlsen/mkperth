@@ -12,6 +12,7 @@ workspace = true
 mkperth-engine = { workspace = true }
 egui = { workspace = true }
 png = { workspace = true }
+skrifa = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]

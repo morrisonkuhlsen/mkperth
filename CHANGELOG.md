@@ -24,6 +24,10 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- View > Font: the interface's typeface (MK Perth's own, Ubuntu Light, or one the system has:
+  Segoe UI, Arial, Calibri, Verdana and others where they are installed), its size (small,
+  normal, large, larger, every text scaled) and, for a system family, bold and italic; kept
+  for the next run. A font file that doesn't read is left out, egui's own staying.
 - Presentation mode (the screen icon in the header, View > Presentation mode, F5): the
   project's name over the activities and the chart, full screen, the menus, toolbar, rail and
   panes away; Esc, F5 or Leave the presentation ends it.

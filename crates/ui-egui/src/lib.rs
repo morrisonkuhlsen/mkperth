@@ -10,6 +10,7 @@ pub mod backstage;
 mod calendars;
 mod chrome;
 mod comments_ui;
+pub mod fonts;
 pub mod icons;
 mod resources_view;
 pub mod splash;
@@ -38,6 +39,11 @@ pub type PickOpen = Box<dyn Fn() -> Option<PathBuf>>;
 /// Shows a save-file dialog suggesting a file name; `None` when cancelled.
 pub type PickSave = Box<dyn Fn(&str) -> Option<PathBuf>>;
 pub type Today = Box<dyn Fn() -> Option<Date>>;
+/// The typeface families the system has; the bytes of one's face, bold and italic as asked
+/// (the regular one when it has none such); keeping the choice for the next run.
+pub type ListFonts = Box<dyn Fn() -> Vec<String>>;
+pub type LoadFont = Box<dyn Fn(&str, bool, bool) -> Option<Vec<u8>>>;
+pub type SaveFont = Box<dyn Fn(&fonts::FontChoice)>;
 /// Who is using the app (signs comments), and the time now as comments show it.
 pub type Who = Box<dyn Fn() -> String>;
 /// Keeps the recent projects, newest first, for the next run.
@@ -55,6 +61,9 @@ pub struct Services {
     pub user: Option<Who>,
     /// The time now (`2026-10-23 14:05`), for the comments written.
     pub now: Option<Who>,
+    pub fonts: Option<ListFonts>,
+    pub load_font: Option<LoadFont>,
+    pub save_font: Option<SaveFont>,
 }
 
 /// The views the rail switches between.
@@ -142,6 +151,11 @@ pub struct PerthApp {
     pub toolbar_hidden: bool,
     /// Presenting: the activities and the chart alone, full screen (F5; Esc ends it).
     pub presenting: bool,
+    /// The interface's typeface, size and style; the one last set in egui, and the families the
+    /// system has (asked once, when the menu needs them).
+    pub font: fonts::FontChoice,
+    font_set: Option<fonts::FontChoice>,
+    font_families: Option<Vec<String>>,
     /// The File backstage, when it is open, and the page it shows.
     pub backstage: Option<backstage::Page>,
     /// The projects opened or saved lately, newest first.
@@ -258,6 +272,9 @@ impl PerthApp {
             status: None,
             toolbar_hidden: false,
             presenting: false,
+            font: fonts::FontChoice::default(),
+            font_set: None,
+            font_families: None,
             backstage: None,
             recent: Vec::new(),
             view: View::default(),
@@ -490,6 +507,12 @@ impl PerthApp {
             Action::Search => self.side = Some(Side::Filters),
             Action::Calendars => self.side = Some(Side::Calendars),
             Action::Present => self.present(ctx, true),
+            Action::Font(choice) => {
+                if let Some(save) = &self.services.save_font {
+                    save(&choice);
+                }
+                self.font = choice;
+            }
             Action::Comment => {
                 if self.selected.is_some() {
                     self.side = Some(Side::Details);
@@ -640,6 +663,15 @@ impl PerthApp {
             theme::apply(ui.ctx());
             self.themed = true;
         }
+        if self.font_set.as_ref() != Some(&self.font) {
+            let family = self.font.family.clone();
+            let bytes = family.and_then(|f| self.services.load_font.as_ref().and_then(|load| load(&f, self.font.bold, self.font.italic)));
+            ui.ctx().set_fonts(fonts::definitions(&self.font, bytes));
+            self.font_set = Some(self.font.clone());
+        }
+        if self.font_families.is_none() {
+            self.font_families = Some(self.services.fonts.as_ref().map(|list| list()).unwrap_or_default());
+        }
         self.handle_input(ui.ctx());
         self.options.today = self.services.today.as_ref().and_then(|today| today());
         // The project's name: Perth.jl names its files by id, so the name says more than the file.
@@ -670,6 +702,8 @@ impl PerthApp {
             has_file: self.session.path.is_some(),
             autosave: self.autosave,
             backstage: self.backstage.is_some(),
+            font: &self.font,
+            font_families: self.font_families.as_deref().unwrap_or_default(),
             critical_only: self.options.critical_only,
             late_bars: self.options.late_bars,
             links: self.options.links,

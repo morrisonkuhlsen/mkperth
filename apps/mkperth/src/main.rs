@@ -49,6 +49,53 @@ fn load_recent() -> Vec<std::path::PathBuf> {
         .unwrap_or_default()
 }
 
+/// Typeface families the systems have, with their faces' files (regular, bold, italic, bold
+/// italic), looked for where each system keeps its fonts.
+const FAMILIES: [(&str, [&str; 4]); 14] = [
+    ("Segoe UI", ["segoeui.ttf", "segoeuib.ttf", "segoeuii.ttf", "segoeuiz.ttf"]),
+    ("Arial", ["arial.ttf", "arialbd.ttf", "ariali.ttf", "arialbi.ttf"]),
+    ("Calibri", ["calibri.ttf", "calibrib.ttf", "calibrii.ttf", "calibriz.ttf"]),
+    ("Verdana", ["verdana.ttf", "verdanab.ttf", "verdanai.ttf", "verdanaz.ttf"]),
+    ("Tahoma", ["tahoma.ttf", "tahomabd.ttf", "tahoma.ttf", "tahomabd.ttf"]),
+    ("Trebuchet MS", ["trebuc.ttf", "trebucbd.ttf", "trebucit.ttf", "trebucbi.ttf"]),
+    ("Georgia", ["georgia.ttf", "georgiab.ttf", "georgiai.ttf", "georgiaz.ttf"]),
+    ("Times New Roman", ["times.ttf", "timesbd.ttf", "timesi.ttf", "timesbi.ttf"]),
+    ("Consolas", ["consola.ttf", "consolab.ttf", "consolai.ttf", "consolaz.ttf"]),
+    ("Arial (macOS)", ["Arial.ttf", "Arial Bold.ttf", "Arial Italic.ttf", "Arial Bold Italic.ttf"]),
+    ("DejaVu Sans", ["DejaVuSans.ttf", "DejaVuSans-Bold.ttf", "DejaVuSans-Oblique.ttf", "DejaVuSans-BoldOblique.ttf"]),
+    ("Liberation Sans", ["LiberationSans-Regular.ttf", "LiberationSans-Bold.ttf", "LiberationSans-Italic.ttf", "LiberationSans-BoldItalic.ttf"]),
+    ("Noto Sans", ["NotoSans-Regular.ttf", "NotoSans-Bold.ttf", "NotoSans-Italic.ttf", "NotoSans-BoldItalic.ttf"]),
+    ("Ubuntu", ["Ubuntu-R.ttf", "Ubuntu-B.ttf", "Ubuntu-RI.ttf", "Ubuntu-BI.ttf"]),
+];
+
+/// The folders the system keeps fonts in.
+#[allow(clippy::disallowed_methods)] // the desktop app is native only
+fn font_folders() -> Vec<std::path::PathBuf> {
+    let mut folders = Vec::new();
+    if let Some(windows) = std::env::var_os("WINDIR") {
+        folders.push(std::path::PathBuf::from(windows).join("Fonts"));
+    }
+    for f in [
+        "/System/Library/Fonts/Supplemental",
+        "/Library/Fonts",
+        "/usr/share/fonts/truetype/dejavu",
+        "/usr/share/fonts/truetype/liberation",
+        "/usr/share/fonts/truetype/noto",
+        "/usr/share/fonts/truetype/ubuntu",
+    ] {
+        folders.push(std::path::PathBuf::from(f));
+    }
+    folders
+}
+
+/// Where a family's face is, if the system has it.
+fn font_file(family: &str, bold: bool, italic: bool) -> Option<std::path::PathBuf> {
+    let (_, files) = FAMILIES.iter().find(|(name, _)| *name == family)?;
+    let wanted = files.get(usize::from(bold) + 2 * usize::from(italic)).copied().unwrap_or(files[0]);
+    let folders = font_folders();
+    [wanted, files[0]].into_iter().find_map(|file| folders.iter().map(|d| d.join(file)).find(|p| p.is_file()))
+}
+
 /// The interface's language: the system's.
 #[allow(clippy::disallowed_methods)] // the desktop app is native only
 fn language() -> mkperth_ui_egui::i18n::Lang {
@@ -122,6 +169,16 @@ fn main() -> eframe::Result {
         })),
         user: Some(Box::new(|| ["USERNAME", "USER"].iter().find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty())).unwrap_or_default())),
         now: Some(Box::new(|| chrono::Local::now().format("%Y-%m-%d %H:%M").to_string())),
+        fonts: Some(Box::new(|| {
+            FAMILIES.iter().map(|(name, _)| *name).filter(|name| font_file(name, false, false).is_some()).map(str::to_string).collect()
+        })),
+        load_font: Some(Box::new(|family: &str, bold: bool, italic: bool| font_file(family, bold, italic).and_then(|p| std::fs::read(p).ok()))),
+        save_font: Some(Box::new(|choice: &mkperth_ui_egui::fonts::FontChoice| {
+            if let Some(file) = settings_file("font.txt") {
+                let _ = file.parent().map(std::fs::create_dir_all);
+                let _ = std::fs::write(file, choice.to_line());
+            }
+        })),
         today: Some(Box::new(|| {
             use chrono::Datelike as _;
             let d = chrono::Local::now().date_naive();
@@ -130,6 +187,9 @@ fn main() -> eframe::Result {
     };
     let mut app = PerthApp::new(services);
     app.recent = load_recent();
+    if let Some(line) = settings_file("font.txt").and_then(|f| std::fs::read_to_string(f).ok()) {
+        app.font = mkperth_ui_egui::fonts::FontChoice::from_line(&line);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(path) = args.iter().find(|a| !a.starts_with("--")) {
         app.open(std::path::Path::new(path));

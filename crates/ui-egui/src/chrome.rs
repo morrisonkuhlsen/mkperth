@@ -37,6 +37,8 @@ pub(crate) enum Action {
     Comment,
     /// The schedule alone, full screen.
     Present,
+    /// The interface's typeface, size and style.
+    Font(crate::fonts::FontChoice),
     Language(Lang),
 }
 
@@ -50,6 +52,9 @@ pub(crate) struct State<'a> {
     pub autosave: bool,
     /// The File backstage is open.
     pub backstage: bool,
+    pub font: &'a crate::fonts::FontChoice,
+    /// The typeface families the system offers.
+    pub font_families: &'a [String],
     pub critical_only: bool,
     pub late_bars: bool,
     pub links: bool,
@@ -347,6 +352,11 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
                 set(Action::Theme(p));
             }
         });
+        ui.menu_button(tr!("font"), |ui| {
+            if let Some(f) = font_menu(ui, state) {
+                set(Action::Font(f));
+            }
+        });
         ui.menu_button(tr!("language"), |ui| {
             let current = i18n::current();
             for lang in Lang::ALL {
@@ -365,6 +375,45 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         }
     });
     action
+}
+
+/// The Font submenu: the family (egui's own, or one the system has), the size, bold and italic
+/// (for a family of the system's).
+fn font_menu(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoice> {
+    let mut chosen = None;
+    let now = state.font;
+    let mut with = |f: crate::fonts::FontChoice| chosen = Some(f);
+    if ui.radio(now.family.is_none(), tr!("font-default")).clicked() && now.family.is_some() {
+        with(crate::fonts::FontChoice { family: None, bold: false, italic: false, ..now.clone() });
+    }
+    egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+        for f in state.font_families {
+            let on = now.family.as_deref() == Some(f.as_str());
+            if ui.radio(on, egui::RichText::new(f)).clicked() && !on {
+                with(crate::fonts::FontChoice { family: Some(f.clone()), ..now.clone() });
+            }
+        }
+    });
+    if state.font_families.is_empty() {
+        ui.label(egui::RichText::new(tr!("font-none")).size(11.5).weak());
+    }
+    ui.separator();
+    for size in crate::fonts::SIZES {
+        if ui.radio(now.size == size, tr!(&format!("font-size-{size}"))).clicked() && now.size != size {
+            with(crate::fonts::FontChoice { size, ..now.clone() });
+        }
+    }
+    ui.separator();
+    let own = now.family.is_some();
+    let mut bold = now.bold;
+    if ui.add_enabled(own, egui::Checkbox::new(&mut bold, tr!("font-bold"))).clicked() {
+        with(crate::fonts::FontChoice { bold, ..now.clone() });
+    }
+    let mut italic = now.italic;
+    if ui.add_enabled(own, egui::Checkbox::new(&mut italic, tr!("font-italic"))).clicked() {
+        with(crate::fonts::FontChoice { italic, ..now.clone() });
+    }
+    chosen
 }
 
 /// Light, dark or the system's.
