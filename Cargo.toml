@@ -14,6 +14,7 @@ mkperth-i18n = { path = "crates/i18n" }
 mkperth-core = { path = "crates/core" }
 mkperth-sched = { path = "crates/sched" }
 mkperth-perth = { path = "crates/perth" }
+mkperth-p6xml = { path = "crates/p6xml" }
 mkperth-engine = { path = "crates/engine" }
 mkperth-ui-egui = { path = "crates/ui-egui" }
 
@@ -21,6 +22,8 @@ mkperth-ui-egui = { path = "crates/ui-egui" }
 thiserror = "2"
 # Perth.jl's project files are JSON; parsed with its recursion limit. MIT/Apache.
 serde_json = { version = "1", features = ["preserve_order"] }
+# P6 XML files, read event by event (the tree is built here, with caps). MIT.
+quick-xml = "0.41"
 
 # ui
 egui = "0.36"

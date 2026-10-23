@@ -61,7 +61,8 @@
 - **Milestones, constraints and the WBS:** start and finish milestones; start or finish on, on or
   after, on or before, mandatory, as late as possible, a secondary constraint, a must-finish-by
   date; summaries that roll up their children.
-- **Perth.jl's project files**, read and written back byte for byte.
+- **Files:** Perth.jl's projects, read and written back byte for byte; Primavera P6 XML, read and
+  written (WBS, activities, relationships, constraints, calendars).
 
 - **A first window:** the activity table beside the Gantt chart, early and late dates, floats and
   the critical path, for the sample project or any Perth.jl project.

@@ -1740,6 +1740,7 @@ version = "0.1.0"
 dependencies = [
  "mkperth-core",
  "mkperth-i18n",
+ "mkperth-p6xml",
  "mkperth-perth",
  "mkperth-sched",
  "serde_json",
@@ -1749,6 +1750,16 @@ dependencies = [
 [[package]]
 name = "mkperth-i18n"
 version = "0.1.0"
+
+[[package]]
+name = "mkperth-p6xml"
+version = "0.1.0"
+dependencies = [
+ "mkperth-core",
+ "mkperth-i18n",
+ "quick-xml",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "mkperth-perth"

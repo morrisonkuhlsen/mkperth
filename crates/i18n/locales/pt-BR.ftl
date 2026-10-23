@@ -123,7 +123,7 @@ sample-menu = Projeto de exemplo
 ribbon-show = Mostrar a faixa (Ctrl+F1)
 ribbon-hide = Ocultar a faixa (Ctrl+F1)
 open = Abrir
-open-tip = Abrir um projeto do Perth.jl (Ctrl+O)
+open-tip = Abrir um projeto: Perth.jl (.json) ou Primavera P6 XML (.xml) (Ctrl+O)
 save-tip = Salvar o projeto (Ctrl+S)
 nothing-to-undo = Nada a desfazer
 nothing-to-redo = Nada a refazer
@@ -213,3 +213,13 @@ time-narrower = Reduzir tempo
 time-narrower-tip = Estreitar a escala de tempo (Ctrl e a roda sobre o gráfico)
 time-fit = Ajustar projeto
 time-fit-tip = Mostrar o projeto inteiro no gráfico
+
+# P6 XML.
+err-p6-xml = Este XML está malformado: { $detail }
+err-p6-not-p6 = Este XML não é um projeto do P6: não tem APIBusinessObjects com um Project.
+err-p6-too-big = O arquivo é mais aninhado ou tem mais elementos do que o MK Perth lê.
+err-p6-field = { $what }: o campo { $field } falta ou não é o que o P6 grava ali.
+warn-p6-projects = O arquivo tem { $n } projetos; o primeiro foi lido.
+warn-p6-dangling = { $n } vínculos citam atividades que não estão no projeto; ficaram de fora.
+warn-p6-hours = Algumas durações ou defasagens não eram dias úteis inteiros; arredondadas para cima.
+warn-p6-skipped = Deixados de fora, ainda não lidos: { $kinds }.

@@ -1,0 +1,15 @@
+[package]
+name = "mkperth-p6xml"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Primavera P6's XML interchange format, read into MK Perth's model and written from it"
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+quick-xml = { workspace = true }
+mkperth-core = { workspace = true }
+mkperth-i18n = { workspace = true }

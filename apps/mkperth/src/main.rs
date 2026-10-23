@@ -26,10 +26,19 @@ fn main() -> eframe::Result {
     mkperth_ui_egui::i18n::set(language());
     let services = Services {
         pick_open: Some(Box::new(|| {
-            rfd::FileDialog::new().add_filter("Perth.jl project (.json)", &["json"]).add_filter("All files", &["*"]).pick_file()
+            rfd::FileDialog::new()
+                .add_filter("Projects (.json, .xml)", &["json", "xml"])
+                .add_filter("Perth.jl project (.json)", &["json"])
+                .add_filter("Primavera P6 XML (.xml)", &["xml"])
+                .add_filter("All files", &["*"])
+                .pick_file()
         })),
         pick_save: Some(Box::new(|suggested: &str| {
-            rfd::FileDialog::new().add_filter("Perth.jl project (.json)", &["json"]).set_file_name(suggested).save_file()
+            rfd::FileDialog::new()
+                .add_filter("Perth.jl project (.json)", &["json"])
+                .add_filter("Primavera P6 XML (.xml)", &["xml"])
+                .set_file_name(suggested)
+                .save_file()
         })),
     };
     let mut app = PerthApp::new(services);

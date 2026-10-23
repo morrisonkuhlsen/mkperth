@@ -7,6 +7,7 @@ A Cargo workspace; `cargo xtask layers` holds each crate to its layer.
 | L0 | `mkperth-i18n` | message catalogs (`locales/*.ftl`, a subset of Fluent) and `tr!` |
 | L0 | `mkperth-core` | `Date` (days from 1970, civil arithmetic), `Calendar`, `Project`, `Activity`, `Relationship` |
 | L1 | `mkperth-sched` | `schedule(&Project) -> Result<Schedule, ScheduleError>`: the critical path method |
+| L1 | `mkperth-p6xml` | Primavera P6's XML: `read` and `write` (calendars, WBS, activities, relationships) |
 | L1 | `mkperth-perth` | Perth.jl's project JSON: `read` and `write`, lossless through `extra` |
 | L2 | `mkperth-engine` | the session: the project, its schedule, `run(command, params)`; the sample project |
 | L3 | `mkperth-ui-egui` | the Activities window: the table beside the Gantt chart |

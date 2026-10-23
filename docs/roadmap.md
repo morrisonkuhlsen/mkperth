@@ -41,9 +41,14 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   fixed dates; Carnival, Good Friday and Corpus Christi from Easter by the Gregorian computus),
   the same weekdays as BusinessDays.jl's `Brazil` for 2020–2030; Perth projects on `Brazil` read
   with them, and eight oracle networks across those holidays agree with Perth.jl.
-- **Next:** P6 XML from
-  Oracle's published schema; Microsoft Project XML. XER is the user's decision (no specification
-  from Oracle).
+  P6 XML (`mkperth-p6xml`): the first project's WBS (as summaries), activities, relationships of
+  the four kinds, constraints and calendars (work weeks, holidays, worked exceptions) read and
+  written; durations and lags in hours become working days by each calendar's hours per day,
+  rounded up with a warning; a region's holidays written as ten years of dates; what isn't read is
+  named once in the warnings; Open and Save choose the format by the extension. To check against
+  Oracle's XSD: #31.
+- **Next:** Microsoft Project XML (#9). XER is the user's decision (#10: no specification from
+  Oracle).
 
 ## M2 — the engine and the command line
 - *Started:* `mkperth-engine`: the session (the project, its schedule, what opening it said) and

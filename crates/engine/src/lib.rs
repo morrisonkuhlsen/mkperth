@@ -49,6 +49,8 @@ pub enum EngineError {
     #[error(transparent)]
     Perth(#[from] PerthError),
     #[error(transparent)]
+    P6(#[from] mkperth_p6xml::P6Error),
+    #[error(transparent)]
     Schedule(#[from] ScheduleError),
 }
 
@@ -92,6 +94,11 @@ impl Default for Session {
     }
 }
 
+/// Whether a path names a P6 XML file.
+fn is_p6(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xml"))
+}
+
 impl Session {
     /// Runs a command by id with its parameters (a JSON object; `null` for none).
     pub fn run(&mut self, id: &str, params: &Value) -> Result<(), EngineError> {
@@ -121,12 +128,19 @@ impl Session {
         }
     }
 
-    /// Opens a Perth.jl project file and schedules it. On failure the open project stays.
+    /// Opens a project file and schedules it: P6 XML (`.xml`) or Perth.jl's JSON (anything
+    /// else). On failure the open project stays.
     pub fn open(&mut self, path: &Path) -> Result<(), EngineError> {
         let text = std::fs::read_to_string(path).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
-        let read = mkperth_perth::read(&text)?;
-        self.project = read.project;
-        self.warnings = read.warnings;
+        let (project, warnings) = if is_p6(path) {
+            let read = mkperth_p6xml::read(&text)?;
+            (read.project, read.warnings)
+        } else {
+            let read = mkperth_perth::read(&text)?;
+            (read.project, read.warnings)
+        };
+        self.project = project;
+        self.warnings = warnings;
         self.path = Some(path.to_path_buf());
         self.modified = false;
         self.undo.clear();
@@ -135,10 +149,10 @@ impl Session {
         Ok(())
     }
 
-    /// Writes the project as Perth.jl's JSON, all or nothing; it becomes the project's path.
+    /// Writes the project as P6 XML (`.xml`) or Perth.jl's JSON, all or nothing; it becomes the project's path.
     /// Returns what Perth's format couldn't hold.
     pub fn save(&mut self, path: &Path) -> Result<(), EngineError> {
-        let (text, warnings) = mkperth_perth::write(&self.project);
+        let (text, warnings) = if is_p6(path) { mkperth_p6xml::write(&self.project) } else { mkperth_perth::write(&self.project) };
         write_atomic(path, text.as_bytes()).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
         self.path = Some(path.to_path_buf());
         self.modified = false;
@@ -291,6 +305,15 @@ mod tests {
         sample.run("project.save", &serde_json::json!({"path": to.display().to_string()})).unwrap();
         assert_eq!(sample.path.as_deref(), Some(to.as_path()));
         assert!(Session::default().open(&to).is_ok());
+        // The same project as P6 XML, by its extension, and back.
+        let xml = dir.join("sample.xml");
+        sample.run("project.save", &serde_json::json!({"path": xml.display().to_string()})).unwrap();
+        assert!(std::fs::read_to_string(&xml).unwrap().contains("<APIBusinessObjects"));
+        let mut from_p6 = Session::default();
+        from_p6.open(&xml).unwrap();
+        assert_eq!(from_p6.project.activities.len(), sample.project.activities.len());
+        let finish = |s: &Session| s.schedule.as_ref().map(|x| x.finish).ok();
+        assert_eq!(finish(&from_p6), finish(&sample), "the P6 copy schedules to the same finish");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
