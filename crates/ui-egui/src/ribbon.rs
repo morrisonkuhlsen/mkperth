@@ -73,6 +73,8 @@ pub(crate) struct State<'a> {
 
 pub(crate) const TITLE_HEIGHT: f32 = 36.0;
 const RIBBON_HEIGHT: f32 = 78.0;
+/// The height of a group's name under its buttons.
+const GROUP_LABEL: f32 = 15.0;
 
 /// A small square icon button with an accessible name; clicks count only when enabled.
 fn icon_button(ui: &mut egui::Ui, icon: Icon, name: &str, enabled: bool) -> egui::Response {
@@ -232,7 +234,7 @@ pub(crate) fn ribbon(ui: &mut egui::Ui, tab: &mut Tab, collapsed: &mut bool, sta
         return action;
     }
     egui::Frame::new().inner_margin(egui::Margin { left: 4, right: 4, top: 2, bottom: 6 }).show(ui, |ui| {
-        ui.set_min_size(egui::vec2(ui.available_width(), RIBBON_HEIGHT));
+        ui.set_min_size(egui::vec2(ui.available_width(), RIBBON_HEIGHT + GROUP_LABEL));
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             if let Some(a) = buttons(ui, *tab, state) {
@@ -243,9 +245,11 @@ pub(crate) fn ribbon(ui: &mut egui::Ui, tab: &mut Tab, collapsed: &mut bool, sta
     action
 }
 
-/// One tab's buttons, in groups divided by thin lines.
+/// One tab's buttons, in named groups divided by thin lines.
 fn buttons(ui: &mut egui::Ui, tab: Tab, state: &State) -> Option<Action> {
     let mut action = None;
+    let mut chosen = None;
+    let mut lang = None;
     let mut go = |ui: &mut egui::Ui, icon: Icon, label: &str, tip: &str, enabled: bool, on: bool, then: Action| {
         if large(ui, icon, label, tip, enabled, on) {
             action = Some(then.clone());
@@ -253,54 +257,81 @@ fn buttons(ui: &mut egui::Ui, tab: Tab, state: &State) -> Option<Action> {
     };
     match tab {
         Tab::Home => {
-            go(ui, Icon::Open, &tr!("open"), &tr!("open-tip"), true, false, Action::Open);
-            go(ui, Icon::Save, &tr!("save"), &tr!("save-tip"), true, false, Action::Save);
-            divider(ui);
-            go(ui, Icon::Undo, &tr!("undo"), state.undo.unwrap_or(&tr!("nothing-to-undo")), state.undo.is_some(), false, Action::Undo);
-            go(ui, Icon::Redo, &tr!("redo"), state.redo.unwrap_or(&tr!("nothing-to-redo")), state.redo.is_some(), false, Action::Redo);
-            divider(ui);
-            go(ui, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
-            go(ui, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
-            divider(ui);
-            go(ui, Icon::Run, &tr!("schedule"), &tr!("schedule-tip"), true, false, Action::Schedule);
-            divider(ui);
-            go(ui, Icon::Page, &tr!("sample"), &tr!("sample-tip"), true, false, Action::Sample);
+            group(ui, &tr!("group-file"), |ui| {
+                go(ui, Icon::Open, &tr!("open"), &tr!("open-tip"), true, false, Action::Open);
+                go(ui, Icon::Save, &tr!("save"), &tr!("save-tip"), true, false, Action::Save);
+                go(ui, Icon::Page, &tr!("sample"), &tr!("sample-tip"), true, false, Action::Sample);
+            });
+            group(ui, &tr!("group-edit"), |ui| {
+                go(ui, Icon::Undo, &tr!("undo"), state.undo.unwrap_or(&tr!("nothing-to-undo")), state.undo.is_some(), false, Action::Undo);
+                go(ui, Icon::Redo, &tr!("redo"), state.redo.unwrap_or(&tr!("nothing-to-redo")), state.redo.is_some(), false, Action::Redo);
+            });
+            group(ui, &tr!("group-activities"), |ui| {
+                go(ui, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
+                go(ui, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
+            });
+            group(ui, &tr!("group-schedule"), |ui| {
+                go(ui, Icon::Run, &tr!("schedule"), &tr!("schedule-tip"), true, false, Action::Schedule);
+            });
         }
         Tab::Project => {
-            go(ui, Icon::Run, &tr!("schedule"), &tr!("schedule-tip"), true, false, Action::Schedule);
-            divider(ui);
-            go(ui, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
-            go(ui, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
-            divider(ui);
-            go(ui, Icon::Critical, &tr!("critical-only"), &tr!("critical-only-tip"), true, state.critical_only, Action::CriticalOnly);
-            go(ui, Icon::Gantt, &tr!("late-bars"), &tr!("late-bars-tip"), true, state.late_bars, Action::LateBars);
-            go(ui, Icon::Network, &tr!("links"), &tr!("links-tip"), true, state.links, Action::Links);
-            divider(ui);
-            if let Some(params) = scheduling_options(ui, state) {
-                action = Some(Action::Options(params));
-            }
+            group(ui, &tr!("group-schedule"), |ui| {
+                go(ui, Icon::Run, &tr!("schedule"), &tr!("schedule-tip"), true, false, Action::Schedule);
+            });
+            group(ui, &tr!("group-activities"), |ui| {
+                go(ui, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
+                go(ui, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
+            });
+            group(ui, &tr!("group-show"), |ui| {
+                go(ui, Icon::Critical, &tr!("critical-only"), &tr!("critical-only-tip"), true, state.critical_only, Action::CriticalOnly);
+                go(ui, Icon::Gantt, &tr!("late-bars"), &tr!("late-bars-tip"), true, state.late_bars, Action::LateBars);
+                go(ui, Icon::Network, &tr!("links"), &tr!("links-tip"), true, state.links, Action::Links);
+            });
+            group(ui, &tr!("group-options"), |ui| chosen = scheduling_options(ui, state));
         }
         Tab::View => {
-            go(
-                ui,
-                Icon::Gantt,
-                &tr!("activities-view"),
-                &tr!("activities-view-tip"),
-                true,
-                state.view == View::Activities,
-                Action::View(View::Activities),
-            );
-            divider(ui);
-            go(ui, Icon::Plus, &tr!("time-wider"), &tr!("time-wider-tip"), true, false, Action::TimeScale(1));
-            go(ui, Icon::Minus, &tr!("time-narrower"), &tr!("time-narrower-tip"), true, false, Action::TimeScale(-1));
-            go(ui, Icon::Grid, &tr!("time-fit"), &tr!("time-fit-tip"), true, state.fitted, Action::TimeScale(0));
-            divider(ui);
-            if let Some(lang) = language(ui) {
-                action = Some(Action::Language(lang));
-            }
+            group(ui, &tr!("group-views"), |ui| {
+                go(
+                    ui,
+                    Icon::Gantt,
+                    &tr!("activities-view"),
+                    &tr!("activities-view-tip"),
+                    true,
+                    state.view == View::Activities,
+                    Action::View(View::Activities),
+                );
+            });
+            group(ui, &tr!("group-time-scale"), |ui| {
+                go(ui, Icon::Plus, &tr!("time-wider"), &tr!("time-wider-tip"), true, false, Action::TimeScale(1));
+                go(ui, Icon::Minus, &tr!("time-narrower"), &tr!("time-narrower-tip"), true, false, Action::TimeScale(-1));
+                go(ui, Icon::Grid, &tr!("time-fit"), &tr!("time-fit-tip"), true, state.fitted, Action::TimeScale(0));
+            });
+            group(ui, &tr!("language"), |ui| lang = language(ui));
         }
     }
-    action
+    chosen.map(Action::Options).or(lang.map(Action::Language)).or(action)
+}
+
+/// A group of buttons with its name underneath and a thin line after it.
+fn group(ui: &mut egui::Ui, name: &str, add: impl FnOnce(&mut egui::Ui)) {
+    let t = Tokens::get(ui.ctx());
+    let inner = ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        let row = ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.set_min_height(RIBBON_HEIGHT - 4.0);
+            add(ui);
+        });
+        let galley = ui.painter().layout_no_wrap(name.to_string(), egui::FontId::proportional(11.0), t.text_dim);
+        let width = row.response.rect.width().max(galley.size().x + 8.0);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, GROUP_LABEL), egui::Sense::hover());
+        ui.painter().galley(egui::pos2(rect.center().x - galley.size().x / 2.0, rect.top()), galley, t.text_dim);
+    });
+    let r = inner.response.rect;
+    ui.add_space(4.0);
+    let x = ui.cursor().left();
+    ui.painter().vline(x, (r.top() + 6.0)..=(r.bottom() - 4.0), egui::Stroke::new(1.0, t.border));
+    ui.add_space(6.0);
 }
 
 /// How total float is measured and what is critical.
@@ -354,12 +385,10 @@ fn scheduling_options(ui: &mut egui::Ui, state: &State) -> Option<serde_json::Va
 
 /// The interface's language.
 fn language(ui: &mut egui::Ui) -> Option<Lang> {
-    let t = Tokens::get(ui.ctx());
     let mut chosen = None;
     ui.vertical(|ui| {
         ui.set_width(150.0);
-        ui.add_space(6.0);
-        ui.label(egui::RichText::new(tr!("language")).size(12.0).color(t.text_dim));
+        ui.add_space(24.0);
         let current = i18n::current();
         egui::ComboBox::from_id_salt("language").selected_text(current.name()).width(140.0).show_ui(ui, |ui| {
             for lang in Lang::ALL {
@@ -370,12 +399,6 @@ fn language(ui: &mut egui::Ui) -> Option<Lang> {
         });
     });
     chosen
-}
-
-fn divider(ui: &mut egui::Ui) {
-    let t = Tokens::get(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(13.0, RIBBON_HEIGHT - 8.0), egui::Sense::hover());
-    ui.painter().vline(rect.center().x, rect.y_range().shrink(6.0), egui::Stroke::new(1.0, t.border));
 }
 
 /// A large ribbon button: a 32-point icon over its name. `on` marks a toggle that is on.
