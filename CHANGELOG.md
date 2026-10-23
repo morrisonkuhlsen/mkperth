@@ -12,6 +12,10 @@ Read it before re-scheduling a plan with a new version.
 
 ### Changed results
 
+- **A resource-dependent activity** (P6 XML's "Resource Dependent", or the box in Details)
+  schedules on its resources' calendars and finishes when the last of them does, instead of
+  working its duration on its own calendar: a resource on a shorter week (or with more work)
+  moves it, and its successors, later. Read from P6 XML it was a task before.
 - **A P6 calendar exception with its own work times** works those times (four hours on a short
   day) instead of its weekday's whole day: activities across such days finish later.
 - **A finish milestone with no work before it** (one with no predecessor, at the project's

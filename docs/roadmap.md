@@ -140,7 +140,8 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   `by_week`), as a histogram in the Resources view, over-allocated weeks in red.
   An activity's assignments in Details' Resources tab.
   Duration types: a duration, units and units an hour worked out from each other by the type.
-- **Next:** resource-dependent activities on their resources' calendars; prices that change over time (#23); levelling
+  Resource-dependent activities: each resource on its own calendar, the last one finishing it.
+- **Next:** prices that change over time (#23); levelling
   with priorities (#21).
 
 ## M5 — costs and earned value

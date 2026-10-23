@@ -205,6 +205,10 @@ pub struct Activity {
     /// Which of its duration, its assignments' units and their units an hour hold when one
     /// changes.
     pub duration_type: DurationType,
+    /// Its resources each work their own part on their own calendar, and it finishes when the
+    /// last of them does (P6's resource dependent activities); else it works its duration on
+    /// its calendar, whoever is on it.
+    pub resource_dependent: bool,
     pub extra: Extra,
 }
 

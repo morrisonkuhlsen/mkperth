@@ -36,7 +36,7 @@ use std::collections::{HashMap, VecDeque};
 
 use mkperth_core::{
     ActivityKind, Calendar, CalendarError, Constraint, CriticalBy, Date, FloatKind, LagCalendar, MINUTES_PER_DAY, ProgressMode, Project,
-    RelationshipType,
+    RelationshipType, ResourceKind,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -248,6 +248,33 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
     let is_summary = |i: usize| summary.get(i) == Some(&true);
     let cal_of = |i: usize| on.get(i).copied().unwrap_or(0);
     let clock = |k: usize| Clock { calendar: calendars.get(k).copied().unwrap_or(&project.calendar) };
+    // A resource-dependent activity's drivers: each resource on it (not a material) with the
+    // working minutes its work takes at its units an hour, on its own calendar (the project's
+    // when it names none). Without any, it schedules as a task.
+    let drivers: Vec<Vec<(usize, String, i64)>> = acts
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            if !a.resource_dependent || a.kind.is_milestone() || summary.get(i) == Some(&true) {
+                return Vec::new();
+            }
+            let own = a.working_minutes(calendars.get(on.get(i).copied().unwrap_or(0)).map_or(480, |c| c.day_minutes()));
+            project
+                .assignments
+                .iter()
+                .filter(|x| x.activity == a.id)
+                .filter_map(|x| {
+                    let r = project.resources.iter().find(|r| x.resource.as_deref() == Some(r.id.as_str()))?;
+                    let rate = x.rate_over(own);
+                    if r.kind == ResourceKind::Material || rate <= 0 {
+                        return None;
+                    }
+                    let minutes = (x.planned.saturating_mul(60) / rate).clamp(0, MAX_SPAN * MINUTES_PER_DAY);
+                    Some((r.calendar.as_deref().and_then(named).unwrap_or(0), r.name.clone(), minutes))
+                })
+                .collect()
+        })
+        .collect();
     let find = |id: &str| index.get(id).copied().ok_or_else(|| ScheduleError::UnknownActivity(id.to_string()));
     let target = trace.map(find).transpose()?;
     let traced = |i: usize| target == Some(i);
@@ -257,8 +284,13 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
     let traced_calendar = target.and_then(|i| on.get(i).copied()).and_then(|k| calendars.get(k).copied()).unwrap_or(&project.calendar);
     // A finish at the start of a work period is the end of the last one, the same moment: shown
     // as that evening. Starts stay as they were asked for, so the calendar's placing shows.
+    // A resource-dependent activity's moments are its resources': they stay as they are.
+    let traced_driven = target.is_some_and(|i| {
+        drivers.get(i).is_some_and(|d| !d.is_empty())
+            && acts.get(i).is_some_and(|a| a.actual_start.is_none() && a.actual_finish.is_none() && a.expected_finish.is_none())
+    });
     let at = |t: i64, evening: bool| -> Result<Moment, ScheduleError> {
-        let t = if evening { Clock { calendar: traced_calendar }.previous_finish(t)? } else { t };
+        let t = if evening && !traced_driven { Clock { calendar: traced_calendar }.previous_finish(t)? } else { t };
         explain::moment(t, evening, traced_calendar).ok_or(ScheduleError::TooLong)
     };
     let (mut early_bounds, mut late_bounds, mut slacks) = (Vec::new(), Vec::new(), Vec::new());
@@ -359,22 +391,63 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
     let expected =
         |i: usize| acts.get(i).filter(|a| !is_summary(i) && !a.kind.is_milestone() && status(i) != Status::Completed).and_then(|a| a.expected_finish);
     // Where an activity's working time can begin and end, on its calendar.
+    // A resource-dependent activity not begun is its drivers' work, each on its calendar: it
+    // finishes when the last of them does. Begun, or with an expected finish, it works its own.
+    let driven = |i: usize| drivers.get(i).filter(|d| !d.is_empty() && status(i) == Status::NotStarted && expected(i).is_none());
     let place_start = |i: usize, t: i64| -> Result<i64, ScheduleError> {
+        // Driven: when the first of its resources can begin.
+        if let Some(d) = driven(i) {
+            let mut s: Option<i64> = None;
+            for (k, _, _) in d {
+                let n = clock(*k).next_start(t)?;
+                s = Some(s.map_or(n, |x| x.min(n)));
+            }
+            return Ok(s.unwrap_or(t));
+        }
         let c = clock(cal_of(i));
         match kind(i) {
             ActivityKind::FinishMilestone => c.next_finish(t),
             _ => c.next_start(t),
         }
     };
-    let finish_of = |i: usize, es: i64| -> Result<i64, ScheduleError> { clock(cal_of(i)).advance(es, dur(i)) };
-    // The earliest start that finishes no earlier than `t`.
+    let finish_of = |i: usize, es: i64| -> Result<i64, ScheduleError> {
+        if let Some(d) = driven(i) {
+            let mut f = es;
+            for (k, _, m) in d {
+                let c = clock(*k);
+                let s = c.next_start(es)?;
+                f = f.max(if *m == 0 { s } else { c.advance(s, *m)? });
+            }
+            return Ok(f);
+        }
+        clock(cal_of(i)).advance(es, dur(i))
+    };
+    // The earliest start that finishes no earlier than `t`: for drivers, the earliest that one
+    // of them finishes by then.
     let start_for_finish = |i: usize, t: i64| -> Result<i64, ScheduleError> {
+        if let Some(d) = driven(i) {
+            let mut s = t;
+            for (k, _, m) in d {
+                let c = clock(*k);
+                s = s.min(if *m == 0 { t } else { c.retreat(c.next_finish(t)?, *m)? });
+            }
+            return Ok(s);
+        }
         let c = clock(cal_of(i));
         if dur(i) == 0 { Ok(t) } else { c.retreat(c.next_finish(t)?, dur(i)) }
     };
     // The latest finish at or before `t`; a start milestone (or a task of no duration) at the next
     // working minute when no work lies between, which is the same moment.
     let place_finish = |i: usize, t: i64| -> Result<i64, ScheduleError> {
+        // Driven: the latest any of its resources can finish by `t`.
+        if let Some(d) = driven(i) {
+            let mut f: Option<i64> = None;
+            for (k, _, _) in d {
+                let p = clock(*k).previous_finish(t)?;
+                f = Some(f.map_or(p, |x| x.max(p)));
+            }
+            return Ok(f.unwrap_or(t));
+        }
         let c = clock(cal_of(i));
         let f = c.previous_finish(t)?;
         if kind(i) == ActivityKind::StartMilestone || (kind(i) == ActivityKind::Task && dur(i) == 0) {
@@ -383,15 +456,32 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         }
         Ok(f)
     };
-    let start_of = |i: usize, lf: i64| -> Result<i64, ScheduleError> { clock(cal_of(i)).retreat(lf, dur(i)) };
+    // The latest start that finishes by `lf`: for drivers, the earliest any of them must start.
+    let start_of = |i: usize, lf: i64| -> Result<i64, ScheduleError> {
+        if let Some(d) = driven(i) {
+            let mut s = lf;
+            for (k, _, m) in d {
+                let c = clock(*k);
+                s = s.min(if *m == 0 { lf } else { c.retreat(c.previous_finish(lf)?, *m)? });
+            }
+            return Ok(s);
+        }
+        clock(cal_of(i)).retreat(lf, dur(i))
+    };
     // The latest finish that starts no later than `t`: a relationship's bound counts moments
     // with no work between as one; a constraint's date is strict.
     let finish_for_start = |i: usize, t: i64| -> Result<i64, ScheduleError> {
         let c = clock(cal_of(i));
+        if driven(i).is_some() {
+            return finish_of(i, c.previous_start(t)?);
+        }
         if dur(i) == 0 { Ok(t) } else { c.advance(c.previous_start(t)?, dur(i)) }
     };
     let finish_for_start_by = |i: usize, t: i64| -> Result<i64, ScheduleError> {
         let c = clock(cal_of(i));
+        if driven(i).is_some() {
+            return finish_of(i, c.start_by(t)?);
+        }
         if dur(i) == 0 { Ok(t) } else { c.advance(c.start_by(t)?, dur(i)) }
     };
     // The bound a tie puts on its successor, from the predecessor's early dates: a start for
@@ -787,6 +877,16 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
                 calendar: calendars.get(cal_of(i)).map_or_else(String::new, |c| c.name.clone()),
                 duration: dur(i),
                 expected: expected(i),
+                resources: driven(i).map_or_else(Vec::new, |d| {
+                    d.iter()
+                        .map(|(k, name, m)| explain::Driver {
+                            name: name.clone(),
+                            calendar: calendars.get(*k).map_or_else(String::new, |c| c.name.clone()),
+                            minutes: *m,
+                            day_minutes: calendars.get(*k).map_or(480, |c| c.day_minutes()),
+                        })
+                        .collect()
+                }),
                 day_minutes: day_minutes(i),
                 children: (0..n).filter(|&c| parent.get(c).copied().flatten() == Some(i)).map(id_of).collect(),
                 early: early_bounds,

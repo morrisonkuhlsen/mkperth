@@ -56,6 +56,16 @@ pub struct Slack {
     pub minutes: i64,
 }
 
+/// A resource that drives a resource-dependent activity: its work on its own calendar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Driver {
+    pub name: String,
+    pub calendar: String,
+    /// Working minutes of its work, and its calendar's working day.
+    pub minutes: i64,
+    pub day_minutes: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Explanation {
     pub id: String,
@@ -64,6 +74,9 @@ pub struct Explanation {
     pub duration: i64,
     /// The day it is expected to finish, which set `duration`.
     pub expected: Option<Date>,
+    /// The resources a resource-dependent activity waits for, each on its calendar; empty for
+    /// an activity that works its own duration.
+    pub resources: Vec<Driver>,
     /// The minutes of a working day on its calendar, to say durations and floats in days.
     pub day_minutes: i64,
     /// The children whose dates a summary takes; empty for any other activity.
@@ -210,7 +223,20 @@ impl Explanation {
         if let Some(day) = self.expected {
             out.push(tr!("ex-expected", date = date(day).as_str(), n = in_days(self.duration).as_str()));
         }
-        if self.duration > 0 {
+        let drivers = |n: &dyn Fn(i64, i64) -> String| {
+            self.resources
+                .iter()
+                .map(|d| tr!("ex-driver", name = d.name.as_str(), n = n(d.minutes, d.day_minutes).as_str(), calendar = d.calendar.as_str()))
+                .collect::<Vec<_>>()
+                .join("; ")
+        };
+        let days_on = |m: i64, day: i64| {
+            let whole = m / day.max(1);
+            if m % day.max(1) == 0 { whole.to_string() } else { format!("{:.2}", m as f64 / day.max(1) as f64).trim_end_matches('0').to_string() }
+        };
+        if !self.resources.is_empty() {
+            out.push(tr!("ex-early-finish-resources", list = drivers(&days_on).as_str(), at = at(self.early_finish).as_str()));
+        } else if self.duration > 0 {
             out.push(tr!(
                 "ex-early-finish",
                 n = in_days(self.duration).as_str(),
@@ -233,7 +259,9 @@ impl Explanation {
         if self.late_finish != self.latest {
             out.push(tr!("ex-placed-late", calendar = self.calendar.as_str(), at = at(self.late_finish).as_str()));
         }
-        if self.duration > 0 {
+        if !self.resources.is_empty() {
+            out.push(tr!("ex-late-start-resources", at = at(self.late_start).as_str()));
+        } else if self.duration > 0 {
             out.push(tr!("ex-late-start", n = in_days(self.duration).as_str(), calendar = self.calendar.as_str(), at = at(self.late_start).as_str()));
         }
         out.push(tr!("ex-total-float", calendar = self.calendar.as_str(), n = in_days(self.scheduled.total_float_minutes).as_str()));

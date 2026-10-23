@@ -891,6 +891,15 @@ impl PerthApp {
                             }
                         });
                         ui.add_space(3.0);
+                        // Its resources each on their own calendar, finishing with the last.
+                        ui.horizontal(|ui| {
+                            ui.add_space(124.0);
+                            let mut on = a.resource_dependent;
+                            if ui.checkbox(&mut on, tr!("detail-resource-dependent")).on_hover_text(tr!("detail-resource-dependent-tip")).clicked() {
+                                pending = Some(("activity.edit", json!({"id": a.id, "resource_dependent": on})));
+                            }
+                        });
+                        ui.add_space(3.0);
                     }
                     fact(ui, tr!("detail-calendar"), a.calendar.clone().unwrap_or_else(|| project.calendar.name.clone()));
                     if let Some(parent) = a.parent.as_deref() {

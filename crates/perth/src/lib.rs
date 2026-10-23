@@ -284,6 +284,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             calendar: None,
             notes: text_of("notes")?,
             duration_type: Default::default(),
+            resource_dependent: false,
             extra,
         });
         dependencies.push((label, deps));

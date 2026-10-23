@@ -293,6 +293,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
                 .text_of("DurationType")
                 .and_then(|d| DurationType::ALL.into_iter().find(|x| duration_type_name(*x) == d))
                 .unwrap_or_default(),
+            resource_dependent: e.text_of("Type") == Some("Resource Dependent"),
             ..Activity::default()
         };
         // Progress: the actual dates, and the work left of an activity under way.
@@ -655,6 +656,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     }
     for a in project.activities.iter().filter(|a| !summary(&a.id)) {
         let kind = match a.kind {
+            ActivityKind::Task if a.resource_dependent => "Resource Dependent",
             ActivityKind::Task => "Task Dependent",
             ActivityKind::StartMilestone => "Start Milestone",
             ActivityKind::FinishMilestone => "Finish Milestone",

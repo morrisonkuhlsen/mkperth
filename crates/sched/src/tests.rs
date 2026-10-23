@@ -718,3 +718,62 @@ fn an_exception_day_works_its_own_periods() {
     assert_eq!(dates(&s, "C"), (day(2026, 10, 5), day(2026, 10, 12)));
     assert!(q.calendar.is_working(day(2026, 10, 10)) && !q.calendar.is_working(day(2026, 10, 7)));
 }
+
+/// A resource-dependent activity works on its resources' calendars and finishes with the last.
+/// A takes 40 hours from Monday 5 October 2026, B a day after it. Ana works Monday to Thursday:
+/// her 40 hours are the 5th to the 8th and Monday the 12th, so A finishes on the 12th and B is on
+/// the 13th (as a task, A would finish Friday the 9th and B be on the 12th). Bia, Monday to
+/// Friday, would finish on the 9th: Ana sets the pace. Backwards from B on the 13th, Ana must
+/// start by the morning of the 5th (Bia by the 6th): A starts at the latest on the 5th, no float.
+#[test]
+fn a_resource_dependent_activity_waits_for_its_last_resource() {
+    use mkperth_core::{Assignment, Resource, UNIT};
+    let mut p = project(&[("A", 5), ("B", 1)], &[("A", "B", FS, 0)]);
+    p.calendars.push(Calendar { name: "Four days".into(), week: [true, true, true, true, false, false, false], ..Calendar::default() });
+    let as_task = schedule(&p).unwrap();
+    assert_eq!((as_task.activities[0].early_finish, as_task.activities[1].early_start), (day(2026, 10, 9), day(2026, 10, 12)));
+    p.activities[0].resource_dependent = true;
+    p.resources = vec![
+        Resource { id: "ANA".into(), name: "Ana".into(), calendar: Some("Four days".into()), ..Resource::default() },
+        Resource { id: "BIA".into(), name: "Bia".into(), ..Resource::default() },
+    ];
+    p.assignments = vec![
+        Assignment { activity: "A".into(), resource: Some("ANA".into()), planned: 40 * UNIT, rate: Some(UNIT), ..Assignment::default() },
+        Assignment { activity: "A".into(), resource: Some("BIA".into()), planned: 40 * UNIT, rate: Some(UNIT), ..Assignment::default() },
+    ];
+    let s = schedule(&p).unwrap();
+    let (a, b) = (&s.activities[0], &s.activities[1]);
+    assert_eq!((a.early_start, a.early_finish), (day(2026, 10, 5), day(2026, 10, 12)));
+    assert_eq!((b.early_start, b.early_finish), (day(2026, 10, 13), day(2026, 10, 13)));
+    assert_eq!((a.late_start, a.late_finish, a.total_float), (day(2026, 10, 5), day(2026, 10, 12), 0));
+    // The calculation names who sets the pace, on which calendar.
+    let lines = explain(&p, "A").unwrap().lines(&|d| d.to_string());
+    assert!(lines.iter().any(|l| l.contains("Ana, 5 working days on Four days") && l.contains("2026-10-12")), "{lines:?}");
+    // Without resources, or begun, it works its own duration again.
+    p.assignments.clear();
+    assert_eq!(schedule(&p).unwrap().activities[0].early_finish, day(2026, 10, 9));
+}
+
+/// A resource on a seven-day week works the Saturday its activity's calendar doesn't: A's 40
+/// hours from Thursday 8 October 2026 are the 8th to Monday the 12th for Ana (Saturday and
+/// Sunday too), and B the next day starts on Tuesday the 13th. Backwards, A may finish as late as
+/// Monday evening, the latest Ana can before B: its late dates are its early ones, not a Friday
+/// before its early finish.
+#[test]
+fn a_resource_on_a_longer_week_keeps_its_dates_backwards() {
+    use mkperth_core::{Assignment, Constraint, Resource, UNIT};
+    let mut p = project(&[("A", 5), ("B", 1)], &[("A", "B", FS, 0)]);
+    p.calendars.push(Calendar { name: "Seven days".into(), week: [true; 7], ..Calendar::default() });
+    p.activities[0].constraint = Some(Constraint::StartOnOrAfter(day(2026, 10, 8)));
+    p.activities[0].resource_dependent = true;
+    p.resources = vec![Resource { id: "ANA".into(), name: "Ana".into(), calendar: Some("Seven days".into()), ..Resource::default() }];
+    p.assignments =
+        vec![Assignment { activity: "A".into(), resource: Some("ANA".into()), planned: 40 * UNIT, rate: Some(UNIT), ..Assignment::default() }];
+    let s = schedule(&p).unwrap();
+    let a = &s.activities[0];
+    assert_eq!((a.early_start, a.early_finish), (day(2026, 10, 8), day(2026, 10, 12)));
+    assert_eq!((a.late_start, a.late_finish), (day(2026, 10, 8), day(2026, 10, 12)));
+    assert_eq!(s.activities[1].early_start, day(2026, 10, 13));
+    let lines = explain(&p, "A").unwrap().lines(&|d| d.to_string());
+    assert!(lines.iter().any(|l| l.contains("Ana, 5 working days on Seven days") && l.contains("2026-10-12")), "{lines:?}");
+}

@@ -363,6 +363,10 @@ impl Session {
             .map(|d| mkperth_core::DurationType::from_code(&d).ok_or_else(|| EngineError::Value(C.into(), "duration_type".into())))
             .transpose()?;
         let calendar = text(params, C, "calendar")?;
+        let resource_dependent = match params.get("resource_dependent") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(v.as_bool().ok_or_else(|| EngineError::Value(C.into(), "resource_dependent".into()))?),
+        };
         let notes = match params.get("notes") {
             None | Some(Value::Null) => None,
             Some(Value::String(s)) if s.chars().count() <= MAX_NOTES => Some(s.clone()),
@@ -423,6 +427,9 @@ impl Session {
             }
             if let Some(d) = duration_type {
                 a.duration_type = d;
+            }
+            if let Some(r) = resource_dependent {
+                a.resource_dependent = r;
             }
             if let Some(name) = name {
                 a.name = name;
