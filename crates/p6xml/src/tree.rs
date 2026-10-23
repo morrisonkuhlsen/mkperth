@@ -36,12 +36,8 @@ impl Element {
 }
 
 /// The name after any `prefix:`.
-fn local(name: &[u8]) -> String {
-    let name = String::from_utf8_lossy(name);
-    match name.rsplit_once(':') {
-        Some((_, local)) => local.to_string(),
-        None => name.into_owned(),
-    }
+fn local(name: &str) -> String {
+    name.rsplit_once(':').map_or(name, |(_, local)| local).to_string()
 }
 
 /// Parses a whole document into its root element.
@@ -79,21 +75,22 @@ pub(crate) fn parse(text: &str) -> Result<Element, P6Error> {
                     parent.children.push(done);
                 }
             }
+            // Line ends normalized as XML 1.0 has them (CR LF and lone CR become LF).
             Event::Text(t) => {
                 if let Some(e) = stack.last_mut() {
-                    e.text.push_str(&t.decode().map_err(|e| bad(&e))?);
+                    e.text.push_str(&t.xml10_content());
                 }
             }
             Event::CData(t) => {
                 if let Some(e) = stack.last_mut() {
-                    e.text.push_str(&t.decode().map_err(|e| bad(&e))?);
+                    e.text.push_str(&t.xml10_content());
                 }
             }
             Event::GeneralRef(r) => {
                 let resolved = if r.is_char_ref() {
                     r.resolve_char_ref().map_err(|e| bad(&e))?.map(String::from)
                 } else {
-                    match r.decode().map_err(|e| bad(&e))?.as_ref() {
+                    match &*r {
                         "amp" => Some("&".into()),
                         "lt" => Some("<".into()),
                         "gt" => Some(">".into()),

@@ -508,7 +508,7 @@ pub(crate) fn show(ui: &mut egui::Ui, session: &Session, options: &mut Options, 
     // A thin scroll bar under the chart when part of it is out of view.
     if options.scale.is_some() && visible_days < days as f32 {
         let track = Rect::from_min_max(pos2(chart_left + 2.0, full.bottom() - 9.0), pos2(full.right() - 2.0, full.bottom() - 3.0));
-        let response = ui.interact(track, ui.id().with("time-scroll"), Sense::drag());
+        let response = ui.interact(track, ui.scope_id().with("time-scroll"), Sense::drag());
         let share = (visible_days / days as f32).clamp(0.05, 1.0);
         let thumb_width = track.width() * share;
         let at = track.left() + (track.width() - thumb_width) * (options.offset / (days as f32 - visible_days).max(1.0));

@@ -16,3 +16,6 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
+# Since egui 0.37 its fonts are opt-in: the app gets them through eframe, tests and the snapshot
+# example here.
+egui = { workspace = true, features = ["default_fonts"] }

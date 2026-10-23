@@ -80,7 +80,7 @@ fn tool(ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: bool, on:
 fn tool_response(ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: bool, on: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let (rect, response) = ui.allocate_exact_size(egui::vec2(30.0, 28.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, name));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, on, name));
     if on {
         ui.painter().rect_filled(rect, ROUND, t.accent_soft);
     } else if enabled && response.hovered() {
@@ -116,7 +116,7 @@ fn accent(ui: &mut egui::Ui, icon: Icon, text: &str, height: f32, round: f32) ->
     let pad = (height / 2.0).max(10.0);
     let size = egui::vec2(galley.size().x + 2.0 * pad + 16.0, height);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, text));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text));
     let fill = if response.hovered() { t.accent.gamma_multiply(0.85) } else { t.accent };
     ui.painter().rect_filled(rect, round, fill);
     let mut on = t;
@@ -437,7 +437,7 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         row.add_space(4.0);
         let label = row.label(egui::RichText::new(tr!("option-data-date")).size(12.5).color(t.text_dim));
         row.add_space(6.0);
-        if let Some(d) = crate::date_field(&mut row, egui::Id::new("data-date"), label.id, state.data_date, 96.0) {
+        if let Some(d) = crate::date_field(&mut row, egui::Id::unique("data-date"), label.id, state.data_date, 96.0) {
             action = Some(Action::Options(serde_json::json!({ "data_date": d.map(|d| d.to_string()) })));
         }
         row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

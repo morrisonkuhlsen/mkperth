@@ -514,8 +514,8 @@ impl PerthApp {
         for (k, (icon, name, tip, view)) in views.into_iter().enumerate() {
             let on = self.view == view;
             let slot = egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 4.0 + 42.0 * k as f32), egui::vec2(RAIL_WIDTH - 1.0, 40.0));
-            let response = ui.interact(slot, ui.id().with(("rail", k)), egui::Sense::click());
-            response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, &name));
+            let response = ui.interact(slot, ui.scope_id().with(("rail", k)), egui::Sense::click());
+            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, &name));
             let painter = ui.painter();
             if on {
                 painter.rect_filled(slot, 0.0, t.accent_soft);
@@ -534,8 +534,8 @@ impl PerthApp {
         let slot = egui::Rect::from_min_size(egui::pos2(rect.left(), top + 6.0), egui::vec2(RAIL_WIDTH - 1.0, 40.0));
         let shown = !self.options.table_hidden;
         let name = tr!("activity-table");
-        let response = ui.interact(slot, ui.id().with("rail-table"), egui::Sense::click());
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, shown, &name));
+        let response = ui.interact(slot, ui.scope_id().with("rail-table"), egui::Sense::click());
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, shown, &name));
         if shown {
             ui.painter().rect_filled(slot.shrink(4.0), 4.0, t.accent_soft);
         } else if response.hovered() {
@@ -687,7 +687,7 @@ impl PerthApp {
         ui.separator();
         // Notes typed and not yet saved when another tab took over.
         if tab != DetailsTab::Notes {
-            let key = egui::Id::new(("notes", i)).with("text");
+            let key = egui::Id::unique(("notes", i)).with("text");
             if let Some((was, text)) = ui.data_mut(|d| d.remove_temp::<(String, String)>(key))
                 && was == a.notes
                 && text != a.notes
@@ -735,7 +735,7 @@ impl PerthApp {
                             ui.horizontal(|ui| {
                                 let label =
                                     ui.add_sized(egui::vec2(120.0, 18.0), egui::Label::new(egui::RichText::new(name).size(12.0).color(t.text_dim)));
-                                if let Some(d) = date_field(ui, ui.id().with((key, i)), label.id, value, 100.0) {
+                                if let Some(d) = date_field(ui, ui.scope_id().with((key, i)), label.id, value, 100.0) {
                                     pending = Some(("activity.edit", json!({"id": a.id, key: d.map(|d| d.to_string())})));
                                 }
                             });
@@ -835,7 +835,7 @@ impl PerthApp {
                 }
                 DetailsTab::Notes => {
                     // Kept as typed, saved when the box is left or the tab changes.
-                    let id = egui::Id::new(("notes", i));
+                    let id = egui::Id::unique(("notes", i));
                     let key = id.with("text");
                     let mut text =
                         ui.data_mut(|d| d.get_temp::<(String, String)>(key)).filter(|(was, _)| *was == a.notes).map_or(a.notes.clone(), |(_, t)| t);
@@ -889,9 +889,9 @@ impl PerthApp {
             let height = 28.0 + galley.size().x + if badge > 0 { 18.0 } else { 6.0 };
             let slot = egui::Rect::from_min_size(egui::pos2(rect.left() + 1.0, top), egui::vec2(rect.width() - 1.0, height));
             top += height + 6.0;
-            let response = ui.interact(slot, ui.id().with(("side", k)), egui::Sense::click());
+            let response = ui.interact(slot, ui.scope_id().with(("side", k)), egui::Sense::click());
             let on = self.side == Some(side);
-            response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, &name));
+            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, &name));
             let painter = ui.painter();
             if on {
                 painter.rect_filled(slot, 0.0, t.accent_soft);
@@ -1039,14 +1039,14 @@ impl PerthApp {
             };
             ui.horizontal(|ui| {
                 let label = row(ui, first);
-                if let Some(d) = date_field(ui, egui::Id::new("note-from"), label, f.from, 100.0) {
+                if let Some(d) = date_field(ui, egui::Id::unique("note-from"), label, f.from, 100.0) {
                     f.from = d;
                 }
             });
             if f.kind == 0 {
                 ui.horizontal(|ui| {
                     let label = row(ui, tr!("notes-to"));
-                    if let Some(d) = date_field(ui, egui::Id::new("note-to"), label, f.to, 100.0) {
+                    if let Some(d) = date_field(ui, egui::Id::unique("note-to"), label, f.to, 100.0) {
                         f.to = d;
                     }
                 });
@@ -1140,7 +1140,7 @@ impl PerthApp {
 fn icon_button(ui: &mut egui::Ui, icon: Icon, name: &str) -> bool {
     let t = Tokens::get(ui.ctx());
     let (rect, response) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
     if response.hovered() {
         ui.painter().rect_filled(rect, 0.0, t.hover);
     }

@@ -212,7 +212,7 @@ pub fn ghost(ui: &mut egui::Ui, text: &str, tip: &str, enabled: bool) -> bool {
     let size = egui::vec2(galley.size().x + 14.0, 22.0);
     let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
     let (rect, response) = ui.allocate_exact_size(size, sense);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, text));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, text));
     let color = if !enabled {
         t.text_dim.gamma_multiply(0.45)
     } else if response.hovered() {

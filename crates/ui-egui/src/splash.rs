@@ -216,7 +216,7 @@ fn artwork(painter: &egui::Painter, art: Rect, k: f32) {
 
 /// The Morrison Kühlsen wordmark, white on clear, as a texture, loaded once per context.
 fn wordmark(ctx: &egui::Context) -> Option<TextureHandle> {
-    let id = egui::Id::new("splash-morrison-kuhlsen");
+    let id = egui::Id::unique("splash-morrison-kuhlsen");
     if let Some(texture) = ctx.data(|d| d.get_temp::<TextureHandle>(id)) {
         return Some(texture);
     }

@@ -65,6 +65,7 @@ fn ten_thousand_activities_scroll() {
             delta: egui::vec2(0.0, -20.0),
             modifiers: egui::Modifiers::NONE,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
         });
         h.step();
     }
