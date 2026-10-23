@@ -268,11 +268,11 @@ fn baselines_read_back() {
     p.baselines = vec![
         Baseline {
             name: "Contract".into(),
-            activities: vec![BaselineActivity { id: id.clone(), start: day(2026, 11, 3), finish: day(2026, 11, 9), duration: 2400 }],
+            activities: vec![BaselineActivity { id: id.clone(), start: day(2026, 11, 3), finish: day(2026, 11, 9), duration: 2400, cost: 150_050 }],
         },
         Baseline {
             name: "Revised & <later>".into(),
-            activities: vec![BaselineActivity { id, start: day(2026, 11, 10), finish: day(2026, 11, 16), duration: 2430 }],
+            activities: vec![BaselineActivity { id, start: day(2026, 11, 10), finish: day(2026, 11, 16), duration: 2430, cost: 0 }],
         },
     ];
     p.baseline_in_use = Some("Revised & <later>".into());

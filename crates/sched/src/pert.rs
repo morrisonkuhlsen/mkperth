@@ -189,6 +189,9 @@ mod tests {
             levelling: Default::default(),
             baselines: Vec::new(),
             baseline_in_use: None,
+            expenses: Vec::new(),
+            cost_accounts: Vec::new(),
+            currency: String::new(),
             extra: Default::default(),
         };
         let a = pert(&project).unwrap();

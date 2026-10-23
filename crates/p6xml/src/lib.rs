@@ -486,6 +486,9 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             levelling: Default::default(),
             baselines,
             baseline_in_use,
+            expenses: Vec::new(),
+            cost_accounts: Vec::new(),
+            currency: String::new(),
             activities,
             relationships,
             extra,
@@ -513,7 +516,12 @@ fn baselines_of(root: &Element, p: &Element) -> (Vec<Baseline>, Option<String>) 
                     .and_then(|h| h.parse::<f64>().ok())
                     .filter(|h| h.is_finite() && *h >= 0.0 && *h < 1e9)
                     .unwrap_or(0.0);
-                Some(BaselineActivity { id, start, finish, duration: (hours * 60.0).round() as i64 })
+                let cost = a
+                    .text_of("PlannedTotalCost")
+                    .and_then(|c| c.parse::<f64>().ok())
+                    .filter(|c| c.is_finite() && c.abs() < 1e15)
+                    .map_or(0, |c| (c * 100.0).round() as i64);
+                Some(BaselineActivity { id, start, finish, duration: (hours * 60.0).round() as i64, cost })
             })
             .collect();
         if let Some(o) = b.text_of("ObjectId") {
@@ -523,6 +531,14 @@ fn baselines_of(root: &Element, p: &Element) -> (Vec<Baseline>, Option<String>) 
     }
     let in_use = p.text_of("CurrentBaselineProjectObjectId").and_then(|o| by_object.get(o).cloned());
     (list, in_use)
+}
+
+/// Hundredths of the currency as P6 writes money: `1500.5`.
+fn money(cents: i64) -> String {
+    let sign = if cents < 0 { "-" } else { "" };
+    let c = cents.unsigned_abs();
+    let text = format!("{sign}{}.{:02}", c / 100, c % 100);
+    text.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 /// Text for XML: `&`, `<`, `>`, quotes escaped.
@@ -819,11 +835,12 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         for a in &b.activities {
             next += 1;
             out.push_str(&format!(
-                "    <Activity>\n      <ObjectId>{next}</ObjectId>\n      <Id>{}</Id>\n      <PlannedStartDate>{}</PlannedStartDate>\n      <PlannedFinishDate>{}</PlannedFinishDate>\n      <PlannedDuration>{}</PlannedDuration>\n      <ProjectObjectId>{}</ProjectObjectId>\n    </Activity>\n",
+                "    <Activity>\n      <ObjectId>{next}</ObjectId>\n      <Id>{}</Id>\n      <PlannedStartDate>{}</PlannedStartDate>\n      <PlannedFinishDate>{}</PlannedFinishDate>\n      <PlannedDuration>{}</PlannedDuration>\n      <PlannedTotalCost>{}</PlannedTotalCost>\n      <ProjectObjectId>{}</ProjectObjectId>\n    </Activity>\n",
                 esc(&a.id),
                 timestamp(a.start, false),
                 timestamp(a.finish, true),
                 hours(a.duration),
+                money(a.cost),
                 k + 2
             ));
         }

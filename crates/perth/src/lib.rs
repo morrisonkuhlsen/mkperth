@@ -422,7 +422,11 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
                         return Err(bad());
                     };
                     let duration = x.get("duration_minutes").and_then(Value::as_i64).filter(|m| *m >= 0).ok_or_else(bad)?;
-                    acts.push(BaselineActivity { id: id.to_string(), start, finish, duration });
+                    let cost = match x.get("cost") {
+                        None | Some(Value::Null) => 0,
+                        Some(c) => c.as_i64().ok_or_else(bad)?,
+                    };
+                    acts.push(BaselineActivity { id: id.to_string(), start, finish, duration, cost });
                 }
                 list.push(Baseline { name, activities: acts });
             }
@@ -468,6 +472,9 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             levelling,
             baselines,
             baseline_in_use,
+            expenses: Vec::new(),
+            cost_accounts: Vec::new(),
+            currency: String::new(),
             activities,
             relationships,
             extra,
@@ -498,7 +505,7 @@ fn perth_baseline(activities: &[Activity], calendar: &Calendar) -> Option<Baseli
                 steps += 1;
                 left -= i64::from(calendar.is_working(finish));
             }
-            Some(BaselineActivity { id: a.id.clone(), start, finish, duration: days.saturating_mul(day) })
+            Some(BaselineActivity { id: a.id.clone(), start, finish, duration: days.saturating_mul(day), cost: 0 })
         })
         .collect();
     (!list.is_empty()).then(|| Baseline { name: PERTH_BASELINE.into(), activities: list })
@@ -665,7 +672,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
                 let acts: Vec<Value> = b
                     .activities
                     .iter()
-                    .map(|x| serde_json::json!({"id": x.id, "start": x.start.to_string(), "finish": x.finish.to_string(), "duration_minutes": x.duration}))
+                    .map(|x| serde_json::json!({"id": x.id, "start": x.start.to_string(), "finish": x.finish.to_string(), "duration_minutes": x.duration, "cost": x.cost}))
                     .collect();
                 serde_json::json!({"name": b.name, "activities": acts})
             })

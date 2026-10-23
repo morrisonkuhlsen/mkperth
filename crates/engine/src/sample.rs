@@ -29,6 +29,9 @@ pub(crate) fn empty(name: String, start: Date) -> Project {
         levelling: Default::default(),
         baselines: Vec::new(),
         baseline_in_use: None,
+        expenses: Vec::new(),
+        cost_accounts: Vec::new(),
+        currency: String::new(),
         extra: Default::default(),
     }
 }
@@ -109,6 +112,9 @@ pub(crate) fn project() -> Project {
         levelling: Default::default(),
         baselines: Vec::new(),
         baseline_in_use: None,
+        expenses: Vec::new(),
+        cost_accounts: Vec::new(),
+        currency: String::new(),
         activities,
         relationships: vec![
             tie("M0", "A10", FinishToStart, 0),

@@ -173,6 +173,7 @@ impl Session {
         let unit = text(params, C, "unit")?.unwrap_or_default();
         let calendar = text(params, C, "calendar")?.filter(|s| !s.is_empty());
         let max_units = units(params, C, "max_units")?.unwrap_or(UNIT);
+        let prices = crate::costs::prices(params, C)?.unwrap_or_default();
         self.change(tr!("undo-add-resource", id = id.as_str()), |p| {
             if p.resources.len() >= MAX_ITEMS {
                 return Err(bad(C, "id"));
@@ -186,7 +187,7 @@ impl Session {
             {
                 return Err(bad(C, "calendar"));
             }
-            p.resources.push(Resource { id: id.clone(), name, kind, unit, calendar, max_units, ..Resource::default() });
+            p.resources.push(Resource { id: id.clone(), name, kind, unit, calendar, max_units, prices, ..Resource::default() });
             Ok(())
         })
     }
@@ -207,6 +208,7 @@ impl Session {
         };
         let max_units = units(params, C, "max_units")?;
         let roles = ids(params, C, "roles")?;
+        let prices = crate::costs::prices(params, C)?;
         self.change(tr!("undo-edit-resource", id = id.as_str()), |p| {
             let k = p.resources.iter().position(|r| r.id == id).ok_or_else(|| EngineError::UnknownResource(id.clone()))?;
             if let Some(Some(c)) = &calendar
@@ -258,6 +260,9 @@ impl Session {
             }
             if let Some(rs) = roles {
                 r.roles = rs;
+            }
+            if let Some(ps) = prices {
+                r.prices = ps;
             }
             Ok(())
         })

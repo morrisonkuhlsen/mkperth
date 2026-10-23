@@ -31,6 +31,9 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
         levelling: Default::default(),
         baselines: Vec::new(),
         baseline_in_use: None,
+        expenses: Vec::new(),
+        cost_accounts: Vec::new(),
+        currency: String::new(),
         activities: activities
             .iter()
             .map(|(id, d)| Activity { id: id.to_string(), name: id.to_string(), duration: *d, ..Activity::default() })

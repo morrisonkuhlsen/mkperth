@@ -298,7 +298,7 @@ fn baselines_from_perth_and_our_own() {
     let mut q = p.clone();
     q.baselines.push(Baseline {
         name: "Contract".into(),
-        activities: vec![BaselineActivity { id: "b".into(), start: day(2026, 9, 10), finish: day(2026, 9, 21), duration: 3840 }],
+        activities: vec![BaselineActivity { id: "b".into(), start: day(2026, 9, 10), finish: day(2026, 9, 21), duration: 3840, cost: 1_234_500 }],
     });
     q.baseline_in_use = Some("Contract".into());
     let (text, _) = write(&q);

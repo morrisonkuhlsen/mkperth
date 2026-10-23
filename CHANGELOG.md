@@ -41,6 +41,12 @@ Read it before re-scheduling a plan with a new version.
   finish; a ghost bar with the new days follows the pointer, the cursor says move or resize,
   and the dates, floats and calculation follow on release, one undo each. Summaries and
   activities already begun don't drag.
+- Costs (#23, part 1): resources' prices over time (`resource.add` and `resource.edit` take
+  `prices`), expenses on activities accrued at the start, the end or evenly (`expense.add`,
+  `.edit`, `.delete`), cost accounts in a hierarchy (`cost-account.add`, `.delete`) and the
+  currency's symbol (`project.options`' `currency`). Each activity's budget, actual,
+  remaining and at-completion costs (a price change mid-activity counted from its day), the
+  project's, and its spending day by day; a baseline keeps the budget, and its cost variance.
 - Baselines (#22, Project > Baselines…): the schedule frozen under a name, one of them in use;
   its bars, thin and orange, under the schedule's (View > Baseline bars), and the columns BL
   start, BL finish and the start, finish and duration variances (in Filters; a negative variance

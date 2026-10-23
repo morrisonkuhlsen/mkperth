@@ -239,6 +239,12 @@ impl Session {
             })
             .transpose()?;
         let data_date = date(params, C, "data_date")?;
+        // The currency's symbol, written before amounts (empty for none).
+        let currency = match params.get("currency") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(c)) if c.chars().count() <= 8 => Some(c.trim().to_string()),
+            Some(_) => return Err(bad("currency")),
+        };
         let progress = text(params, C, "progress")?
             .map(|m| match m.as_str() {
                 "retained-logic" => Ok(ProgressMode::RetainedLogic),
@@ -252,6 +258,9 @@ impl Session {
             }
             if let Some(d) = data_date {
                 p.data_date = d;
+            }
+            if let Some(c) = currency {
+                p.currency = c;
             }
             if let Some(m) = progress {
                 p.progress_mode = m;
@@ -455,6 +464,9 @@ impl Session {
                 for c in p.comments.iter_mut().filter(|c| c.activity == id) {
                     c.activity = new.to_string();
                 }
+                for e in p.expenses.iter_mut().filter(|e| e.activity == id) {
+                    e.activity = new.to_string();
+                }
             }
             if let Some(par) = parent.as_deref().filter(|s| !s.is_empty()) {
                 if par == id {
@@ -579,6 +591,7 @@ impl Session {
                 p.relationships.retain(|r| r.predecessor != *id && r.successor != *id);
                 p.assignments.retain(|a| a.activity != *id);
                 p.comments.retain(|c| c.activity != *id);
+                p.expenses.retain(|e| e.activity != *id);
                 for a in &mut p.activities {
                     if a.parent.as_deref() == Some(id.as_str()) {
                         a.parent = removed.parent.clone();

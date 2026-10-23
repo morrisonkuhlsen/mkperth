@@ -44,12 +44,14 @@ impl Session {
             tr!("baseline-numbered", n = n)
         });
         self.change(tr!("undo-assign-baseline", name = name.as_str()), |p| {
+            let costs = mkperth_sched::costs(p, &schedule);
             let parents: std::collections::HashSet<String> = p.activities.iter().filter_map(|a| a.parent.clone()).collect();
             let activities = p
                 .activities
                 .iter()
                 .zip(&schedule.activities)
-                .map(|(a, s)| {
+                .zip(&costs)
+                .map(|((a, s), c)| {
                     let calendar = a.calendar.as_deref().and_then(|n| p.calendars.iter().find(|c| c.name == n)).unwrap_or(&p.calendar);
                     let day = calendar.day_minutes();
                     let duration = if parents.contains(&a.id) {
@@ -57,7 +59,7 @@ impl Session {
                     } else {
                         a.working_minutes(day)
                     };
-                    BaselineActivity { id: a.id.clone(), start: s.early_start, finish: s.early_finish, duration }
+                    BaselineActivity { id: a.id.clone(), start: s.early_start, finish: s.early_finish, duration, cost: c.budget }
                 })
                 .collect();
             let baseline = Baseline { name: name.clone(), activities };
@@ -129,7 +131,7 @@ mod tests {
             (0..14).filter_map(|n| mkperth_core::Date::from_days(start.days() + n)).filter(|d| s.project.calendar.is_working(*d)).nth(5).unwrap();
         s.run("activity.edit", &json!({"id": "B10", "constraint": {"type": "start-on-or-after", "date": later.to_string()}})).unwrap();
         let v = mkperth_sched::variances(&s.project, s.schedule.as_ref().unwrap());
-        assert_eq!(v[k].map(|v| (v.start, v.finish, v.duration)), Some((-5, -5, 0)));
+        assert_eq!(v[k].map(|v| (v.start, v.finish, v.duration, v.cost)), Some((-5, -5, 0, 0)));
         s.run("baseline.assign", &json!({"name": "Revised"})).unwrap();
         assert_eq!(s.project.baselines.len(), 2);
         assert_eq!(s.project.baseline_in_use.as_deref(), Some("Baseline 1"), "the first stays in use");

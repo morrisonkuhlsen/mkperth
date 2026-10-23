@@ -263,6 +263,8 @@ pub struct BaselineActivity {
     pub finish: Date,
     /// Working minutes.
     pub duration: i64,
+    /// Its budgeted cost then, in hundredths of the currency.
+    pub cost: i64,
 }
 
 /// The plan frozen, to measure the schedule against: each activity's dates when it was taken.
@@ -426,7 +428,91 @@ pub struct Resource {
     pub max_units: i64,
     /// The roles it can fill, by their IDs.
     pub roles: Vec<String>,
+    /// Its price per unit (an hour, or a material's unit) over time, by the day each takes
+    /// effect; the first holds before any.
+    pub prices: Vec<Price>,
     pub extra: Extra,
+}
+
+/// A price per unit, in hundredths of the currency (cents), from a day on (`None`: from the
+/// start of time).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Price {
+    pub from: Option<Date>,
+    pub per_unit: i64,
+}
+
+impl Resource {
+    /// Its price per unit on `day`: the last to take effect by then, else the first.
+    pub fn price_on(&self, day: Date) -> i64 {
+        let mut chosen: Option<&Price> = None;
+        for p in &self.prices {
+            if p.from.is_none_or(|f| f <= day) && chosen.is_none_or(|c| c.from <= p.from) {
+                chosen = Some(p);
+            }
+        }
+        chosen.or(self.prices.first()).map_or(0, |p| p.per_unit)
+    }
+}
+
+/// When an expense's cost is counted: all on the activity's first day, all on its last, or
+/// spread evenly over its working days.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Accrual {
+    Start,
+    End,
+    #[default]
+    Uniform,
+}
+
+impl Accrual {
+    pub const ALL: [Accrual; 3] = [Accrual::Start, Accrual::End, Accrual::Uniform];
+
+    /// The commands' word for it.
+    pub fn code(self) -> &'static str {
+        match self {
+            Accrual::Start => "start",
+            Accrual::End => "end",
+            Accrual::Uniform => "uniform",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<Accrual> {
+        Accrual::ALL.into_iter().find(|a| a.code() == code)
+    }
+}
+
+/// A cost of an activity that isn't a resource's work: a permit, a rental, freight. Money in
+/// hundredths of the currency.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Expense {
+    /// The activity's ID.
+    pub activity: String,
+    /// Unique among the activity's expenses.
+    pub name: String,
+    /// The cost account it is charged to, by ID.
+    pub account: Option<String>,
+    pub planned: i64,
+    pub actual: i64,
+    /// What is left; when `None`, the planned cost less the actual.
+    pub remaining: Option<i64>,
+    pub accrual: Accrual,
+}
+
+impl Expense {
+    /// What is left: as given, else the planned less the actual (never below nothing).
+    pub fn remaining_cost(&self) -> i64 {
+        self.remaining.unwrap_or_else(|| self.planned.saturating_sub(self.actual).max(0))
+    }
+}
+
+/// An account costs are charged to, in a hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CostAccount {
+    pub id: String,
+    pub name: String,
+    /// The account it sits under, by ID.
+    pub parent: Option<String>,
 }
 
 impl Default for Resource {
@@ -439,6 +525,7 @@ impl Default for Resource {
             calendar: None,
             max_units: UNIT,
             roles: Vec::new(),
+            prices: Vec::new(),
             extra: Extra::new(),
         }
     }
@@ -594,6 +681,11 @@ pub struct Project {
     pub baselines: Vec<Baseline>,
     /// The baseline the schedule is compared with, by name: its bars and the variances.
     pub baseline_in_use: Option<String>,
+    /// The costs that aren't resources' work, and the accounts costs are charged to.
+    pub expenses: Vec<Expense>,
+    pub cost_accounts: Vec<CostAccount>,
+    /// The currency's symbol (`R$`, `US$`), written before amounts; none when empty.
+    pub currency: String,
     pub extra: Extra,
 }
 

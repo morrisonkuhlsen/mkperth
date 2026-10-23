@@ -27,6 +27,7 @@
 
 mod baseline;
 mod clock;
+mod costs;
 mod explain;
 mod latex;
 mod level;
@@ -34,6 +35,7 @@ mod pert;
 mod usage;
 
 pub use baseline::{Variance, variances, working_days_between};
+pub use costs::{Cost, costs, project_cost, spending};
 pub use level::{Levelling, MAX_ROUNDS, Overload, level, overloads};
 pub use pert::{PertActivity, PertAnalysis, normal, pert};
 pub use usage::{by_week, capacity, usage};
