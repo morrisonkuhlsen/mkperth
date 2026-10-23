@@ -317,6 +317,9 @@ fn resources_are_added_and_assigned_in_their_view() {
     let a = &h.state().session.project.assignments;
     assert_eq!(a.len(), 1);
     assert_eq!((a[0].activity.as_str(), a[0].planned), ("A10", 4000), "A10's 40 hours");
+    // Her work by week shows under her assignments.
+    h.run_steps(2);
+    assert!(h.query_by_label("Work by week (hours)").is_some());
 }
 
 /// The backstage: its pages from the column, Esc back to the project; Back too.

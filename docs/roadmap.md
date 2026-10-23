@@ -136,8 +136,10 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   `effort`, written back byte for byte.
   The Resources view on the rail: the resources' table, the roles, a resource's details and
   assignments, each edit a command.
+  A resource's work by week against its capacity (`mkperth_sched::usage`, `capacity`,
+  `by_week`), as a histogram in the Resources view, over-allocated weeks in red.
 - **Next:** an activity's assignments in Details; duration types
-  and resource-dependent activities; histograms; prices that change over time (#23); levelling
+  and resource-dependent activities; prices that change over time (#23); levelling
   with priorities (#21).
 
 ## M5 — costs and earned value

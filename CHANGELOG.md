@@ -20,6 +20,10 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- A resource's work by week (#20): its assignments' budgets spread over their activities'
+  working days, as bars under its assignments in the Resources view, red in a week it has more
+  work than it can do, what it can do as a dashed line (its units an hour over its calendar's
+  working hours); a week's figures under the pointer.
 - Comments on activities, as a spreadsheet keeps them: threads with replies, resolved and
   reopened, signed with the person's name and the time (`comment.add`, `.reply`, `.edit`,
   `.resolve`, `.delete`, with undo). In Details' Comments tab (Edit > Comment, Ctrl+Alt+M); an

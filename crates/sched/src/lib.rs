@@ -28,6 +28,9 @@
 mod clock;
 mod explain;
 mod latex;
+mod usage;
+
+pub use usage::{by_week, capacity, usage};
 
 use std::collections::{HashMap, VecDeque};
 
