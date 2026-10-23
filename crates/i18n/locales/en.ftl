@@ -301,3 +301,21 @@ notes-color = Colour
 notes-color-default = The default colour
 notes-add = Add
 warn-perth-calendar-near = The calendar { $name } is written as Perth.jl's { $perth }, the nearest it has: its own working days, holidays or hours aren't kept.
+
+# The splash screen.
+splash-tagline = Project scheduling, open and auditable: every date with its calculation.
+splash-version = Version { $version }
+splash-loading = Loading { $component }…
+splash-house = A Morrison Kühlsen project
+splash-component-calendars = calendars and holidays
+splash-component-passes = the forward and backward passes
+splash-component-floats = floats and the critical path
+splash-component-constraints = constraints
+splash-component-progress = progress and the data date
+splash-component-wbs = the WBS and its summaries
+splash-component-perth = Perth.jl's project files
+splash-component-p6xml = the P6 XML reader and writer
+splash-component-engine = the command engine and undo
+splash-component-calculation = every date's calculation
+splash-component-window = the Activities window and the Gantt chart
+splash-component-cli = the command line and MCP

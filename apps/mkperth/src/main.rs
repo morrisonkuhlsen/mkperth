@@ -1,13 +1,24 @@
 //! MK Perth desktop app.
 //!
-//! `mkperth [project.json]` opens a Perth.jl project, or the sample project without one.
+//! `mkperth [--no-splash] [project.json]` opens a Perth.jl project, or the sample project without
+//! one, after the splash screen.
 // A GUI program on Windows: no console window beside the app. Debug builds keep theirs.
 #![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+use eframe::egui_wgpu::{WgpuConfiguration, WgpuSetup, wgpu};
+use mkperth_ui_egui::splash::SplashScreen;
 use mkperth_ui_egui::{PerthApp, Services};
 
 struct App(PerthApp);
+
+struct SplashWindow(SplashScreen);
+
+impl eframe::App for SplashWindow {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.0.ui(ui);
+    }
+}
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -20,6 +31,38 @@ impl eframe::App for App {
 fn language() -> mkperth_ui_egui::i18n::Lang {
     let locale = ["LC_ALL", "LC_MESSAGES", "LANG"].iter().find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty())).unwrap_or_default();
     mkperth_ui_egui::i18n::Lang::from_locale(&locale)
+}
+
+/// The graphics backends to try, best first; `None` is wgpu's own choice. On Windows that choice
+/// is Vulkan, and some Intel Vulkan drivers crash the app at start (igvk64.dll), so it is
+/// DirectX 12, then OpenGL, as in MK aeGIS. `WGPU_BACKEND` overrides it everywhere.
+fn backends() -> Vec<Option<wgpu::Backends>> {
+    if cfg!(target_os = "windows") && wgpu::Backends::from_env().is_none() {
+        vec![Some(wgpu::Backends::DX12), Some(wgpu::Backends::GL)]
+    } else {
+        vec![None]
+    }
+}
+
+/// A window on the given graphics backends.
+fn options(viewport: egui::ViewportBuilder, backends: Option<wgpu::Backends>) -> eframe::NativeOptions {
+    let mut wgpu_options = WgpuConfiguration::default();
+    if let (Some(backends), WgpuSetup::CreateNew(setup)) = (backends, &mut wgpu_options.wgpu_setup) {
+        setup.instance_descriptor.backends = backends;
+    }
+    eframe::NativeOptions { viewport, wgpu_options, centered: true, ..Default::default() }
+}
+
+/// The splash screen in a small window of its own, centred and undecorated, until it closes.
+fn splash(backends: Option<wgpu::Backends>) -> eframe::Result {
+    let viewport = egui::ViewportBuilder::default()
+        .with_title("MK Perth")
+        .with_app_id("mkperth")
+        .with_inner_size(mkperth_ui_egui::splash::SIZE)
+        .with_decorations(false)
+        .with_resizable(false)
+        .with_taskbar(false);
+    eframe::run_native("MK Perth splash", options(viewport, backends), Box::new(|_cc| Ok(Box::new(SplashWindow(SplashScreen::default())))))
 }
 
 fn main() -> eframe::Result {
@@ -48,14 +91,23 @@ fn main() -> eframe::Result {
         })),
     };
     let mut app = PerthApp::new(services);
-    if let Some(path) = std::env::args().nth(1) {
-        app.open(std::path::Path::new(&path));
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(path) = args.iter().find(|a| !a.starts_with("--")) {
+        app.open(std::path::Path::new(path));
     }
+    // The splash also finds a graphics backend that starts, for the main window to use; without
+    // it (--no-splash) the program starts on the first one.
+    let candidates = backends();
+    let first = candidates.first().copied().flatten();
+    let backends = if args.iter().any(|a| a == "--no-splash") {
+        first
+    } else {
+        candidates.iter().copied().find(|b| !matches!(splash(*b), Err(eframe::Error::Wgpu(_)))).unwrap_or(first)
+    };
     let viewport = egui::ViewportBuilder::default()
         .with_title("MK Perth")
         .with_app_id("mkperth")
         .with_inner_size([1360.0, 820.0])
         .with_min_inner_size([800.0, 480.0]);
-    let options = eframe::NativeOptions { viewport, centered: true, ..Default::default() };
-    eframe::run_native("MK Perth", options, Box::new(|_cc| Ok(Box::new(App(app)))))
+    eframe::run_native("MK Perth", options(viewport, backends), Box::new(|_cc| Ok(Box::new(App(app)))))
 }

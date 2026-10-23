@@ -2,7 +2,7 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang CODE]
-//!  [--select N] [--side details|filters|notes] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
+//!  [--select N] [--side details|filters|notes] [--details general|status|relationships|notes] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--splash] [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
 //!  `--click` clicks what has that accessible name, in order: `--click View --click Theme` opens a submenu)
 
 use egui_kittest::kittest::Queryable as _;
@@ -15,6 +15,7 @@ fn main() -> Result<(), String> {
     let mut out = "snapshot.png".to_string();
     let mut dark = false;
     let mut clicks = Vec::new();
+    let mut splash = false;
     let mut i = 0;
     while let Some(arg) = args.get(i) {
         match arg.as_str() {
@@ -24,6 +25,7 @@ fn main() -> Result<(), String> {
             }
             "--dark" => dark = true,
             "--toolbar-hidden" => app.toolbar_hidden = true,
+            "--splash" => splash = true,
             "--scale" => {
                 i += 1;
                 app.options.scale = Some(args.get(i).and_then(|n| n.parse().ok()).ok_or("--scale needs points per day")?);
@@ -73,6 +75,20 @@ fn main() -> Result<(), String> {
             other => out = other.to_string(),
         }
         i += 1;
+    }
+    if splash {
+        // The splash screen alone, at its own size, part way through.
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(mkperth_ui_egui::splash::SIZE[0], mkperth_ui_egui::splash::SIZE[1]))
+            .with_pixels_per_point(1.0)
+            .with_step_dt(0.5)
+            .wgpu()
+            .build_ui_state(|ui, s: &mut mkperth_ui_egui::splash::SplashScreen| s.ui(ui), Default::default());
+        harness.run_steps(5);
+        let image = harness.render().map_err(|e| e.to_string())?;
+        image.save(&out).map_err(|e| e.to_string())?;
+        println!("{out}");
+        return Ok(());
     }
     let mut harness = egui_kittest::Harness::builder()
         .with_size(egui::vec2(size.0, size.1))

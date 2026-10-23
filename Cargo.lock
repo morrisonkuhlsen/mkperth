@@ -1840,6 +1840,7 @@ dependencies = [
  "egui",
  "egui_kittest",
  "mkperth-engine",
+ "png",
  "serde_json",
 ]
 

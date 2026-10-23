@@ -301,3 +301,21 @@ notes-color = Cor
 notes-color-default = A cor padrão
 notes-add = Adicionar
 warn-perth-calendar-near = O calendário { $name } é gravado como { $perth } do Perth.jl, o mais próximo que ele tem: seus próprios dias úteis, feriados ou horários não são mantidos.
+
+# The splash screen.
+splash-tagline = Planejamento de projetos, aberto e auditável: cada data com o seu cálculo.
+splash-version = Versão { $version }
+splash-loading = Carregando { $component }…
+splash-house = Um projeto Morrison Kühlsen
+splash-component-calendars = calendários e feriados
+splash-component-passes = os passes de ida e de volta
+splash-component-floats = as folgas e o caminho crítico
+splash-component-constraints = as restrições
+splash-component-progress = o progresso e a data de status
+splash-component-wbs = a EAP e seus resumos
+splash-component-perth = os arquivos de projeto do Perth.jl
+splash-component-p6xml = o leitor e gravador de P6 XML
+splash-component-engine = o motor de comandos e o desfazer
+splash-component-calculation = o cálculo de cada data
+splash-component-window = a janela de Atividades e o gráfico de Gantt
+splash-component-cli = a linha de comando e o MCP

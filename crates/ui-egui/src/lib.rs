@@ -8,6 +8,7 @@
 mod activities;
 mod chrome;
 pub mod icons;
+pub mod splash;
 pub mod theme;
 
 use std::path::{Path, PathBuf};

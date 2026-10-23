@@ -20,6 +20,9 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- A splash screen as MK Sigma's and MK aeGIS's, in MK Perth's lilac: the mark, the name, the
+  version and the parts loading on Morrison Kühlsen's ink, beside artwork drawn in code (a
+  schedule cascading down to a milestone); a click or Esc closes it, `--no-splash` skips it.
 - The activity table hides from the rail of views (or View ▸ Activity table): the Gantt chart
   takes the width, with the names beside the bars.
 - Progress: a data date, actual start and finish dates, the work left of an activity under way,
@@ -96,6 +99,8 @@ Read it before re-scheduling a plan with a new version.
 
 ### Fixed
 
+- The app no longer crashes at start on Windows with some Intel graphics drivers (igvk64.dll,
+  Vulkan): it tries DirectX 12, then OpenGL, as MK aeGIS does; `WGPU_BACKEND` still chooses.
 - A project read from P6 XML was written to Perth.jl's JSON with its calendar's P6 name
   ("Standard", "Calendar"), which Perth.jl takes for an unknown BusinessDays calendar; it is now
   written as Perth.jl names it (`""`, `"WeekendsOnly"`, `"Brazil"`), with a warning when that is only

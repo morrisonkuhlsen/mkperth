@@ -9,3 +9,4 @@ covered by the code's licences; they need no row.
 
 | File | Author | Source | Terms |
 | --- | --- | --- | --- |
+| Morrison Kühlsen wordmark | Morrison Kühlsen | `docs/brand/morrison-kuhlsen.png`; the wordmark in morrisonkuhlsen.com's header (its SVG, drawn in white), as in MK Sigma and MK aeGIS | Morrison Kühlsen brand asset, used with its owner's permission; not covered by the code's licences (`docs/brand/LICENSE.md`) |

@@ -32,7 +32,7 @@ const LAYERS: [(&str, u8); 10] = [
 const UI_ONLY: [&str; 4] = ["egui", "eframe", "winit", "rfd"];
 
 /// Files under these folders are assets: each needs a row in ATTRIBUTION.md.
-const ASSET_DIRS: [&str; 2] = ["crates/ui-egui/assets", "docs/images"];
+const ASSET_DIRS: [&str; 3] = ["crates/ui-egui/assets", "docs/images", "docs/brand"];
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().map(Path::to_path_buf).unwrap_or_default()
