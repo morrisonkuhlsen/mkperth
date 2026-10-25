@@ -5,12 +5,13 @@
 //! `Session::run`.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
-mod activities;
+pub mod activities;
 pub mod backstage;
 mod baselines_ui;
 mod budget_ui;
 mod calendars;
 mod chrome;
+mod codes_ui;
 mod comments_ui;
 mod costs_ui;
 mod datepick;
@@ -120,6 +121,8 @@ pub enum Side {
     Budget,
     /// Earned value: the measures at the data date, the S-curve, the financial periods.
     EarnedValue,
+    /// The activity codes and user-defined fields.
+    Codes,
 }
 
 /// The note the Notes pane is making: its kind (0 a band, 1 a marker, 2 a month), name, dates
@@ -221,6 +224,8 @@ pub struct PerthApp {
     costs_form: costs_ui::CostsForm,
     /// What the Budget pane shows and is typing.
     pub budget_form: budget_ui::BudgetForm,
+    /// What the Codes and fields pane is typing.
+    pub codes_form: codes_ui::CodesForm,
     /// The resource selected in the Resources view, by index, and what that view is typing.
     pub resource_selected: Option<usize>,
     pub resource_form: ResourceForm,
@@ -331,6 +336,7 @@ impl PerthApp {
             expense_form: Default::default(),
             costs_form: Default::default(),
             budget_form: Default::default(),
+            codes_form: Default::default(),
             resource_selected: None,
             resource_form: ResourceForm::default(),
             comment_form: CommentForm::default(),
@@ -598,6 +604,7 @@ impl PerthApp {
             Action::Costs => self.side = Some(Side::Costs),
             Action::Budget => self.side = Some(Side::Budget),
             Action::EarnedValue => self.side = Some(Side::EarnedValue),
+            Action::Codes => self.side = Some(Side::Codes),
             Action::Links => self.options.links = !self.options.links,
             Action::Table => self.options.table_hidden = !self.options.table_hidden,
             Action::Options(params) => self.run("project.options", params),
@@ -995,6 +1002,7 @@ impl PerthApp {
                     Side::Costs => self.costs_pane(ui),
                     Side::Budget => self.budget_pane(ui),
                     Side::EarnedValue => self.earned_pane(ui),
+                    Side::Codes => self.codes_pane(ui),
                 }
             });
         }
@@ -1445,6 +1453,10 @@ impl PerthApp {
                             fact(ui, name, constraint_name(c, &show_date));
                         }
                     }
+                    // Its codes' and fields' values.
+                    if let Some(v) = codes_ui::classify_fields(ui, &project.classification, a, &project.currency) {
+                        pending = Some(("activity.classify", v));
+                    }
                 }
                 DetailsTab::Status => {
                     // Progress: where it stands, its actual dates and the work left.
@@ -1707,6 +1719,55 @@ impl PerthApp {
                     options.search.clear();
                 }
             }
+            // Grouping and the code filter, by the project's codes and fields.
+            let c = &self.session.project.classification;
+            let customs: Vec<activities::Custom> = c
+                .codes
+                .iter()
+                .map(|x| activities::Custom::Code(x.name.clone()))
+                .chain(c.fields.iter().map(|f| activities::Custom::Field(f.name.clone())))
+                .collect();
+            if !customs.is_empty() {
+                let group = theme::section(ui, &tr!("filter-group"));
+                let shown = options.group_by.as_ref().map_or_else(|| tr!("filter-group-wbs"), |g| g.name().to_string());
+                egui::ComboBox::from_id_salt("group-by")
+                    .selected_text(shown)
+                    .width(theme::fill(ui))
+                    .truncate()
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut options.group_by, None, tr!("filter-group-wbs"));
+                        for x in &customs {
+                            ui.selectable_value(&mut options.group_by, Some(x.clone()), x.name());
+                        }
+                    })
+                    .response
+                    .labelled_by(group);
+            }
+            if !c.codes.is_empty() {
+                theme::section(ui, &tr!("filter-code"));
+                theme::row(ui, &tr!("filter-code-which"), |ui, label| {
+                    let shown = options.code_filter.as_ref().map_or_else(|| tr!("filter-code-any"), |(code, value)| format!("{code}: {value}"));
+                    egui::ComboBox::from_id_salt("code-filter")
+                        .selected_text(shown)
+                        .width(theme::fill(ui))
+                        .truncate()
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut options.code_filter, None, tr!("filter-code-any"));
+                            for code in &c.codes {
+                                for v in &code.values {
+                                    let text = if v.description.is_empty() {
+                                        format!("{}: {}", code.name, v.code)
+                                    } else {
+                                        format!("{}: {} — {}", code.name, v.code, v.description)
+                                    };
+                                    ui.selectable_value(&mut options.code_filter, Some((code.name.clone(), v.code.clone())), text);
+                                }
+                            }
+                        })
+                        .response
+                        .labelled_by(label);
+                });
+            }
             // The table's columns, two to a row: the ID and the name stay.
             theme::section(ui, &tr!("filter-columns"));
             let half = (ui.available_width() / 2.0).floor();
@@ -1723,6 +1784,28 @@ impl PerthApp {
                     }
                 }
             });
+            // The project's codes and fields as columns too.
+            if !customs.is_empty() {
+                ui.add_space(4.0);
+                egui::Grid::new("filter-custom-columns").striped(false).num_columns(2).min_col_width(half - 8.0).spacing(egui::vec2(8.0, 4.0)).show(
+                    ui,
+                    |ui| {
+                        for (n, x) in customs.iter().enumerate() {
+                            let mut shown = options.custom_columns.contains(x);
+                            if ui.checkbox(&mut shown, x.name()).changed() {
+                                if shown {
+                                    options.custom_columns.push(x.clone());
+                                } else {
+                                    options.custom_columns.retain(|y| y != x);
+                                }
+                            }
+                            if n % 2 == 1 {
+                                ui.end_row();
+                            }
+                        }
+                    },
+                );
+            }
         });
     }
 
@@ -1914,6 +1997,52 @@ mod tests {
         let id = |k: usize| s.project.activities[r[k].0].id.as_str();
         assert_eq!((id(0), r[0].1), ("W1", 0));
         assert_eq!((id(1), r[1].1), ("M0", 1), "children under their summary");
+    }
+
+    /// The sample classified: a Contractor code (ARC, and ARC.INT under it; CIV) and a Risk
+    /// indicator. Grouped by the code, a band for each value in the code's order and one for
+    /// none last; filtered by ARC, its own and ARC.INT's; sorted by Risk, red first and none
+    /// last, among each summary's children; by the total float downwards.
+    #[test]
+    fn grouped_filtered_and_sorted_by_codes_and_fields() {
+        use activities::{BAND, Custom, SortBy, layout};
+        let mut s = Session::default();
+        for (c, p) in [
+            ("code.add", json!({"name": "Contractor"})),
+            ("code-value.add", json!({"code": "Contractor", "value": "ARC"})),
+            ("code-value.add", json!({"code": "Contractor", "value": "ARC.INT", "parent": "ARC"})),
+            ("code-value.add", json!({"code": "Contractor", "value": "CIV"})),
+            ("field.add", json!({"name": "Risk", "kind": "indicator"})),
+            ("activity.classify", json!({"activities": ["A10", "A20"], "codes": {"Contractor": "ARC"}, "fields": {"Risk": "green"}})),
+            ("activity.classify", json!({"id": "A30", "codes": {"Contractor": "ARC.INT"}, "fields": {"Risk": "red"}})),
+            ("activity.classify", json!({"activities": ["B10", "B20"], "codes": {"Contractor": "CIV"}, "fields": {"Risk": "yellow"}})),
+        ] {
+            s.run(c, &p).unwrap();
+        }
+        let id = |i: usize| if i >= BAND { format!("#{}", i - BAND) } else { s.project.activities[i].id.clone() };
+        let ids = |rows: Vec<(usize, usize)>| rows.into_iter().map(|(i, _)| id(i)).collect::<Vec<_>>();
+
+        let grouped = Options { group_by: Some(Custom::Code("Contractor".into())), ..Options::default() };
+        let (rows, titles) = layout(&s, &grouped);
+        let leaves = s.project.activities.iter().filter(|a| !s.project.activities.iter().any(|b| b.parent.as_deref() == Some(a.id.as_str()))).count();
+        assert_eq!(rows.len(), leaves + 4, "every activity with none under it, and four bands");
+        assert_eq!(ids(rows.clone()).iter().take(8).cloned().collect::<Vec<_>>(), ["#0", "A10", "A20", "#1", "A30", "#2", "B10", "B20"]);
+        assert_eq!(titles.len(), 4);
+        assert_eq!(titles[0], "Contractor: ARC (2)");
+        assert!(titles[3].ends_with("(10)"), "the ten left: {titles:?}");
+
+        let filtered = Options { code_filter: Some(("Contractor".into(), "ARC".into())), ..Options::default() };
+        assert_eq!(ids(layout(&s, &filtered).0), ["W1", "A10", "A20", "A30"], "ARC.INT is under ARC; the summary above them stays");
+
+        let by_risk = Options { sort: Some((SortBy::Custom(Custom::Field("Risk".into())), false)), ..Options::default() };
+        let rows = ids(layout(&s, &by_risk).0);
+        let design: Vec<&str> = rows.iter().skip(1).take(5).map(String::as_str).collect();
+        assert_eq!(design, ["A30", "A10", "A20", "M0", "A40"], "red, green, green, then none in the WBS's order");
+
+        let by_float = Options { sort: Some((SortBy::Column(7), true)), ..Options::default() };
+        let rows = ids(layout(&s, &by_float).0);
+        let structure = rows.iter().position(|r| r == "W2").unwrap();
+        assert_eq!(rows[structure + 1], "B10", "the most float first: B10's 19 days");
     }
 
     #[test]

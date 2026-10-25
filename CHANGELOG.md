@@ -32,6 +32,11 @@ Read it before re-scheduling a plan with a new version.
   `UDFValue`; a field P6 keeps for something other than activities, or works out from a code,
   is left out with a warning) and in Perth's JSON (`mkperth_classification`, and each task's
   `mkperth_codes` and `mkperth_fields`).
+- Grouping, filtering and sorting (#26): the rows grouped in bands by a code's or a field's
+  values (Filters ▸ Group by), filtered to a code's value and those under it (Filters ▸ Code),
+  sorted by a click on a column's title (upwards, downwards, then as they were) among each
+  summary's children; codes and fields as columns; the Codes and fields pane (Project ▸ Codes
+  and fields…) and Details' codes and fields.
 - Earned value (#25): each activity's percent complete as judged (`activity.edit`
   `percent_complete`); the budget at completion, planned value (spread over the baseline's
   working days when one is in use), earned value and actual cost, by the technique the project

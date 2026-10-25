@@ -156,17 +156,144 @@ pub struct Options {
     pub goto: Option<Date>,
     /// An activity whose row to bring into view, once.
     pub goto_row: Option<usize>,
+    /// The project's own columns shown after the others: activity codes and user-defined fields.
+    pub custom_columns: Vec<Custom>,
+    /// The rows in bands, one for each value of a code or a field, instead of the WBS.
+    pub group_by: Option<Custom>,
+    /// What the rows are sorted by, among their siblings (or in their band), and whether downwards.
+    pub sort: Option<(SortBy, bool)>,
+    /// Only the activities with this value of this code, or a value under it: (code, value).
+    pub code_filter: Option<(String, String)>,
+}
+
+/// A column of the project's own: an activity code's or a user-defined field's, by its name.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Custom {
+    Code(String),
+    Field(String),
+}
+
+impl Custom {
+    pub fn name(&self) -> &str {
+        match self {
+            Custom::Code(n) | Custom::Field(n) => n,
+        }
+    }
+}
+
+/// What the rows are sorted by: one of the table's own columns (by its place in `COLUMNS`), or a
+/// code's or a field's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SortBy {
+    Column(usize),
+    Custom(Custom),
+}
+
+/// The width of a code's or a field's column.
+const CUSTOM_WIDTH: f32 = 110.0;
+/// The table's own columns rows can be sorted by: ID to free float.
+const SORTABLE: usize = 9;
+/// Rows from here on are band titles when the rows are grouped: `BAND + n` is the nth band.
+pub(crate) const BAND: usize = usize::MAX / 2;
+
+/// A field's value as the table shows it.
+pub(crate) fn field_text(v: &mkperth_engine::core::FieldValue, currency: &str) -> String {
+    use mkperth_engine::core::FieldValue;
+    match v {
+        FieldValue::Text(t) => t.clone(),
+        FieldValue::Number(n) => mkperth_engine::i18n::decimal(format!("{:.6}", *n as f64 / 1e6).trim_end_matches('0').trim_end_matches('.')),
+        FieldValue::Integer(n) => n.to_string(),
+        FieldValue::Cost(c) => crate::costs_ui::money_text(*c, currency),
+        FieldValue::Date(d) => show_date(*d),
+        FieldValue::Indicator(i) => tr!(&format!("indicator-{}", i.code())),
+    }
+}
+
+/// An activity's value of a code or a field, as the table shows it.
+fn custom_text(project: &mkperth_engine::core::Project, a: &mkperth_engine::core::Activity, c: &Custom) -> String {
+    match c {
+        Custom::Code(n) => a.codes.get(n).cloned().unwrap_or_default(),
+        Custom::Field(n) => a.fields.get(n).map(|v| field_text(v, &project.currency)).unwrap_or_default(),
+    }
+}
+
+/// Where a code's value comes in the code's own order; none after every value.
+fn code_rank(project: &mkperth_engine::core::Project, code: &str, value: Option<&String>) -> usize {
+    let values = project.classification.code(code).map(|c| c.values.as_slice()).unwrap_or_default();
+    value.and_then(|v| values.iter().position(|x| x.code == *v)).unwrap_or(usize::MAX)
+}
+
+/// How two activities compare by `by`; none comes after any value.
+fn compare(session: &Session, i: usize, j: usize, by: &SortBy) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let acts = &session.project.activities;
+    let (Some(a), Some(b)) = (acts.get(i), acts.get(j)) else { return Ordering::Equal };
+    let s = session.schedule.as_ref().ok();
+    let (sa, sb) = (s.and_then(|s| s.activities.get(i)), s.and_then(|s| s.activities.get(j)));
+    match by {
+        SortBy::Column(0) => a.id.cmp(&b.id),
+        SortBy::Column(1) => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        SortBy::Column(2) => a.working_minutes(480).cmp(&b.working_minutes(480)),
+        SortBy::Column(k) => match (sa, sb) {
+            (Some(x), Some(y)) => match k {
+                3 => x.early_start.cmp(&y.early_start),
+                4 => x.early_finish.cmp(&y.early_finish),
+                5 => x.late_start.cmp(&y.late_start),
+                6 => x.late_finish.cmp(&y.late_finish),
+                7 => x.total_float_minutes.cmp(&y.total_float_minutes),
+                8 => x.free_float_minutes.cmp(&y.free_float_minutes),
+                _ => Ordering::Equal,
+            },
+            _ => Ordering::Equal,
+        },
+        SortBy::Custom(Custom::Code(n)) => code_rank(&session.project, n, a.codes.get(n)).cmp(&code_rank(&session.project, n, b.codes.get(n))),
+        SortBy::Custom(Custom::Field(n)) => match (a.fields.get(n), b.fields.get(n)) {
+            (Some(x), Some(y)) => x.cmp(y),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        },
+    }
+}
+
+/// The activity holds `value` of `code`, or a value under it.
+fn has_code(project: &mkperth_engine::core::Project, a: &mkperth_engine::core::Activity, code: &str, value: &str) -> bool {
+    let Some(mut at) = a.codes.get(code).cloned() else { return false };
+    let values = project.classification.code(code).map(|c| c.values.as_slice()).unwrap_or_default();
+    // Up the values' hierarchy, never further than there are values.
+    for _ in 0..=values.len() {
+        if at == value {
+            return true;
+        }
+        match values.iter().find(|v| v.code == at).and_then(|v| v.parent.clone()) {
+            Some(parent) => at = parent,
+            None => return false,
+        }
+    }
+    false
 }
 
 impl Options {
     /// The columns shown: their place in `COLUMNS`, message id and width.
+    /// A code's or a field's column comes after them, at `COLUMNS.len()` and on, its title its
+    /// own name (the message id is empty).
     pub fn columns(&self) -> Vec<(usize, &'static str, f32)> {
         COLUMNS
             .iter()
             .enumerate()
             .filter(|(k, _)| *k < 2 || !self.hidden.get(*k).copied().unwrap_or(false))
             .map(|(k, (id, w))| (k, *id, *w))
+            .chain((0..self.custom_columns.len()).map(|n| (COLUMNS.len() + n, "", CUSTOM_WIDTH)))
             .collect()
+    }
+
+    /// What the column at `k` (as `columns` gives it) sorts by, if it can sort.
+    pub fn sort_key(&self, k: usize) -> Option<SortBy> {
+        if k < SORTABLE {
+            Some(SortBy::Column(k))
+        } else {
+            k.checked_sub(COLUMNS.len()).and_then(|n| self.custom_columns.get(n)).map(|c| SortBy::Custom(c.clone()))
+        }
     }
 }
 
@@ -192,6 +319,12 @@ pub(crate) fn summaries(acts: &[mkperth_engine::core::Activity]) -> Vec<bool> {
 
 /// The rows: each activity's index and its depth in the WBS, depth first.
 pub(crate) fn rows(session: &Session) -> Vec<(usize, usize)> {
+    rows_sorted(session, None)
+}
+
+/// The rows in the WBS, each summary's children (and the top level) in the order `by` gives,
+/// downwards when asked; the WBS's own order where it doesn't tell them apart.
+fn rows_sorted(session: &Session, by: Option<&(SortBy, bool)>) -> Vec<(usize, usize)> {
     let acts = &session.project.activities;
     let index: std::collections::HashMap<&str, usize> = acts.iter().enumerate().map(|(i, a)| (a.id.as_str(), i)).collect();
     let mut children: Vec<Vec<usize>> = vec![Vec::new(); acts.len()];
@@ -204,6 +337,16 @@ pub(crate) fn rows(session: &Session) -> Vec<(usize, usize)> {
                 }
             }
             _ => top.push(i),
+        }
+    }
+    if let Some((key, down)) = by {
+        let order = |a: &usize, b: &usize| {
+            let o = compare(session, *a, *b, key);
+            if *down { o.reverse() } else { o }
+        };
+        top.sort_by(order);
+        for c in &mut children {
+            c.sort_by(order);
         }
     }
     // Without recursion; a node is never visited twice, so a loop can't trap it.
@@ -226,17 +369,92 @@ pub(crate) fn rows(session: &Session) -> Vec<(usize, usize)> {
 }
 
 /// The rows the options let through: an activity that matches, and the summaries above it.
+#[cfg(test)]
 pub(crate) fn visible(session: &Session, options: &Options) -> Vec<(usize, usize)> {
-    let all = rows(session);
-    let Ok(schedule) = &session.schedule else { return all };
+    layout(session, options).0
+}
+
+/// The rows shown and, when they are grouped, the bands' titles. Grouped, the activities with
+/// none under them come in a band for each value (in the code's order, or the field's values in
+/// order; none last), `BAND + n` heading the nth; else they keep the WBS with their summaries.
+/// Either way only those the filters keep, sorted as asked.
+pub(crate) fn layout(session: &Session, options: &Options) -> (Vec<(usize, usize)>, Vec<String>) {
+    let all = rows_sorted(session, options.sort.as_ref());
+    let Ok(schedule) = &session.schedule else { return (all, Vec::new()) };
+    let p = &session.project;
     let needle = options.search.trim().to_lowercase();
-    let acts = &session.project.activities;
+    let acts = &p.activities;
     let summary = summaries(acts);
     let matches = |i: usize| {
         let (Some(a), Some(s)) = (acts.get(i), schedule.activities.get(i)) else { return false };
         (!options.critical_only || s.critical)
             && (needle.is_empty() || a.id.to_lowercase().contains(&needle) || a.name.to_lowercase().contains(&needle))
+            && options.code_filter.as_ref().is_none_or(|(code, value)| has_code(p, a, code, value))
     };
+    if let Some(group) = &options.group_by {
+        // The leaves kept, in the sorted WBS's order, each with its band's key.
+        let leaves: Vec<usize> = all.iter().map(|(i, _)| *i).filter(|&i| summary.get(i) == Some(&false) && matches(i)).collect();
+        type Key = (usize, bool, Option<mkperth_engine::core::FieldValue>);
+        let mut keys: Vec<(Key, String)> = Vec::new();
+        let mut members: Vec<Vec<usize>> = Vec::new();
+        let key_of = |i: usize| -> (usize, Option<mkperth_engine::core::FieldValue>, String) {
+            let Some(a) = acts.get(i) else { return (usize::MAX, None, String::new()) };
+            match group {
+                Custom::Code(n) => (code_rank(p, n, a.codes.get(n)), None, a.codes.get(n).cloned().unwrap_or_default()),
+                Custom::Field(n) => (0, a.fields.get(n).cloned(), a.fields.get(n).map(|v| field_text(v, &p.currency)).unwrap_or_default()),
+            }
+        };
+        let mut keyed: Vec<(Key, String, usize)> = leaves
+            .into_iter()
+            .map(|i| {
+                let (rank, value, text) = key_of(i);
+                let none = match group {
+                    Custom::Code(_) => rank == usize::MAX,
+                    Custom::Field(_) => value.is_none(),
+                };
+                ((rank, none, value), text, i)
+            })
+            .collect();
+        // By the band's key, then as sorted (a stable sort keeps the WBS's or the asked order).
+        keyed.sort_by(|a, b| (a.0.1, a.0.0, &a.0.2).cmp(&(b.0.1, b.0.0, &b.0.2)));
+        for (key, text, i) in keyed {
+            match keys.last() {
+                Some((k, _)) if *k == key => {
+                    if let Some(m) = members.last_mut() {
+                        m.push(i);
+                    }
+                }
+                _ => {
+                    keys.push((key, text));
+                    members.push(vec![i]);
+                }
+            }
+        }
+        let mut rows = Vec::new();
+        let mut titles = Vec::new();
+        for (n, ((_, text), list)) in keys.into_iter().zip(members).enumerate() {
+            let value = if text.is_empty() {
+                tr!("group-none")
+            } else {
+                match group {
+                    Custom::Code(c) => {
+                        let description = p
+                            .classification
+                            .code(c)
+                            .and_then(|code| code.values.iter().find(|v| v.code == text))
+                            .map(|v| v.description.clone())
+                            .unwrap_or_default();
+                        if description.is_empty() { text } else { format!("{text} — {description}") }
+                    }
+                    Custom::Field(_) => text,
+                }
+            };
+            titles.push(format!("{}: {value} ({})", group.name(), list.len()));
+            rows.push((BAND + n, 0));
+            rows.extend(list.into_iter().map(|i| (i, 1)));
+        }
+        return (rows, titles);
+    }
     let mut keep = vec![false; acts.len()];
     let index: std::collections::HashMap<&str, usize> = acts.iter().enumerate().map(|(i, a)| (a.id.as_str(), i)).collect();
     for i in 0..acts.len() {
@@ -256,7 +474,7 @@ pub(crate) fn visible(session: &Session, options: &Options) -> Vec<(usize, usize
             }
         }
     }
-    all.into_iter().filter(|(i, _)| keep.get(*i) == Some(&true)).collect()
+    (all.into_iter().filter(|(i, _)| keep.get(*i) == Some(&true)).collect(), Vec::new())
 }
 
 /// Paints the view in the space given. A double click on an ID, a name or a duration edits it in
@@ -272,7 +490,7 @@ pub(crate) fn show(
     let t = Tokens::get(ui.ctx());
     let mut events = Events::default();
     let Ok(schedule) = &session.schedule else { return events };
-    let rows = visible(session, options);
+    let (rows, bands) = layout(session, options);
     let acts = &session.project.activities;
     let s_of = |i: usize| schedule.activities.get(i);
     // The baseline in use: each activity's frozen dates, and its variances.
@@ -345,14 +563,46 @@ pub(crate) fn show(
     painter.rect_filled(header, 0.0, t.header_bg);
     painter.hline(header.x_range(), header.bottom(), Stroke::new(1.0, t.header_line));
     let mut x = header.left();
-    for &(_, id, w) in &columns {
+    for &(k, id, w) in &columns {
         let cell = Rect::from_min_size(pos2(x, header.top()), vec2(w, HEADER));
+        // A code's or a field's column is titled with its name.
+        let name = match k.checked_sub(COLUMNS.len()).and_then(|n| options.custom_columns.get(n)) {
+            Some(c) => c.name().to_string(),
+            None => tr!(id),
+        };
+        // The column the rows are sorted by: a small triangle at its right, up or down.
+        let sorted = options.sort.as_ref().filter(|(by, _)| options.sort_key(k).as_ref() == Some(by)).map(|(_, down)| *down);
+        let room = if sorted.is_some() { 22.0 } else { 12.0 };
         // A title wider than its column wraps onto a second line rather than being cut.
-        let title = painter.layout(tr!(id), FontId::proportional(12.0), t.header_text, (w - 12.0).max(1.0));
+        let title = painter.layout(name, FontId::proportional(12.0), t.header_text, (w - room).max(1.0));
         let at = pos2(x + 6.0, header.center().y - title.size().y / 2.0);
         painter.with_clip_rect(cell.shrink(2.0)).galley(at, title, t.header_text);
+        if let Some(down) = sorted {
+            let c = pos2(x + w - 9.0, header.center().y);
+            let (tip, base) = if down { (c.y + 3.0, c.y - 2.0) } else { (c.y - 3.0, c.y + 2.0) };
+            painter.add(egui::Shape::convex_polygon(vec![pos2(c.x - 4.0, base), pos2(c.x + 4.0, base), pos2(c.x, tip)], t.accent, Stroke::NONE));
+        }
         x += w;
         painter.vline(x, header.y_range(), Stroke::new(1.0, t.gridline));
+    }
+    // A click on a column's title sorts the rows by it: upwards, then downwards, then as they were.
+    if header_response.clicked()
+        && let Some(p) = header_response.interact_pointer_pos().filter(|p| p.x < chart_left)
+    {
+        let mut at = header.left();
+        for &(k, _, w) in &columns {
+            if p.x >= at
+                && p.x < at + w
+                && let Some(key) = options.sort_key(k)
+            {
+                options.sort = match options.sort.take() {
+                    Some((by, false)) if by == key => Some((by, true)),
+                    Some((by, true)) if by == key => None,
+                    _ => Some((key, false)),
+                };
+            }
+            at += w;
+        }
     }
     // Dragging the dates scrolls in time.
     if header_response.dragged() && header_response.interact_pointer_pos().is_some_and(|p| p.x > chart_left) {
@@ -491,6 +741,16 @@ pub(crate) fn show(
             let n = range.start + k;
             let (rect, response) = ui.allocate_exact_size(vec2(full.width(), ROW), Sense::click_and_drag());
             first_top.get_or_insert(rect.top());
+            // A band's title, in its own row across the table and the chart: nothing to choose.
+            if let Some(title) = i.checked_sub(BAND).and_then(|b| bands.get(b)) {
+                let painter = ui.painter_at(rect);
+                painter.rect_filled(rect, 0.0, t.header_bg);
+                painter.hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, t.header_line));
+                for dx in [0.0, 0.5] {
+                    painter.text(pos2(rect.left() + 8.0 + dx, rect.center().y), Align2::LEFT_CENTER, title, FontId::proportional(12.5), t.text);
+                }
+                continue;
+            }
             // A press on a bar drags the bar; anywhere else, a rectangle to choose rows. Both
             // from where the press began, not where the drag was noticed.
             if response.drag_started()
@@ -523,7 +783,7 @@ pub(crate) fn show(
                 } else if modifiers.shift
                     && let (Some(a), Some(b)) = (selected.and_then(position), position(i))
                 {
-                    events.marked = Some(rows.iter().skip(a.min(b)).take(a.max(b) - a.min(b) + 1).map(|(r, _)| *r).collect());
+                    events.marked = Some(rows.iter().skip(a.min(b)).take(a.max(b) - a.min(b) + 1).map(|(r, _)| *r).filter(|r| *r < BAND).collect());
                     clicked = Some(i);
                 } else {
                     clicked = Some(i);
@@ -706,7 +966,7 @@ pub(crate) fn show(
             // Late (a negative variance) in red.
             let late = |x: Option<i64>| if x.is_some_and(|x| x < 0) { t.red } else { t.cell_text };
             let signed = |m: i64| if m < 0 { format!("-{}", crate::days_text(-m, day)) } else { crate::days_text(m, day) };
-            let cells = [
+            let mut cells = vec![
                 (a.id.clone(), t.cell_text, 0.0),
                 (a.name.clone(), if summary { t.text } else { t.cell_text }, depth as f32 * 14.0),
                 (duration, t.cell_text, 0.0),
@@ -726,6 +986,23 @@ pub(crate) fn show(
                 (c.map(|c| crate::costs_ui::money_text(c.at_completion(), "")).unwrap_or_default(), t.cell_text, 0.0),
                 (v.map(|v| crate::costs_ui::money_text(v.cost, "")).unwrap_or_default(), late(v.map(|v| v.cost)), 0.0),
             ];
+            // The project's own columns after the table's: a code's value, a field's (an indicator
+            // in its colour).
+            for c in &options.custom_columns {
+                let color = match c {
+                    Custom::Field(n) => match a.fields.get(n) {
+                        Some(mkperth_engine::core::FieldValue::Indicator(i)) => match i {
+                            mkperth_engine::core::Indicator::Red => t.red,
+                            mkperth_engine::core::Indicator::Yellow => t.orange,
+                            mkperth_engine::core::Indicator::Green => t.green,
+                            mkperth_engine::core::Indicator::Blue => t.blue,
+                        },
+                        _ => t.cell_text,
+                    },
+                    Custom::Code(_) => t.cell_text,
+                };
+                cells.push((custom_text(&session.project, a, c), color, 0.0));
+            }
             let mut x = rect.left();
             for (k, (text, color, indent)) in cells.into_iter().enumerate() {
                 let Some(&(_, _, w)) = columns.iter().find(|(c, _, _)| *c == k) else { continue };

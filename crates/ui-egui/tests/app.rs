@@ -874,3 +874,32 @@ fn earned_value_in_its_pane_and_details() {
     let a = h.state().session.project.activities.iter().find(|a| a.id == "A10").unwrap().clone();
     assert_eq!(a.percent_complete, Some(6_250));
 }
+
+/// Codes and fields from the Project menu: a code added by name; a click on a column's title
+/// sorts the rows by it, upwards, then downwards, then as they were.
+#[test]
+fn codes_added_and_a_column_sorts() {
+    use egui::accesskit::Role;
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Project").click();
+    h.run_steps(2);
+    h.get_by_label("Codes and fields…").click();
+    h.run_steps(2);
+    assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::Codes));
+    h.get_by_role_and_label(Role::TextInput, "New code").click();
+    h.run_steps(1);
+    h.get_by_role_and_label(Role::TextInput, "New code").type_text("Phase");
+    h.run_steps(1);
+    h.get_by_label("Add").click();
+    h.run_steps(2);
+    assert!(h.state().session.project.classification.code("Phase").is_some());
+    // The title "Total float": the table's eighth column (ID 84, name 230, duration 60, four
+    // dates of 84 from x 58), in the header over the first row.
+    let (x, header_y) = (58.0 + 84.0 + 230.0 + 60.0 + 4.0 * 84.0 + 30.0, ROW_A10 - 2.0 * 24.0 - 22.0);
+    click(&mut h, egui::pos2(x, header_y), egui::Modifiers::NONE);
+    assert_eq!(h.state().options.sort, Some((mkperth_ui_egui::activities::SortBy::Column(7), false)));
+    click(&mut h, egui::pos2(x, header_y), egui::Modifiers::NONE);
+    assert_eq!(h.state().options.sort, Some((mkperth_ui_egui::activities::SortBy::Column(7), true)));
+    click(&mut h, egui::pos2(x, header_y), egui::Modifiers::NONE);
+    assert_eq!(h.state().options.sort, None);
+}
