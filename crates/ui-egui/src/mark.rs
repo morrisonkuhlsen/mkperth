@@ -1,83 +1,74 @@
-//! MK Perth's mark, drawn in code: a dark gear holding a violet globe, its meridians and
-//! parallels in white, a schedule's bars cascading across it. Worked out per pixel from the
-//! shapes' geometry (4×4 samples a pixel), so one drawing gives the window's icon and the mark
-//! in the app at any size.
+//! MK Perth's mark, drawn in code: a hexagon seen as a solid, its band open at the lower left so
+//! that it reads as a P, around a cube; each in three shades, lit from the upper left. Worked
+//! out per pixel from the shapes' geometry (4×4 samples a pixel), so one drawing gives the
+//! window's icon and the mark in the app at any size.
 
 use egui::{TextureHandle, TextureOptions};
 
-/// The gear's teeth, and its radii in the mark's half-width: the teeth's tips, the rim, the
-/// inside of the rim; then the white ring's inside, the globe's edge.
-const TEETH: f32 = 12.0;
-const TIP: f32 = 0.94;
-const RIM: f32 = 0.80;
-const RIM_IN: f32 = 0.67;
-const GLOBE: f32 = 0.615;
-/// The white lines' half-width, in the globe's radius.
-const LINE: f32 = 0.024;
-/// The white edge around the gear, in the mark's half-width: it shows the gear on a dark window.
-const EDGE: f32 = 0.03;
+/// The hexagon's outer and inner radii and the cube's, in the mark's half-width; the hexagon
+/// stands on a corner, as an isometric solid does.
+const OUTER: f32 = 0.96;
+const INNER: f32 = 0.56;
+const CUBE: f32 = 0.31;
+/// The white cut between the P's stem and its top, in the mark's half-width.
+const CUT: f32 = 0.035;
+/// How far down the P's stem goes, at its outer edge: past the hexagon's lower-left corner.
+const STEM: f32 = 0.74;
 
-const GEAR_LIGHT: [u8; 3] = [0x2A, 0x27, 0x30];
-const GEAR_DARK: [u8; 3] = [0x1A, 0x19, 0x1E];
-const WHITE: [u8; 3] = [0xFF, 0xFF, 0xFF];
-/// The globe's violet: darker at the top right, lighter at the bottom left.
-const GLOBE_DARK: [u8; 3] = [0x6A, 0x3A, 0x98];
-const GLOBE_LIGHT: [u8; 3] = [0xA8, 0x74, 0xD8];
+/// The three shades: faces turned up, to the left and to the right.
+const TOP: [u8; 3] = [0x3B, 0x5B, 0xDB];
+const LEFT: [u8; 3] = [0x6E, 0x9B, 0xF2];
+const RIGHT: [u8; 3] = [0x36, 0x2A, 0x8A];
 
-/// The bars, in the globe's radius: left, right, top, bottom and colour.
-const BARS: [(f32, f32, f32, f32, [u8; 3]); 6] = [
-    (-0.74, -0.06, -0.54, -0.41, [0x4E, 0x1F, 0x72]),
-    (-0.36, 0.40, -0.36, -0.24, [0x8A, 0x52, 0xBC]),
-    (0.02, 0.78, -0.19, -0.07, [0xB0, 0x7C, 0xDB]),
-    (-0.86, -0.22, 0.10, 0.22, [0xD6, 0xBE, 0xEE]),
-    (-0.46, 0.26, 0.27, 0.39, [0xC4, 0xA2, 0xE2]),
-    (0.06, 0.66, 0.58, 0.70, [0xC8, 0xA6, 0xE4]),
-];
+/// Inside a hexagon of radius `r` standing on a corner.
+fn in_hexagon(x: f32, y: f32, r: f32) -> bool {
+    let c = r * 3f32.sqrt() / 2.0;
+    x.abs() <= c && y.abs() <= r - x.abs() / 3f32.sqrt()
+}
 
-fn mix(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
-    let t = t.clamp(0.0, 1.0);
-    let m = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round().clamp(0.0, 255.0) as u8;
-    [m(a[0], b[0]), m(a[1], b[1]), m(a[2], b[2])]
+/// The face a point is on, by its direction from the centre: up between the two upper corners,
+/// left between the upper-left and lower-left ones, right from the upper-right to the bottom;
+/// between the bottom and the lower left, none.
+fn face(x: f32, y: f32) -> Option<[u8; 3]> {
+    let angle = y.atan2(x).to_degrees();
+    match angle {
+        a if (-150.0..-30.0).contains(&a) => Some(TOP),
+        a if (-30.0..90.0).contains(&a) => Some(RIGHT),
+        a if (90.0..150.0).contains(&a) => None,
+        _ => Some(LEFT),
+    }
 }
 
 /// The colour at (`x`, `y`), both from −1 to 1 across the mark, or nothing outside it.
 fn at(x: f32, y: f32) -> Option<[u8; 3]> {
-    let r = (x * x + y * y).sqrt();
-    if r >= RIM_IN {
-        // The gear, then a white edge around it as wide everywhere: on the rim's arc, along the
-        // teeth's sides (an angle off a tooth, measured at this radius) and over their tips.
-        let gear = |r: f32, off: f32| {
-            let half = 0.24 - 0.10 * ((r - RIM) / (TIP - RIM)).max(0.0);
-            r < TIP && (r < RIM || off <= half)
-        };
-        let turn = y.atan2(x) / std::f32::consts::TAU * TEETH;
-        let off = (turn - turn.round()).abs();
-        if gear(r, off) {
-            // Shaded in two halves, lit from the left.
-            return Some(if x < 0.0 { GEAR_LIGHT } else { GEAR_DARK });
-        }
-        let reach = EDGE / r.max(0.1) * TEETH / std::f32::consts::TAU;
-        let edge = gear(r - EDGE, off) || gear(r, (off - reach).max(0.0)) || gear(r - EDGE * 0.7, (off - reach * 0.7).max(0.0));
-        return edge.then_some(WHITE);
+    // The cube in the middle, its three faces meeting at its centre.
+    if in_hexagon(x, y, CUBE) {
+        let angle = y.atan2(x).to_degrees();
+        return Some(if (-150.0..-30.0).contains(&angle) {
+            TOP
+        } else if (-30.0..90.0).contains(&angle) {
+            RIGHT
+        } else {
+            LEFT
+        });
     }
-    if r >= GLOBE {
-        return Some(WHITE);
+    // A white cut along the line to the upper-left corner parts the stem from the top.
+    let (dx, dy) = ((-150f32).to_radians().cos(), (-150f32).to_radians().sin());
+    if (x * dy - y * dx).abs() < CUT && x * dx + y * dy > 0.0 {
+        return None;
     }
-    // The globe in its own radius.
-    let (u, v) = (x / GLOBE, y / GLOBE);
-    // The meridians (the middle one and an ellipse each side) and three parallels, the lowest
-    // bowed as on a globe seen from a little above.
-    let a = 0.47;
-    let ellipse = ((u * u) / (a * a) + v * v).sqrt();
-    let lines =
-        u.abs() < LINE || ((ellipse - 1.0) * a).abs() < LINE || v.abs() < LINE || (v + 0.62).abs() < LINE || (v - (0.60 - 0.10 * u * u)).abs() < LINE;
-    if lines {
-        return Some(WHITE);
+    // The stem: the band's left side, down past the corner, its foot slanting as the hexagon's
+    // lower edges do.
+    let (outer, inner) = (OUTER * 3f32.sqrt() / 2.0, INNER * 3f32.sqrt() / 2.0);
+    let slope = 1.0 / 3f32.sqrt();
+    // Its top is the cut: the line from the centre to the upper-left corner.
+    if (-outer..=-inner).contains(&x) && y >= x * slope && y <= STEM + (x + outer) * slope {
+        return Some(LEFT);
     }
-    if let Some(&(.., c)) = BARS.iter().find(|&&(l, rr, t, b, _)| u >= l && u <= rr && v >= t && v <= b) {
-        return Some(c);
+    if !in_hexagon(x, y, OUTER) || in_hexagon(x, y, INNER) {
+        return None;
     }
-    Some(mix(GLOBE_DARK, GLOBE_LIGHT, (v - u) / 2.0 * 0.9 + 0.5))
+    face(x, y)
 }
 
 /// The mark as RGBA pixels, `size` on each side, transparent around it.
@@ -133,17 +124,18 @@ pub fn icon() -> egui::IconData {
 mod tests {
     use super::*;
 
-    /// Clear in the corners, white on the ring, dark on the rim, a tooth at the top and none
-    /// halfway between two.
+    /// Clear in the corners and in the hole, the band's three shades where they belong, the
+    /// opening at the lower left, the cube in the middle.
     #[test]
     fn the_shapes_where_they_belong() {
         assert_eq!(at(-0.99, -0.99), None);
-        assert_eq!(at(0.0, -(RIM_IN + GLOBE) / 2.0), Some(WHITE));
-        assert_eq!(at(-0.73, 0.0), Some(GEAR_LIGHT));
-        assert_eq!(at(0.0, -0.9), Some(GEAR_DARK), "a tooth at the top");
-        assert_eq!(at(0.0, -(TIP + EDGE / 2.0)), Some(WHITE), "its white edge");
-        let between = std::f32::consts::TAU / TEETH / 2.0 - std::f32::consts::FRAC_PI_2;
-        assert_eq!(at(0.9 * between.cos(), 0.9 * between.sin()), None);
+        assert_eq!(at(0.0, -0.8), Some(TOP), "the band's top");
+        assert_eq!(at(-0.75, 0.0), Some(LEFT), "the stem");
+        assert_eq!(at(0.75, 0.0), Some(RIGHT), "the bowl's right");
+        assert_eq!(at(-0.35, 0.7), None, "the opening");
+        assert_eq!(at(-0.75, 0.6), Some(LEFT), "the stem past the corner");
+        assert_eq!(at(0.0, 0.45), None, "the hole");
+        assert_eq!((at(0.0, -0.2), at(-0.15, 0.1), at(0.15, 0.1)), (Some(TOP), Some(LEFT), Some(RIGHT)), "the cube");
         let pixels = rgba(64);
         assert_eq!(pixels.len(), 64 * 64 * 4);
         assert_eq!(pixels[3], 0, "the corner is clear");
