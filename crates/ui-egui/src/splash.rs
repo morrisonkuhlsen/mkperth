@@ -123,15 +123,23 @@ fn paint(painter: &egui::Painter, ctx: &egui::Context, rect: Rect, progress: f32
     painter.rect_filled(bar, 0.0, Color32::from_white_alpha(28));
     painter.rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * progress, bar.height())), 0.0, BRAND);
 
-    // The house: its wordmark and line at the foot.
+    // The house at the foot: "powered by" and its wordmark after it; the line alone without it.
     let foot = words.bottom() - 28.0 * k;
-    if let Some(texture) = wordmark(ctx) {
-        let logo_width = 104.0 * k;
-        let size = vec2(logo_width, logo_width * texture.size_vec2().y / texture.size_vec2().x.max(1.0));
-        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-        painter.image(texture.id(), Rect::from_min_size(pos2(left, foot - size.y), size), uv, ON_INK);
+    match wordmark(ctx) {
+        Some(texture) => {
+            let by = painter.layout_no_wrap(tr!("splash-powered-by"), FontId::proportional(11.0 * k), ON_INK_SOFT);
+            let logo_width = 104.0 * k;
+            let size = vec2(logo_width, logo_width * texture.size_vec2().y / texture.size_vec2().x.max(1.0));
+            let mid = foot - size.y / 2.0;
+            let by_width = by.size().x;
+            painter.galley(pos2(left, mid - by.size().y / 2.0), by, ON_INK_SOFT);
+            let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+            painter.image(texture.id(), Rect::from_min_size(pos2(left + by_width + 8.0 * k, foot - size.y), size), uv, ON_INK);
+        }
+        None => {
+            painter.text(pos2(left, foot - 4.0 * k), Align2::LEFT_BOTTOM, tr!("splash-house"), FontId::proportional(11.0 * k), ON_INK_SOFT);
+        }
     }
-    painter.text(pos2(left + width, foot - 4.0 * k), Align2::RIGHT_BOTTOM, tr!("splash-house"), FontId::proportional(11.0 * k), ON_INK_SOFT);
 }
 
 /// The artwork, drawn in code: on a violet dusk, a schedule's bars cascade down to a milestone,

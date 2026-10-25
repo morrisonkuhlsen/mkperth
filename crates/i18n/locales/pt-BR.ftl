@@ -607,6 +607,7 @@ splash-tagline = Planejamento de projetos, aberto e auditável: cada data com o 
 splash-version = Versão { $version }
 splash-loading = Carregando { $component }…
 splash-house = Um projeto Morrison Kühlsen
+splash-powered-by = Desenvolvido por
 splash-component-calendars = calendários e feriados
 splash-component-passes = os passes de ida e de volta
 splash-component-floats = as folgas e o caminho crítico
