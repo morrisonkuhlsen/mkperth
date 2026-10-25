@@ -523,7 +523,9 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             reason: e.text_of("Reason").unwrap_or_default().to_string(),
         });
     }
-    let plans = p.all("ProjectSpendingPlan").chain(root.all("ProjectSpendingPlan")).map(|e| (e, None));
+    // The project's plan, or a WBS's when it names one; `WBSSpendingPlan`, as MK Perth wrote a
+    // WBS's before #31, still read.
+    let plans = p.all("ProjectSpendingPlan").chain(root.all("ProjectSpendingPlan")).map(|e| (e, wbs_of(e)));
     let wbs_plans = p.all("WBSSpendingPlan").chain(root.all("WBSSpendingPlan")).filter_map(|e| Some((e, Some(wbs_of(e)?))));
     for (e, wbs) in plans.chain(wbs_plans) {
         let (Some((y, m, _)), Some(amount)) = (e.text_of("Date").and_then(date_of).map(|d| d.ymd()), e.text_of("SpendingPlan").and_then(money_of))
@@ -733,6 +735,12 @@ const EV_TECHNIQUES: [(&str, EvTechnique); 3] =
     [("0 / 100", EvTechnique::ZeroHundred), ("50 / 50", EvTechnique::FiftyFifty), ("Custom Percent Complete", EvTechnique::Custom(0))];
 const ETC_TECHNIQUES: [(&str, EtcTechnique); 4] = [
     ("ETC = Remaining Cost for Activity", EtcTechnique::Remaining),
+    ("Performance Factor = 1", EtcTechnique::Planned),
+    ("Performance Factor = 1 / Cost Performance Index", EtcTechnique::Cpi),
+    ("Performance Factor = 1 / (Cost Performance Index * Schedule Performance Index)", EtcTechnique::CpiSpi),
+];
+/// The names MK Perth wrote before they were checked against Oracle's reference (#31), still read.
+const ETC_TECHNIQUES_BEFORE: [(&str, EtcTechnique); 3] = [
     ("PF = 1", EtcTechnique::Planned),
     ("PF = 1 / Cost Performance Index", EtcTechnique::Cpi),
     ("PF = 1 / (Cost Performance Index * Schedule Performance Index)", EtcTechnique::CpiSpi),
@@ -765,7 +773,11 @@ fn earned_value_of(root: &Element, p: &Element, kinds: &BTreeMap<String, usize>)
             None => EvTechnique::Physical,
         },
     };
-    let etc = p.text_of("EarnedValueETCComputeType").and_then(|n| ETC_TECHNIQUES.iter().find(|(x, _)| *x == n)).map(|(_, t)| *t).unwrap_or_default();
+    let etc = p
+        .text_of("EarnedValueETCComputeType")
+        .and_then(|n| ETC_TECHNIQUES.iter().chain(ETC_TECHNIQUES_BEFORE.iter()).find(|(x, _)| *x == n))
+        .map(|(_, t)| *t)
+        .unwrap_or_default();
     let mut periods: Vec<FinancialPeriod> = Vec::new();
     for e in root.all("FinancialPeriod").chain(p.all("FinancialPeriod")) {
         let (Some(name), Some(start), Some(finish)) =
@@ -845,7 +857,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     };
     for (k, c) in calendars.iter().enumerate() {
         out.push_str(&format!(
-            "  <Calendar>\n    <ObjectId>{}</ObjectId>\n    <Name>{}</Name>\n    <HoursPerDay>{}</HoursPerDay>\n    <StandardWorkWeek>\n",
+            "  <Calendar>\n    <ObjectId>{}</ObjectId>\n    <Name>{}</Name>\n    <Type>Global</Type>\n    <HoursPerDay>{}</HoursPerDay>\n    <StandardWorkWeek>\n",
             k + 1,
             // P6 names every calendar.
             esc(match c.name.as_str() {
@@ -985,12 +997,11 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             q.finish
         ));
     }
-    let mut pairs = 0usize;
+    // A resource's roles: the pair is the key, with no object number of its own.
     for r in &project.resources {
         for role in r.roles.iter().filter_map(|id| role_object(id)) {
-            pairs += 1;
             out.push_str(&format!(
-                "  <ResourceRole>\n    <ObjectId>{pairs}</ObjectId>\n    <ResourceObjectId>{}</ResourceObjectId>\n    <RoleObjectId>{role}</RoleObjectId>\n  </ResourceRole>\n",
+                "  <ResourceRole>\n    <ResourceObjectId>{}</ResourceObjectId>\n    <RoleObjectId>{role}</RoleObjectId>\n  </ResourceRole>\n",
                 resource_object(&r.id).unwrap_or(0)
             ));
         }
@@ -1016,7 +1027,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     if let EvTechnique::Custom(share) = ev.technique {
         out.push_str(&format!("    <EarnedValueUserPercent>{}</EarnedValueUserPercent>\n", share as f64 / 100.0));
     }
-    let etc = ETC_TECHNIQUES.iter().find(|(_, t)| *t == ev.etc).map_or("PF = 1", |(n, _)| n);
+    let etc = ETC_TECHNIQUES.iter().find(|(_, t)| *t == ev.etc).map_or("Performance Factor = 1", |(n, _)| n);
     out.push_str(&format!("    <EarnedValueETCComputeType>{etc}</EarnedValueETCComputeType>\n"));
     if !ev.records.is_empty() {
         warnings.push(tr!("warn-p6-period-closes"));
@@ -1181,8 +1192,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
                     m.month,
                     money(m.amount)
                 )),
+                // A WBS's plan is the project's kind, naming the WBS.
                 Some(w) => out.push_str(&format!(
-                    "    <WBSSpendingPlan>\n      <ObjectId>{plans}</ObjectId>\n      <ProjectObjectId>1</ProjectObjectId>\n      <WBSObjectId>{}</WBSObjectId>\n      <Date>{}T00:00:00</Date>\n      <SpendingPlan>{}</SpendingPlan>\n    </WBSSpendingPlan>\n",
+                    "    <ProjectSpendingPlan>\n      <ObjectId>{plans}</ObjectId>\n      <ProjectObjectId>1</ProjectObjectId>\n      <WBSObjectId>{}</WBSObjectId>\n      <Date>{}T00:00:00</Date>\n      <SpendingPlan>{}</SpendingPlan>\n    </ProjectSpendingPlan>\n",
                     object(w),
                     m.month,
                     money(m.amount)

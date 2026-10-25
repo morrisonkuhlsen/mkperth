@@ -275,6 +275,11 @@ Read it before re-scheduling a plan with a new version.
 
 ### Fixed
 
+- P6 XML as Oracle documents it (#31): the estimate to complete's techniques are written
+  `Performance Factor = 1` (and `… / Cost Performance Index`, `… / (Cost Performance Index *
+  Schedule Performance Index)`), not `PF = …`; a WBS's spending plan is a `ProjectSpendingPlan`
+  naming its WBS, not a `WBSSpendingPlan`; a resource's role has no `ObjectId` of its own; every
+  calendar says its `Type`. Files written before still read.
 - A P6 XML file with resource rates, cost accounts or expenses no longer says they were left
   out: they have been read since costs came (#23).
 - The app no longer crashes at start on Windows with some Intel graphics drivers (igvk64.dll,

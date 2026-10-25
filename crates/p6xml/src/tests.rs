@@ -403,3 +403,36 @@ fn earned_value_read_back() {
     p.earned_value.records.push(PeriodRecord { period: "2026-11".into(), activity: "x".into(), planned: 1, earned: 1, actual: 1 });
     assert_eq!(write(&p).1.len(), 1);
 }
+
+/// The names checked against Oracle's public P6 reference (#31): the estimate to complete's
+/// performance factors spelt out, a WBS's spending plan as a project spending plan naming it, a
+/// resource's role with no object number, a calendar's type. Files MK Perth wrote before still
+/// read: `PF = …` and `WBSSpendingPlan`.
+#[test]
+fn names_as_oracle_documents_them() {
+    use mkperth_core::{EtcTechnique, Resource, Role, SpendingMonth, WbsBudget};
+    let mut p = read(&file()).unwrap().project;
+    let wbs = p.activities.iter().find_map(|a| a.parent.clone()).unwrap();
+    p.earned_value.etc = EtcTechnique::CpiSpi;
+    p.budget.budgets = vec![WbsBudget { wbs: Some(wbs.clone()), original: 100, plan: vec![SpendingMonth { month: day(2026, 11, 1), amount: 100 }] }];
+    p.roles = vec![Role { id: "ENG".into(), name: "Engineer".into(), ..Role::default() }];
+    p.resources.push(Resource { id: "ANA".into(), roles: vec!["ENG".into()], ..Resource::default() });
+    let (text, _) = write(&p);
+    assert!(text.contains(
+        "<EarnedValueETCComputeType>Performance Factor = 1 / (Cost Performance Index * Schedule Performance Index)</EarnedValueETCComputeType>"
+    ));
+    assert!(text.contains("<ProjectSpendingPlan>") && !text.contains("WBSSpendingPlan"));
+    assert!(text.contains("<ResourceRole>\n    <ResourceObjectId>"), "no ObjectId before the pair");
+    assert!(text.contains("<Type>Global</Type>"));
+    let back = read(&text).unwrap().project;
+    assert_eq!((back.budget, back.earned_value.etc), (p.budget.clone(), EtcTechnique::CpiSpi));
+    // Before #31.
+    let before = text
+        .replace(
+            "Performance Factor = 1 / (Cost Performance Index * Schedule Performance Index)",
+            "PF = 1 / (Cost Performance Index * Schedule Performance Index)",
+        )
+        .replace("ProjectSpendingPlan>", "WBSSpendingPlan>");
+    let back = read(&before).unwrap().project;
+    assert_eq!((back.budget, back.earned_value.etc), (p.budget, EtcTechnique::CpiSpi));
+}
