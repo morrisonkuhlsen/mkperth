@@ -530,3 +530,20 @@ fn the_start_kept_when_the_tasks_dont_give_it() {
     // Given by the tasks, nothing more is written.
     assert!(!write(&read(&full().to_string()).unwrap().project).0.contains("mkperth_start"));
 }
+
+/// The organisation and each task's responsible travel in fields of their own.
+#[test]
+fn organisation_in_its_own_field() {
+    use mkperth_core::{EpsNode, ObsNode, Organisation};
+    let mut p = read(&full().to_string()).unwrap().project;
+    assert!(!write(&p).0.contains("mkperth_organisation"));
+    p.organisation = Organisation {
+        eps: vec![EpsNode { id: "MK".into(), name: "Morrison Kühlsen".into() }],
+        obs: vec![ObsNode { name: "PM".into(), description: "Project office".into(), parent: None }],
+        responsible: Some("PM".into()),
+    };
+    p.activities[1].responsible = Some("PM".into());
+    let (text, _) = write(&p);
+    let back = read(&text).unwrap().project;
+    assert_eq!((back.organisation, back.activities[1].responsible.clone()), (p.organisation, Some("PM".into())));
+}

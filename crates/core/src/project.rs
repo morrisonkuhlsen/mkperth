@@ -363,6 +363,8 @@ pub struct Activity {
     pub codes: BTreeMap<String, String>,
     /// Its value of each user-defined field, by the field's name.
     pub fields: BTreeMap<String, FieldValue>,
+    /// Who answers for it: a node of the project's OBS, by name (P6 keeps one on each WBS).
+    pub responsible: Option<String>,
     pub extra: Extra,
 }
 
@@ -880,6 +882,38 @@ pub struct ExternalRelationship {
     pub lag_minutes: Option<i64>,
 }
 
+/// A node of the enterprise project structure the project sits in.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EpsNode {
+    pub id: String,
+    pub name: String,
+}
+
+/// A node of the organisational breakdown structure: who answers for parts of the work.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ObsNode {
+    /// Unique among the nodes.
+    pub name: String,
+    pub description: String,
+    /// The node it sits under, by name.
+    pub parent: Option<String>,
+}
+
+/// Where the project sits in the enterprise and who answers for it: its place in the EPS (from
+/// the top down to the node holding it), the OBS, and the node responsible for the whole.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Organisation {
+    pub eps: Vec<EpsNode>,
+    pub obs: Vec<ObsNode>,
+    pub responsible: Option<String>,
+}
+
+impl Organisation {
+    pub fn is_empty(&self) -> bool {
+        self == &Organisation::default()
+    }
+}
+
 impl Default for Resource {
     fn default() -> Self {
         Resource {
@@ -1060,6 +1094,8 @@ pub struct Project {
     /// Relationships to and from other projects' activities: those projects are scheduled with
     /// this one.
     pub external: Vec<ExternalRelationship>,
+    /// Its place in the EPS, the OBS and who answers for it.
+    pub organisation: Organisation,
     pub extra: Extra,
 }
 

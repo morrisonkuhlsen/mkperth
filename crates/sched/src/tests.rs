@@ -38,6 +38,7 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
         earned_value: Default::default(),
         classification: Default::default(),
         external: Vec::new(),
+        organisation: Default::default(),
         activities: activities
             .iter()
             .map(|(id, d)| Activity { id: id.to_string(), name: id.to_string(), duration: *d, ..Activity::default() })

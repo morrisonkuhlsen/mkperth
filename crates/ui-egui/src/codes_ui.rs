@@ -176,12 +176,39 @@ impl PerthApp {
 
 /// Details' classification: each code's value chosen, each field's typed (a date picked, an
 /// indicator chosen). The `activity.classify` parameters to run.
-pub(crate) fn classify_fields(ui: &mut egui::Ui, c: &Classification, a: &Activity, currency: &str) -> Option<Value> {
-    if c.is_empty() {
+pub(crate) fn classify_fields(
+    ui: &mut egui::Ui,
+    c: &Classification,
+    obs: &[mkperth_engine::core::ObsNode],
+    a: &Activity,
+    currency: &str,
+) -> Option<Value> {
+    if c.is_empty() && obs.is_empty() {
         return None;
     }
     let mut out = None;
     theme::section(ui, &tr!("details-classification"));
+    // Who answers for it, from the OBS.
+    if !obs.is_empty() {
+        theme::row(ui, &tr!("org-responsible-short"), |ui, label| {
+            let mut chosen = a.responsible.clone();
+            egui::ComboBox::from_id_salt("activity-responsible")
+                .selected_text(a.responsible.clone().unwrap_or_else(|| "—".into()))
+                .width(theme::fill(ui))
+                .truncate()
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut chosen, None, "—");
+                    for x in obs {
+                        ui.selectable_value(&mut chosen, Some(x.name.clone()), &x.name);
+                    }
+                })
+                .response
+                .labelled_by(label);
+            if chosen != a.responsible {
+                out = Some(json!({"id": a.id, "responsible": chosen}));
+            }
+        });
+    }
     for code in &c.codes {
         theme::row(ui, &code.name, |ui, label| {
             let current = a.codes.get(&code.name).cloned();
@@ -272,4 +299,142 @@ pub(crate) fn classify_fields(ui: &mut egui::Ui, c: &Classification, a: &Activit
         });
     }
     out
+}
+
+/// What the Organisation pane is typing.
+#[derive(Debug, Clone, Default)]
+pub struct OrganisationForm {
+    pub eps_id: String,
+    pub eps_name: String,
+    pub obs: String,
+    pub description: String,
+    pub parent: String,
+}
+
+impl PerthApp {
+    /// The Organisation pane: the project's place in the EPS, the OBS, who answers for the project.
+    pub(crate) fn organisation_pane(&mut self, ui: &mut egui::Ui) {
+        if theme::pane_header(ui, Icon::People, &tr!("pane-organisation"), &tr!("pane-organisation-tip"), |ui| {
+            icon_button(ui, Icon::ChevronRight, &tr!("pane-close"))
+        }) {
+            self.side = None;
+        }
+        let o = &self.session.project.organisation;
+        let form = &mut self.organisation_form;
+        let mut pending: Vec<(&str, Value)> = Vec::new();
+        egui::ScrollArea::vertical().id_salt("organisation-pane").auto_shrink(false).show(ui, |ui| {
+            // The EPS, from the top down: each level indented under the one above.
+            theme::section(ui, &tr!("org-eps"));
+            if o.eps.is_empty() {
+                theme::hint(ui, &tr!("org-eps-none"));
+            }
+            let eps_json =
+                |list: &[mkperth_engine::core::EpsNode]| json!(list.iter().map(|e| json!({"id": e.id, "name": e.name})).collect::<Vec<_>>());
+            for (k, e) in o.eps.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.add_space(k as f32 * 14.0);
+                    ui.vertical(|ui| {
+                        if theme::list_item(ui, None, &e.id, &e.name, &tr!("org-eps-delete")) {
+                            // A level taken out takes those under it.
+                            pending.push(("project.organise", json!({"eps": eps_json(o.eps.get(..k).unwrap_or_default())})));
+                        }
+                    });
+                });
+            }
+            theme::row(ui, &tr!("org-eps-id"), |ui, label| {
+                ui.add(egui::TextEdit::singleline(&mut form.eps_id).desired_width(90.0)).labelled_by(label);
+            });
+            theme::row(ui, &tr!("codes-field-name"), |ui, label| {
+                ui.add(egui::TextEdit::singleline(&mut form.eps_name).desired_width(theme::fill(ui))).labelled_by(label);
+            });
+            ui.horizontal(|ui| {
+                theme::under_fields(ui);
+                if ui.add_enabled(!form.eps_id.trim().is_empty(), egui::Button::new(tr!("org-eps-add"))).clicked() {
+                    let mut list = o.eps.clone();
+                    list.push(mkperth_engine::core::EpsNode { id: form.eps_id.trim().into(), name: form.eps_name.trim().into() });
+                    pending.push(("project.organise", json!({"eps": eps_json(&list)})));
+                    form.eps_id.clear();
+                    form.eps_name.clear();
+                }
+            });
+
+            // The OBS, in its hierarchy.
+            theme::section(ui, &tr!("org-obs"));
+            if o.obs.is_empty() {
+                theme::hint(ui, &tr!("org-obs-none"));
+            }
+            let depth = |n: &str| {
+                let (mut d, mut at) = (0usize, o.obs.iter().find(|x| x.name == n).and_then(|x| x.parent.clone()));
+                while let Some(p) = at.filter(|_| d < o.obs.len()) {
+                    d += 1;
+                    at = o.obs.iter().find(|x| x.name == p).and_then(|x| x.parent.clone());
+                }
+                d
+            };
+            for x in &o.obs {
+                ui.horizontal(|ui| {
+                    ui.add_space(depth(&x.name) as f32 * 14.0);
+                    ui.vertical(|ui| {
+                        if theme::list_item(ui, None, &x.name, &x.description, &tr!("org-obs-delete", name = x.name.as_str())) {
+                            pending.push(("obs.delete", json!({"name": x.name})));
+                        }
+                    });
+                });
+            }
+            theme::row(ui, &tr!("codes-field-name"), |ui, label| {
+                ui.add(egui::TextEdit::singleline(&mut form.obs).desired_width(theme::fill(ui))).labelled_by(label);
+            });
+            theme::row(ui, &tr!("codes-description"), |ui, label| {
+                ui.add(egui::TextEdit::singleline(&mut form.description).desired_width(theme::fill(ui))).labelled_by(label);
+            });
+            theme::row(ui, &tr!("cost-account-parent"), |ui, label| {
+                let shown = if form.parent.is_empty() { tr!("expense-no-account") } else { form.parent.clone() };
+                egui::ComboBox::from_id_salt("obs-parent")
+                    .selected_text(shown)
+                    .width(theme::fill(ui))
+                    .truncate()
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut form.parent, String::new(), tr!("expense-no-account"));
+                        for x in &o.obs {
+                            ui.selectable_value(&mut form.parent, x.name.clone(), &x.name);
+                        }
+                    })
+                    .response
+                    .labelled_by(label);
+            });
+            ui.horizontal(|ui| {
+                theme::under_fields(ui);
+                if ui.add_enabled(!form.obs.trim().is_empty(), egui::Button::new(tr!("org-obs-add"))).clicked() {
+                    let parent = (!form.parent.is_empty()).then(|| form.parent.clone());
+                    pending.push(("obs.add", json!({"name": form.obs.trim(), "description": form.description.trim(), "parent": parent})));
+                    form.obs.clear();
+                    form.description.clear();
+                }
+            });
+
+            // Who answers for the whole project.
+            if !o.obs.is_empty() {
+                let label = theme::section(ui, &tr!("org-responsible"));
+                let mut chosen = o.responsible.clone();
+                egui::ComboBox::from_id_salt("project-responsible")
+                    .selected_text(o.responsible.clone().unwrap_or_else(|| "—".into()))
+                    .width(theme::fill(ui))
+                    .truncate()
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut chosen, None, "—");
+                        for x in &o.obs {
+                            ui.selectable_value(&mut chosen, Some(x.name.clone()), &x.name);
+                        }
+                    })
+                    .response
+                    .labelled_by(label);
+                if chosen != o.responsible {
+                    pending.push(("project.organise", json!({"responsible": chosen})));
+                }
+            }
+        });
+        for (command, params) in pending {
+            self.run(command, params);
+        }
+    }
 }

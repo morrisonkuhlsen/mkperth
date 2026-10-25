@@ -60,6 +60,7 @@ pub fn schedule_together(projects: &[&Project], links: &[Link]) -> Result<Vec<Sc
         earned_value: Default::default(),
         classification: Default::default(),
         external: Vec::new(),
+        organisation: Default::default(),
         extra: Default::default(),
     };
     // Where each project's activities and relationships start in the network.
@@ -197,6 +198,7 @@ mod tests {
             earned_value: Default::default(),
             classification: Default::default(),
             external: Vec::new(),
+            organisation: Default::default(),
             extra: Default::default(),
         };
         p.activities = tasks.iter().map(|(id, d)| Activity { id: (*id).into(), duration: *d, ..Activity::default() }).collect();

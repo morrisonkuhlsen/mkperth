@@ -86,7 +86,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 66] = [
+pub const COMMANDS: [&str; 69] = [
     "project.new",
     "project.open",
     "project.save",
@@ -138,6 +138,9 @@ pub const COMMANDS: [&str; 66] = [
     "field.add",
     "field.delete",
     "activity.classify",
+    "obs.add",
+    "obs.delete",
+    "project.organise",
     "relationship.add-external",
     "relationship.delete-external",
     "comment.add",

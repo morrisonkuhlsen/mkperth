@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use mkperth_core::{ActivityCode, CodeValue, Date, FieldKind, FieldValue, Indicator, UserField};
+use mkperth_core::{ActivityCode, CodeValue, Date, EpsNode, FieldKind, FieldValue, Indicator, ObsNode, UserField};
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
 
@@ -48,6 +48,9 @@ impl Session {
             "field.add" => self.add_field(params),
             "field.delete" => self.delete_field(params),
             "activity.classify" => self.classify(params),
+            "obs.add" => self.add_obs(params),
+            "obs.delete" => self.delete_obs(params),
+            "project.organise" => self.organise(params),
             _ => return None,
         })
     }
@@ -174,7 +177,13 @@ impl Session {
         };
         let codes = map(params, C, "codes")?.cloned();
         let fields = map(params, C, "fields")?.cloned();
-        if codes.is_none() && fields.is_none() {
+        // Who answers for it: an OBS node's name, or `null` for no one.
+        let responsible = match params.get("responsible") {
+            None => None,
+            Some(Value::Null) => Some(None),
+            Some(_) => Some(Some(required(params, C, "responsible")?)),
+        };
+        if codes.is_none() && fields.is_none() && responsible.is_none() {
             return Err(EngineError::Param(C.into(), "codes".into()));
         }
         let label = match ids.as_slice() {
@@ -202,6 +211,11 @@ impl Session {
                 };
                 set_fields.push((name.clone(), value));
             }
+            if let Some(Some(r)) = &responsible
+                && !p.organisation.obs.iter().any(|o| o.name == *r)
+            {
+                return Err(bad(C, "responsible"));
+            }
             let wanted: HashSet<&str> = ids.iter().map(String::as_str).collect();
             let mut found = 0usize;
             for a in p.activities.iter_mut().filter(|a| wanted.contains(a.id.as_str())) {
@@ -218,10 +232,100 @@ impl Session {
                         None => a.fields.remove(name),
                     };
                 }
+                if let Some(r) = &responsible {
+                    a.responsible = r.clone();
+                }
             }
             if found != wanted.len() {
                 let missing = ids.iter().find(|id| !p.activities.iter().any(|a| a.id == **id)).cloned().unwrap_or_default();
                 return Err(EngineError::UnknownActivity(missing));
+            }
+            Ok(())
+        })
+    }
+
+    /// A node of the OBS: its `name` (unique), `description`, and the node it sits under.
+    fn add_obs(&mut self, params: &Value) -> Result<(), EngineError> {
+        const C: &str = "obs.add";
+        let name = required(params, C, "name")?;
+        let description = text(params, C, "description")?.unwrap_or_default();
+        let parent = text(params, C, "parent")?.filter(|s| !s.is_empty());
+        self.change(tr!("undo-add-obs", name = name.as_str()), |p| {
+            let obs = &mut p.organisation.obs;
+            if obs.len() >= MAX_VALUES || obs.iter().any(|o| o.name == name) {
+                return Err(bad(C, "name"));
+            }
+            if let Some(parent) = &parent
+                && !obs.iter().any(|o| o.name == *parent)
+            {
+                return Err(bad(C, "parent"));
+            }
+            obs.push(ObsNode { name: name.clone(), description, parent });
+            Ok(())
+        })
+    }
+
+    /// Deletes the OBS node `name`: those under it go under its own parent; the project and the
+    /// activities it answered for have no one.
+    fn delete_obs(&mut self, params: &Value) -> Result<(), EngineError> {
+        const C: &str = "obs.delete";
+        let name = required(params, C, "name")?;
+        self.change(tr!("undo-delete-obs", name = name.as_str()), |p| {
+            let o = &mut p.organisation;
+            let k = o.obs.iter().position(|x| x.name == name).ok_or_else(|| bad(C, "name"))?;
+            let gone = o.obs.remove(k);
+            for x in o.obs.iter_mut().filter(|x| x.parent.as_deref() == Some(name.as_str())) {
+                x.parent = gone.parent.clone();
+            }
+            if o.responsible.as_deref() == Some(name.as_str()) {
+                o.responsible = None;
+            }
+            for a in p.activities.iter_mut().filter(|a| a.responsible.as_deref() == Some(name.as_str())) {
+                a.responsible = None;
+            }
+            Ok(())
+        })
+    }
+
+    /// Where the project sits and who answers for it: `eps`, its EPS from the top down
+    /// (`[{"id": "MK", "name": "Morrison Kühlsen"}, …]`, empty for none), and `responsible`, an
+    /// OBS node's name (`null` for no one).
+    fn organise(&mut self, params: &Value) -> Result<(), EngineError> {
+        const C: &str = "project.organise";
+        let eps = match params.get("eps") {
+            None => None,
+            Some(Value::Array(items)) if items.len() <= 100 => Some(
+                items
+                    .iter()
+                    .map(|i| {
+                        let field =
+                            |k: &str| i.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty() && s.chars().count() <= MAX_TEXT);
+                        Some(EpsNode { id: field("id")?.to_string(), name: field("name").unwrap_or_default().to_string() })
+                    })
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| bad(C, "eps"))?,
+            ),
+            Some(_) => return Err(bad(C, "eps")),
+        };
+        let responsible = match params.get("responsible") {
+            None => None,
+            Some(Value::Null) => Some(None),
+            Some(_) => Some(Some(required(params, C, "responsible")?)),
+        };
+        if eps.is_none() && responsible.is_none() {
+            return Err(EngineError::Param(C.into(), "eps".into()));
+        }
+        self.change(tr!("undo-organise"), |p| {
+            if let Some(Some(r)) = &responsible
+                && !p.organisation.obs.iter().any(|o| o.name == *r)
+            {
+                return Err(bad(C, "responsible"));
+            }
+            if let Some(e) = eps {
+                p.organisation.eps = e;
+            }
+            if let Some(r) = responsible {
+                p.organisation.responsible = r;
             }
             Ok(())
         })
@@ -288,6 +392,23 @@ mod tests {
             assert!(s.run(id, &params).is_err(), "{id} {params}");
         }
         assert_eq!(s.project, before);
+        // The OBS: a node under another, the project's responsible and an activity's; deleted,
+        // its child goes up and no one answers where it did.
+        run(&mut s, "obs.add", json!({"name": "Engineering"}));
+        run(&mut s, "obs.add", json!({"name": "Structures", "parent": "Engineering"}));
+        run(
+            &mut s,
+            "project.organise",
+            json!({"eps": [{"id": "MK", "name": "Morrison Kühlsen"}, {"id": "MK.B", "name": "Buildings"}], "responsible": "Engineering"}),
+        );
+        run(&mut s, "activity.classify", json!({"id": "W2", "responsible": "Structures"}));
+        assert_eq!(s.project.organisation.eps.len(), 2);
+        assert_eq!(a(&s, "W2").responsible.as_deref(), Some("Structures"));
+        assert!(s.run("activity.classify", &json!({"id": "W2", "responsible": "Nobody"})).is_err());
+        run(&mut s, "obs.delete", json!({"name": "Engineering"}));
+        assert_eq!((s.project.organisation.obs[0].parent.clone(), s.project.organisation.responsible.clone()), (None, None));
+        run(&mut s, "obs.delete", json!({"name": "Structures"}));
+        assert_eq!(a(&s, "W2").responsible, None);
         // A code deleted takes its values off the activities.
         run(&mut s, "code.delete", json!({"name": "Phase"}));
         assert!(s.project.activities.iter().all(|a| a.codes.is_empty()));

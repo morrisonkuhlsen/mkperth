@@ -19,9 +19,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use mkperth_core::{
     Accrual, Activity, ActivityCode, ActivityKind, Assignment, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus,
-    Classification, CodeValue, Constraint, CostAccount, Date, DurationType, EarnedValue, EtcTechnique, EvTechnique, Expense, FieldKind, FieldValue,
-    FinancialPeriod, Fund, FundingSource, Indicator, LevellingPriority, Period, Price, Project, Relationship, RelationshipType, Resource,
-    ResourceKind, Role, SpendingMonth, UNIT, UserField, WbsBudget, Weekday,
+    Classification, CodeValue, Constraint, CostAccount, Date, DurationType, EarnedValue, EpsNode, EtcTechnique, EvTechnique, Expense, FieldKind,
+    FieldValue, FinancialPeriod, Fund, FundingSource, Indicator, LevellingPriority, ObsNode, Organisation, Period, Price, Project, Relationship,
+    RelationshipType, Resource, ResourceKind, Role, SpendingMonth, UNIT, UserField, WbsBudget, Weekday,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -609,9 +609,12 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
     }
 
     let classification = classification_of(&root, p, &by_object, &mut activities, &mut warnings);
+    let organisation = organisation_of(&root, p, &wbs, &wbs_id, &mut activities);
 
     // What else the project and the file hold, each kind named once.
-    const READ: [&str; 18] = [
+    const READ: [&str; 20] = [
+        "EPS",
+        "OBS",
         "ActivityCodeType",
         "ActivityCode",
         "UDFType",
@@ -697,6 +700,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             earned_value,
             classification,
             external: Vec::new(),
+            organisation,
             activities,
             relationships,
             extra,
@@ -739,6 +743,52 @@ fn baselines_of(root: &Element, p: &Element) -> (Vec<Baseline>, Option<String>) 
     }
     let in_use = p.text_of("CurrentBaselineProjectObjectId").and_then(|o| by_object.get(o).cloned());
     (list, in_use)
+}
+
+/// The OBS, the EPS from the top down to the node holding the project (following each node's
+/// parent, never further than there are nodes), who answers for the project and each WBS.
+fn organisation_of(root: &Element, p: &Element, wbs: &[&Element], wbs_id: &HashMap<String, String>, activities: &mut [Activity]) -> Organisation {
+    let mut o = Organisation::default();
+    let mut obs_name: HashMap<&str, String> = HashMap::new();
+    let nodes: Vec<&Element> = root.all("OBS").chain(p.all("OBS")).collect();
+    for e in &nodes {
+        let (Some(id), Some(name)) = (e.text_of("ObjectId"), e.text_of("Name")) else { continue };
+        let mut name = name.to_string();
+        while o.obs.iter().any(|x| x.name == name) {
+            name.push('*');
+        }
+        obs_name.insert(id, name.clone());
+        o.obs.push(ObsNode { name, description: e.text_of("Description").unwrap_or_default().to_string(), parent: None });
+    }
+    for e in &nodes {
+        let (Some(name), Some(parent)) =
+            (e.text_of("ObjectId").and_then(|i| obs_name.get(i)), e.text_of("ParentObjectId").and_then(|i| obs_name.get(i)))
+        else {
+            continue;
+        };
+        if name != parent
+            && let Some(x) = o.obs.iter_mut().find(|x| x.name == *name)
+        {
+            x.parent = Some(parent.clone());
+        }
+    }
+    let eps: Vec<&Element> = root.all("EPS").chain(p.all("EPS")).collect();
+    let mut at = p.text_of("ParentEPSObjectId");
+    while let Some(id) = at.filter(|_| o.eps.len() < eps.len()) {
+        let Some(e) = eps.iter().find(|e| e.text_of("ObjectId") == Some(id)) else { break };
+        o.eps.insert(0, EpsNode { id: e.text_of("Id").unwrap_or_default().to_string(), name: e.text_of("Name").unwrap_or_default().to_string() });
+        at = e.text_of("ParentObjectId");
+    }
+    o.responsible = p.text_of("OBSObjectId").and_then(|i| obs_name.get(i)).cloned();
+    for w in wbs {
+        let (Some(id), Some(r)) = (w.text_of("ObjectId").and_then(|x| wbs_id.get(x)), w.text_of("OBSObjectId").and_then(|i| obs_name.get(i))) else {
+            continue;
+        };
+        if let Some(a) = activities.iter_mut().find(|a| a.id == *id) {
+            a.responsible = Some(r.clone());
+        }
+    }
+    o
 }
 
 /// P6's names for what a user-defined field holds.
@@ -1142,6 +1192,32 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         out.push_str("  </FundingSource>\n");
     }
+    // The OBS, and the EPS from the top down to the node holding the project.
+    let org = &project.organisation;
+    let obs_object = |name: &str| org.obs.iter().position(|o| o.name == name).map(|k| k + 1);
+    for (k, o) in org.obs.iter().enumerate() {
+        out.push_str(&format!(
+            "  <OBS>\n    <ObjectId>{}</ObjectId>\n    <Name>{}</Name>\n    <Description>{}</Description>\n",
+            k + 1,
+            esc(&o.name),
+            esc(&o.description)
+        ));
+        if let Some(parent) = o.parent.as_deref().and_then(obs_object) {
+            out.push_str(&format!("    <ParentObjectId>{parent}</ParentObjectId>\n"));
+        }
+        out.push_str("  </OBS>\n");
+    }
+    let responsible = org.responsible.as_deref().and_then(obs_object);
+    for (k, e) in org.eps.iter().enumerate() {
+        out.push_str(&format!("  <EPS>\n    <ObjectId>{}</ObjectId>\n    <Id>{}</Id>\n    <Name>{}</Name>\n", k + 1, esc(&e.id), esc(&e.name)));
+        if k > 0 {
+            out.push_str(&format!("    <ParentObjectId>{k}</ParentObjectId>\n"));
+        }
+        if let Some(r) = responsible.or(if org.obs.is_empty() { None } else { Some(1) }) {
+            out.push_str(&format!("    <ObsObjectId>{r}</ObsObjectId>\n"));
+        }
+        out.push_str("  </EPS>\n");
+    }
     // The activity codes, the project's own, and their values in their hierarchy; the fields.
     let mut value_object: HashMap<(&str, &str), usize> = HashMap::new();
     for (k, code) in project.classification.codes.iter().enumerate() {
@@ -1227,6 +1303,12 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     if let Some(b) = project.budget.of(None) {
         out.push_str(&format!("    <OriginalBudget>{}</OriginalBudget>\n", money(b.original)));
     }
+    if !org.eps.is_empty() {
+        out.push_str(&format!("    <ParentEPSObjectId>{}</ParentEPSObjectId>\n", org.eps.len()));
+    }
+    if let Some(r) = responsible {
+        out.push_str(&format!("    <OBSObjectId>{r}</OBSObjectId>\n"));
+    }
     // A baseline's object number: 2 and on, after the project's 1.
     let baseline_object = |name: &str| project.baselines.iter().position(|b| b.name == name).map(|k| k + 2);
     if let Some(k) = project.baseline_in_use.as_deref().and_then(baseline_object) {
@@ -1248,6 +1330,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         if let Some(b) = project.budget.of(Some(a.id.as_str())) {
             out.push_str(&format!("      <OriginalBudget>{}</OriginalBudget>\n", money(b.original)));
+        }
+        if let Some(r) = a.responsible.as_deref().and_then(obs_object) {
+            out.push_str(&format!("      <OBSObjectId>{r}</OBSObjectId>\n"));
         }
         out.push_str("      <ProjectObjectId>1</ProjectObjectId>\n    </WBS>\n");
     }
@@ -1444,6 +1529,10 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
                 object(&a.id)
             ));
         }
+    }
+    let answered = project.activities.iter().filter(|a| !summary(&a.id) && a.responsible.is_some()).count();
+    if answered > 0 {
+        warnings.push(tr!("warn-p6-responsible", n = answered));
     }
     let on_summaries = project.activities.iter().filter(|a| summary(&a.id)).map(|a| a.codes.len() + a.fields.len()).sum::<usize>();
     if on_summaries > 0 {

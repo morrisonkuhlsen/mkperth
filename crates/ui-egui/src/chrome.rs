@@ -60,6 +60,8 @@ pub(crate) enum Action {
     EarnedValue,
     /// The Codes and fields pane.
     Codes,
+    /// The Organisation pane.
+    Organisation,
     /// The baseline's bars under the schedule's.
     BaselineBars,
     /// Every other row of the table tinted.
@@ -417,6 +419,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         }
         if item(ui, &tr!("codes-menu"), None, true) {
             set(Action::Codes);
+        }
+        if item(ui, &tr!("organisation-menu"), None, true) {
+            set(Action::Organisation);
         }
     });
     menu(ui, &tr!("menu-view"), |ui| {

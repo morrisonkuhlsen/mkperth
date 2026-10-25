@@ -16,9 +16,10 @@ use std::collections::BTreeMap;
 
 use mkperth_core::{
     Accrual, Activity, ActivityCode, ActivityKind, Assignment, Band, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus,
-    Classification, CodeValue, Comment, Constraint, CostAccount, Date, EarnedValue, EtcTechnique, EvTechnique, Expense, ExternalRelationship, Extra,
-    FieldKind, FieldValue, FinancialPeriod, Fund, FundingSource, Indicator, LevelBy, Levelled, LevellingOptions, LevellingPriority, Marker,
-    MonthMark, PeriodRecord, Pert, Price, Project, Region, Relationship, RelationshipType, Resource, SpendingMonth, UNIT, UserField, WbsBudget,
+    Classification, CodeValue, Comment, Constraint, CostAccount, Date, EarnedValue, EpsNode, EtcTechnique, EvTechnique, Expense,
+    ExternalRelationship, Extra, FieldKind, FieldValue, FinancialPeriod, Fund, FundingSource, Indicator, LevelBy, Levelled, LevellingOptions,
+    LevellingPriority, Marker, MonthMark, ObsNode, Organisation, PeriodRecord, Pert, Price, Project, Region, Relationship, RelationshipType,
+    Resource, SpendingMonth, UNIT, UserField, WbsBudget,
 };
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
@@ -98,7 +99,7 @@ const TASK_MAPPED: [&str; 14] = [
 ];
 /// The longest a PERT estimate may be, in days.
 const MAX_ESTIMATE: f64 = 1e6;
-const PROJECT_MAPPED: [&str; 15] = [
+const PROJECT_MAPPED: [&str; 16] = [
     "name",
     "tasks",
     "calendar",
@@ -114,6 +115,7 @@ const PROJECT_MAPPED: [&str; 15] = [
     CLASSIFICATION,
     START,
     EXTERNAL,
+    ORGANISATION,
 ];
 /// MK Perth's earned value: its techniques, the financial periods and their stored closes;
 /// written only when they say something.
@@ -141,6 +143,10 @@ const CLASSIFICATION: &str = "mkperth_classification";
 const START: &str = "mkperth_start";
 /// MK Perth's relationships with other projects' activities.
 const EXTERNAL: &str = "mkperth_external";
+/// MK Perth's organisation: the project's place in the EPS, the OBS, who answers for the
+/// project; and who answers for each task.
+const ORGANISATION: &str = "mkperth_organisation";
+const RESPONSIBLE: &str = "mkperth_responsible";
 const CODES: &str = "mkperth_codes";
 const FIELDS: &str = "mkperth_fields";
 const LEVELLING: &str = "mkperth_levelling";
@@ -375,7 +381,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         };
         let mut extra = Extra::new();
         for (key, value) in t {
-            if !TASK_MAPPED.contains(&key.as_str()) && ![PRIORITY, LEVELLED, CODES, FIELDS].contains(&key.as_str()) {
+            if !TASK_MAPPED.contains(&key.as_str()) && ![PRIORITY, LEVELLED, CODES, FIELDS, RESPONSIBLE].contains(&key.as_str()) {
                 extra.insert(format!("{PREFIX}{key}"), value.to_string());
             }
         }
@@ -417,6 +423,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             percent_complete,
             codes,
             fields,
+            responsible: t.get(RESPONSIBLE).and_then(Value::as_str).map(str::to_string),
             extra,
         });
         dependencies.push((label, deps));
@@ -579,6 +586,11 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             r.prices = list;
         }
     }
+    let organisation = match root.get(ORGANISATION) {
+        Some(v @ Value::Object(_)) => organisation_of(v).ok_or_else(|| PerthError::Field(String::new(), ORGANISATION.into()))?,
+        Some(Value::Null) | None => Organisation::default(),
+        Some(_) => return Err(PerthError::Field(String::new(), ORGANISATION.into())),
+    };
     let external = match root.get(EXTERNAL) {
         None | Some(Value::Null) => Vec::new(),
         Some(Value::Array(items)) => items
@@ -633,6 +645,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             earned_value,
             classification,
             external,
+            organisation,
             activities,
             relationships,
             extra,
@@ -742,6 +755,29 @@ fn external_of(v: &Value) -> Option<ExternalRelationship> {
         lag: v.get("lag").and_then(Value::as_i64).filter(|l| l.abs() <= 1_000_000)?,
         lag_minutes: None,
     })
+}
+
+/// MK Perth's organisation from its field.
+fn organisation_of(v: &Value) -> Option<Organisation> {
+    let list = |k: &str| v.get(k).and_then(Value::as_array).map(|a| a.iter().take(MAX_TASKS).collect::<Vec<_>>()).unwrap_or_default();
+    let text = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
+    Some(Organisation {
+        eps: list("eps")
+            .into_iter()
+            .map(|e| Some(EpsNode { id: text(e, "id")?, name: text(e, "name").unwrap_or_default() }))
+            .collect::<Option<_>>()?,
+        obs: list("obs")
+            .into_iter()
+            .map(|o| Some(ObsNode { name: text(o, "name")?, description: text(o, "description").unwrap_or_default(), parent: text(o, "parent") }))
+            .collect::<Option<_>>()?,
+        responsible: text(v, "responsible"),
+    })
+}
+
+fn organisation_value(o: &Organisation) -> Value {
+    let eps: Vec<Value> = o.eps.iter().map(|e| serde_json::json!({"id": e.id, "name": e.name})).collect();
+    let obs: Vec<Value> = o.obs.iter().map(|x| serde_json::json!({"name": x.name, "description": x.description, "parent": x.parent})).collect();
+    serde_json::json!({"eps": eps, "obs": obs, "responsible": o.responsible})
 }
 
 fn external_value(x: &ExternalRelationship) -> Value {
@@ -1029,6 +1065,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         if let Some(l) = &a.levelled {
             fields.push((LEVELLED.into(), serde_json::json!({"start": l.start.to_string(), "resource": l.resource})));
         }
+        if let Some(r) = &a.responsible {
+            fields.push((RESPONSIBLE.into(), Value::String(r.clone())));
+        }
         if !a.codes.is_empty() {
             fields.push((CODES.into(), Value::Object(a.codes.iter().map(|(k, v)| (k.clone(), Value::String(v.clone()))).collect())));
         }
@@ -1109,6 +1148,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     }
     if !project.external.is_empty() {
         fields.push((EXTERNAL.into(), Value::Array(project.external.iter().map(external_value).collect())));
+    }
+    if !project.organisation.is_empty() {
+        fields.push((ORGANISATION.into(), organisation_value(&project.organisation)));
     }
     // The start, when reading the tasks wouldn't give it back.
     let implied = project

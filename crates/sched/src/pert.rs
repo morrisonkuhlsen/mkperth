@@ -196,6 +196,7 @@ mod tests {
             earned_value: Default::default(),
             classification: Default::default(),
             external: Vec::new(),
+            organisation: Default::default(),
             extra: Default::default(),
         };
         let a = pert(&project).unwrap();

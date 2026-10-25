@@ -43,6 +43,11 @@ Read it before re-scheduling a plan with a new version.
   one in one network, each project kept after its own start; a file that can't be read is left
   out with a warning. Kept in Perth's JSON (`mkperth_external`); P6 XML holds one project and
   says it leaves them out.
+- The project's organisation (#26): its place in the EPS, the OBS in a hierarchy, who answers for
+  the project and for each WBS (`project.organise`, `obs.add`, `.delete`, `activity.classify`
+  `responsible`); the Organisation pane (Project ▸ Organisation…) and Details' responsible; in
+  P6 XML (`EPS`, `OBS`, `ParentEPSObjectId`, `OBSObjectId`) and Perth's JSON
+  (`mkperth_organisation`, each task's `mkperth_responsible`).
 - Earned value (#25): each activity's percent complete as judged (`activity.edit`
   `percent_complete`); the budget at completion, planned value (spread over the baseline's
   working days when one is in use), earned value and actual cost, by the technique the project

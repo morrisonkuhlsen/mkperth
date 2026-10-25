@@ -124,6 +124,8 @@ pub enum Side {
     EarnedValue,
     /// The activity codes and user-defined fields.
     Codes,
+    /// The project's place in the EPS, the OBS and who answers for it.
+    Organisation,
 }
 
 /// The note the Notes pane is making: its kind (0 a band, 1 a marker, 2 a month), name, dates
@@ -227,6 +229,8 @@ pub struct PerthApp {
     pub budget_form: budget_ui::BudgetForm,
     /// What the Codes and fields pane is typing.
     pub codes_form: codes_ui::CodesForm,
+    /// What the Organisation pane is typing.
+    pub organisation_form: codes_ui::OrganisationForm,
     /// What Details' ties to other projects are typing.
     pub external_form: external_ui::ExternalForm,
     /// The resource selected in the Resources view, by index, and what that view is typing.
@@ -340,6 +344,7 @@ impl PerthApp {
             costs_form: Default::default(),
             budget_form: Default::default(),
             codes_form: Default::default(),
+            organisation_form: Default::default(),
             external_form: Default::default(),
             resource_selected: None,
             resource_form: ResourceForm::default(),
@@ -609,6 +614,7 @@ impl PerthApp {
             Action::Budget => self.side = Some(Side::Budget),
             Action::EarnedValue => self.side = Some(Side::EarnedValue),
             Action::Codes => self.side = Some(Side::Codes),
+            Action::Organisation => self.side = Some(Side::Organisation),
             Action::Links => self.options.links = !self.options.links,
             Action::Table => self.options.table_hidden = !self.options.table_hidden,
             Action::Options(params) => self.run("project.options", params),
@@ -1007,6 +1013,7 @@ impl PerthApp {
                     Side::Budget => self.budget_pane(ui),
                     Side::EarnedValue => self.earned_pane(ui),
                     Side::Codes => self.codes_pane(ui),
+                    Side::Organisation => self.organisation_pane(ui),
                 }
             });
         }
@@ -1458,7 +1465,7 @@ impl PerthApp {
                         }
                     }
                     // Its codes' and fields' values.
-                    if let Some(v) = codes_ui::classify_fields(ui, &project.classification, a, &project.currency) {
+                    if let Some(v) = codes_ui::classify_fields(ui, &project.classification, &project.organisation.obs, a, &project.currency) {
                         pending = Some(("activity.classify", v));
                     }
                 }

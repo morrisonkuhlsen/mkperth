@@ -481,3 +481,32 @@ fn codes_and_fields_read_back() {
         .replace("<SubjectArea>Activity</SubjectArea>\n  </UDFType>\n  <UDFType>", "<SubjectArea>Resource</SubjectArea>\n  </UDFType>\n  <UDFType>");
     assert_eq!(read(&other).unwrap().warnings.len(), 1);
 }
+
+/// The organisation as P6 keeps it: the EPS from the top down to the project's node, the OBS in
+/// its hierarchy, who answers for the project and a WBS; written and read back. One on an
+/// activity that isn't a summary is left out, with a warning.
+#[test]
+fn organisation_read_back() {
+    use mkperth_core::{EpsNode, ObsNode, Organisation};
+    let mut p = read(&file()).unwrap().project;
+    let wbs = p.activities.iter().find_map(|a| a.parent.clone()).unwrap();
+    p.organisation = Organisation {
+        eps: vec![EpsNode { id: "MK".into(), name: "Morrison Kühlsen".into() }, EpsNode { id: "MK.B".into(), name: "Buildings & works".into() }],
+        obs: vec![
+            ObsNode { name: "Engineering".into(), description: "All engineering".into(), parent: None },
+            ObsNode { name: "Structures".into(), description: String::new(), parent: Some("Engineering".into()) },
+        ],
+        responsible: Some("Engineering".into()),
+    };
+    p.activities.iter_mut().find(|a| a.id == wbs).unwrap().responsible = Some("Structures".into());
+    let (text, warnings) = write(&p);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(text.contains("<ParentEPSObjectId>2</ParentEPSObjectId>") && text.contains("<ObsObjectId>1</ObsObjectId>"), "{text}");
+    let back = read(&text).unwrap();
+    assert!(!back.warnings.iter().any(|w| w.starts_with("Left out")), "{:?}", back.warnings);
+    assert_eq!(back.project.organisation, p.organisation);
+    assert_eq!(back.project.activities.iter().find(|a| a.id == wbs).unwrap().responsible.as_deref(), Some("Structures"));
+    let leaf = p.activities.iter().position(|a| !p.activities.iter().any(|b| b.parent.as_deref() == Some(a.id.as_str()))).unwrap();
+    p.activities[leaf].responsible = Some("Engineering".into());
+    assert_eq!(write(&p).1.len(), 1);
+}

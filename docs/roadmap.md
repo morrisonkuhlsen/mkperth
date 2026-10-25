@@ -180,6 +180,19 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   for P6's `ActivityPeriodActual`; currencies and their exchange rates; WBS milestones as an
   earned value technique.
 
+## Classification and the enterprise
+- *Done (#26):* activity codes with values in a hierarchy and user-defined fields of six kinds
+  (text, number, integer, cost, date, indicator); each activity's values; the rows grouped in
+  bands by a code or a field, filtered to a code's value and those under it, and sorted by a
+  click on a column's title; codes and fields as columns. The project's place in the EPS, the
+  OBS, who answers for the project and each WBS. Projects scheduled together: activities tied
+  across projects, the others read from their files and scheduled in one network, each kept
+  after its own start (worked by hand). In P6 XML (`ActivityCodeType`, `ActivityCode`,
+  `ActivityCodeAssignment`, `UDFType`, `UDFValue`, `EPS`, `OBS`) and Perth's JSON.
+- **Next:** levelling priorities by activity code; global codes shared by several projects;
+  several projects open side by side in the window; P6 XML files that hold several projects
+  with relationships between them.
+
 ## Beyond P6 — billing (the user's to schedule)
 P6 has no billing: measurements and invoices are left to other products. MK Perth could close
 the loop: progress measurements per activity from percent complete and budgeted cost, the
