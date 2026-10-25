@@ -91,6 +91,7 @@
   at-completion costs; the project's and the WBS's budgets with their change log, spending plan
   and funding; earned value by six techniques, its indices and estimates, financial periods and
   the S-curve. PERT's three estimates as an analysis.
+- **The network view:** the precedence diagram beside the Gantt chart, the critical path in red.
 - **Every date with its calculation:** the selected activity's dates step by step, exported to
   LaTeX.
 - **Files:** Perth.jl's projects, read and written back byte for byte; Primavera P6 XML and

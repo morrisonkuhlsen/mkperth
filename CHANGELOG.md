@@ -24,6 +24,11 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- The network view (#17; View ▸ Network, or the rail): the precedence diagram, activities as
+  boxes (ID, name, early dates, total float) in columns by the topological order, relationships
+  as arrows from the side each kind ties, the critical path in red; drag to move it, Ctrl and
+  the wheel or the corner's buttons to zoom, or fit the whole network; a click selects the
+  activity as the table does, a double click opens its details. 5 000 activities lay out at once.
 - Microsoft Project XML (#9): MSPDI files opened (told from P6 XML by their content), saved in
   the format they came in, and exported (File ▸ Export ▸ Microsoft Project XML, or
   `project.export` with `"format": "msp"`). Tasks and their outline as the WBS, durations and

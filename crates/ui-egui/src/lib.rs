@@ -21,6 +21,7 @@ pub mod fonts;
 pub mod icons;
 mod levelling_ui;
 pub mod mark;
+mod network;
 mod pert_ui;
 mod resources_view;
 pub mod splash;
@@ -83,6 +84,8 @@ pub enum View {
     Activities,
     /// The resources, the roles they fill and their assignments.
     Resources,
+    /// The precedence diagram: activities as boxes, relationships as arrows.
+    Network,
 }
 
 /// The Details pane's tabs.
@@ -229,6 +232,8 @@ pub struct PerthApp {
     pub budget_form: budget_ui::BudgetForm,
     /// What the Codes and fields pane is typing.
     pub codes_form: codes_ui::CodesForm,
+    /// The network view's scroll and zoom, and its layout.
+    pub network: network::NetworkView,
     /// What the Organisation pane is typing.
     pub organisation_form: codes_ui::OrganisationForm,
     /// What Details' ties to other projects are typing.
@@ -344,6 +349,7 @@ impl PerthApp {
             costs_form: Default::default(),
             budget_form: Default::default(),
             codes_form: Default::default(),
+            network: Default::default(),
             organisation_form: Default::default(),
             external_form: Default::default(),
             resource_selected: None,
@@ -993,6 +999,7 @@ impl PerthApp {
         let mut view = place(ui, x, area.top(), left_width, above);
         match self.view {
             View::Activities => self.left_pane(&mut view, above),
+            View::Network => self.network_view(&mut view, above),
             View::Resources => self.resources_view(&mut view, above),
         }
         let mut tabs = place(ui, x, area.top() + above, left_width, body - above);
@@ -1104,6 +1111,7 @@ impl PerthApp {
                 let (icon, name) = match view {
                     View::Activities => (Icon::Gantt, tr!("activities-view")),
                     View::Resources => (Icon::People, tr!("resources-view")),
+                    View::Network => (Icon::Network, tr!("network-view")),
                 };
                 let on = self.view == view;
                 let galley = ui.painter().layout_no_wrap(name.clone(), egui::FontId::proportional(13.0), if on { t.text } else { t.text_dim });
@@ -1150,6 +1158,30 @@ impl PerthApp {
     }
 
     /// The rail of views down the left edge.
+    /// The network view in the space the activities take in theirs; its selection is theirs.
+    fn network_view(&mut self, ui: &mut egui::Ui, height: f32) {
+        let t = Tokens::get(ui.ctx());
+        let frame = egui::Frame::new().fill(t.grid_bg).stroke(egui::Stroke::new(1.0, t.border)).inner_margin(egui::Margin::same(1));
+        let mut events = network::NetworkEvents::default();
+        frame.show(ui, |ui| {
+            let size = egui::vec2(ui.available_width(), height - 2.0);
+            ui.allocate_ui(size, |ui| {
+                ui.set_min_size(size);
+                events = network::show(ui, &self.session, &mut self.network, self.selected);
+            });
+        });
+        if let Some(i) = events.clicked {
+            self.selected = Some(i);
+            self.marked = std::iter::once(i).collect();
+            self.calculation = None;
+        }
+        if let Some(i) = events.open {
+            self.selected = Some(i);
+            self.side = Some(Side::Details);
+            self.details_tab = DetailsTab::General;
+        }
+    }
+
     fn view_rail(&mut self, ui: &mut egui::Ui, height: f32) {
         let t = Tokens::get(ui.ctx());
         let (rect, _) = ui.allocate_exact_size(egui::vec2(RAIL_WIDTH, height), egui::Sense::hover());
@@ -1158,6 +1190,7 @@ impl PerthApp {
         let views = [
             (Icon::Gantt, tr!("activities-view"), tr!("activities-view-tip"), View::Activities),
             (Icon::People, tr!("resources-view"), tr!("resources-view-tip"), View::Resources),
+            (Icon::Network, tr!("network-view"), tr!("network-view-tip"), View::Network),
         ];
         let views_len = views.len();
         for (k, (icon, name, tip, view)) in views.into_iter().enumerate() {

@@ -903,3 +903,20 @@ fn codes_added_and_a_column_sorts() {
     click(&mut h, egui::pos2(x, header_y), egui::Modifiers::NONE);
     assert_eq!(h.state().options.sort, None);
 }
+
+/// The network from the rail: its boxes are the activities, a click on one selects it as the
+/// table would; fitted, the whole network is in view.
+#[test]
+fn the_network_view() {
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Network").click();
+    h.run_steps(3);
+    assert_eq!(h.state().view, mkperth_ui_egui::View::Network);
+    // M0's box is the first, at the view's top left.
+    click(&mut h, egui::pos2(58.0 + 16.0 + 60.0, 112.0 + 16.0 + 30.0), egui::Modifiers::NONE);
+    let m0 = h.state().session.project.activities.iter().position(|a| a.id == "M0");
+    assert_eq!(h.state().selected, m0);
+    h.get_by_label("The whole network in view").click();
+    h.run_steps(2);
+    assert!(h.state().network.zoom < 1.0);
+}

@@ -2,7 +2,7 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang CODE]
-//!  [--select N] [--resource N] [--group code:NAME|field:NAME] [--column code:NAME|field:NAME]… [--side details|filters|notes|calendars|levelling|pert|baselines|costs|budget|earned|codes|organisation] [--details general|status|relationships|notes|resources|comments] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--present] [--splash] [--backstage home|new|open|info|export|about] [--view activities|resources] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1, `--resource` the resource;
+//!  [--select N] [--resource N] [--group code:NAME|field:NAME] [--column code:NAME|field:NAME]… [--side details|filters|notes|calendars|levelling|pert|baselines|costs|budget|earned|codes|organisation] [--details general|status|relationships|notes|resources|comments] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--present] [--splash] [--backstage home|new|open|info|export|about] [--view activities|resources|network] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1, `--resource` the resource;
 //!  `--click` clicks what has that accessible name, in order: `--click View --click Theme` opens a submenu)
 
 use egui_kittest::kittest::Queryable as _;
@@ -45,7 +45,8 @@ fn main() -> Result<(), String> {
                 app.view = match args.get(i).map(String::as_str) {
                     Some("activities") => mkperth_ui_egui::View::Activities,
                     Some("resources") => mkperth_ui_egui::View::Resources,
-                    _ => return Err("--view activities|resources".into()),
+                    Some("network") => mkperth_ui_egui::View::Network,
+                    _ => return Err("--view activities|resources|network".into()),
                 };
             }
             "--cmd" => {

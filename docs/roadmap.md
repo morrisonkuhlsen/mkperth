@@ -143,7 +143,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   Clicking and dragging: rows chosen by a dragged rectangle, Ctrl and Shift; double clicks on
   the chart and ruler add bands and marked months where they land, or open a bar's details; a
   row's context menu.
-- **Next:** the network view (#17); the brand (#18, the user's: the splash's lilac is chosen).
+- *Done (#17):* the network view: a precedence diagram laid out in columns by the
+  topological order and rows by the predecessors' mean row, iteratively (5 000 activities at
+  once), boxes with dates and float, the critical path in red, the selection shared with the
+  table. The brand (#18): the hexagonal P mark, blue, violet and lilac, decided.
+- **Next:** dragging a box to tie two activities in the network; printing it.
 
 ## M4 — resources
 - *Started (#20):* resources (labor, nonlabor, material, with a unit, a calendar and units an

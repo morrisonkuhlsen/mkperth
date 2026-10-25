@@ -431,6 +431,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         if ui.radio(state.view == View::Resources, tr!("resources-view")).on_hover_text(tr!("resources-view-tip")).clicked() {
             set(Action::View(View::Resources));
         }
+        if ui.radio(state.view == View::Network, tr!("network-view")).on_hover_text(tr!("network-view-tip")).clicked() {
+            set(Action::View(View::Network));
+        }
         if check(ui, !state.table_hidden, &tr!("activity-table")) {
             set(Action::Table);
         }
