@@ -82,6 +82,8 @@ pub enum EngineError {
     #[error(transparent)]
     P6(#[from] mkperth_p6xml::P6Error),
     #[error(transparent)]
+    Msp(#[from] mkperth_mspxml::MspError),
+    #[error(transparent)]
     Schedule(#[from] ScheduleError),
 }
 
@@ -175,6 +177,8 @@ pub struct Session {
     /// The other projects its external relationships name, as written there, read from their
     /// files to be scheduled with it.
     others: Vec<(String, Project)>,
+    /// The format its file is in, when it came from one or went to one.
+    pub format: Option<Format>,
 }
 
 impl Default for Session {
@@ -182,13 +186,105 @@ impl Default for Session {
     fn default() -> Self {
         let project = sample::project();
         let schedule = mkperth_sched::schedule(&project);
-        Session { project, path: None, schedule, warnings: Vec::new(), modified: false, undo: Vec::new(), redo: Vec::new(), others: Vec::new() }
+        Session {
+            project,
+            path: None,
+            schedule,
+            warnings: Vec::new(),
+            modified: false,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            others: Vec::new(),
+            format: None,
+        }
     }
 }
 
-/// Whether a path names a P6 XML file.
-pub(crate) fn is_p6(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xml"))
+/// A project file's format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    /// Perth.jl's JSON.
+    Perth,
+    /// Primavera P6's XML.
+    P6,
+    /// Microsoft Project's XML (MSPDI).
+    Msp,
+}
+
+impl Format {
+    /// The commands' word for it.
+    pub fn code(self) -> &'static str {
+        match self {
+            Format::Perth => "perth",
+            Format::P6 => "p6",
+            Format::Msp => "msp",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<Format> {
+        [Format::Perth, Format::P6, Format::Msp].into_iter().find(|f| f.code() == code)
+    }
+
+    /// The format a path's extension says when nothing else does: `.xml` P6's, else Perth's.
+    pub fn of_path(path: &Path) -> Format {
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xml")) { Format::P6 } else { Format::Perth }
+    }
+
+    /// The format of a file's text: XML by what its root is, else Perth's JSON.
+    pub fn of_text(path: &Path, text: &str) -> Format {
+        match Format::of_path(path) {
+            Format::Perth => Format::Perth,
+            _ => {
+                let head = text.get(..text.len().min(4096)).unwrap_or_default();
+                let p6 = head.find("<APIBusinessObjects");
+                let msp = head.find("schemas.microsoft.com/project").or_else(|| head.find("<Project"));
+                match (p6, msp) {
+                    (Some(a), Some(b)) if b < a => Format::Msp,
+                    (None, Some(_)) => Format::Msp,
+                    _ => Format::P6,
+                }
+            }
+        }
+    }
+}
+
+/// A command's `format` (`perth`, `p6`, `msp`), if given.
+fn format_param(params: &Value, command: &str) -> Result<Option<Format>, EngineError> {
+    match params.get("format") {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_str().and_then(Format::from_code).map(Some).ok_or_else(|| EngineError::Value(command.into(), "format".into())),
+    }
+}
+
+/// Reads a project file in the format its text is in: the project, what reading it said, and
+/// the format.
+pub(crate) fn read_file(path: &Path) -> Result<(Project, Vec<String>, Format), EngineError> {
+    let text = std::fs::read_to_string(path).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
+    let format = Format::of_text(path, &text);
+    let (project, warnings) = match format {
+        Format::P6 => {
+            let r = mkperth_p6xml::read(&text)?;
+            (r.project, r.warnings)
+        }
+        Format::Msp => {
+            let r = mkperth_mspxml::read(&text)?;
+            (r.project, r.warnings)
+        }
+        Format::Perth => {
+            let r = mkperth_perth::read(&text)?;
+            (r.project, r.warnings)
+        }
+    };
+    Ok((project, warnings, format))
+}
+
+/// The project as a file's text in `format`, and what the format couldn't hold.
+pub(crate) fn write_text(project: &Project, format: Format) -> (String, Vec<String>) {
+    match format {
+        Format::Perth => mkperth_perth::write(project),
+        Format::P6 => mkperth_p6xml::write(project),
+        Format::Msp => mkperth_mspxml::write(project),
+    }
 }
 
 impl Session {
@@ -236,12 +332,15 @@ impl Session {
                     Some(p) => PathBuf::from(p),
                     None => self.path.clone().ok_or_else(|| EngineError::Param(id.to_string(), "path".to_string()))?,
                 };
-                self.save(&path)
+                let format = format_param(params, id)?;
+                self.save_as(&path, format)
             }
-            // A copy in the format of `path`'s extension: the project stays where it was, as it was.
+            // A copy in `format` (else as `path`'s extension says): the project stays where it
+            // was, as it was.
             "project.export" => {
                 let path = Path::new(param("path")?);
-                let (text, warnings) = if is_p6(path) { mkperth_p6xml::write(&self.project) } else { mkperth_perth::write(&self.project) };
+                let format = format_param(params, id)?.unwrap_or_else(|| Format::of_path(path));
+                let (text, warnings) = write_text(&self.project, format);
                 write_atomic(path, text.as_bytes()).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
                 self.warnings = warnings;
                 Ok(())
@@ -271,6 +370,7 @@ impl Session {
                     undo: Vec::new(),
                     redo: Vec::new(),
                     others: Vec::new(),
+                    format: None,
                 };
                 Ok(())
             }
@@ -300,14 +400,8 @@ impl Session {
     /// Opens a project file and schedules it: P6 XML (`.xml`) or Perth.jl's JSON (anything
     /// else). On failure the open project stays.
     pub fn open(&mut self, path: &Path) -> Result<(), EngineError> {
-        let text = std::fs::read_to_string(path).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
-        let (project, warnings) = if is_p6(path) {
-            let read = mkperth_p6xml::read(&text)?;
-            (read.project, read.warnings)
-        } else {
-            let read = mkperth_perth::read(&text)?;
-            (read.project, read.warnings)
-        };
+        let (project, warnings, format) = read_file(path)?;
+        self.format = Some(format);
         self.project = project;
         self.warnings = warnings;
         self.path = Some(path.to_path_buf());
@@ -322,7 +416,16 @@ impl Session {
     /// Writes the project as P6 XML (`.xml`) or Perth.jl's JSON, all or nothing; it becomes the project's path.
     /// Returns what Perth's format couldn't hold.
     pub fn save(&mut self, path: &Path) -> Result<(), EngineError> {
-        let (text, warnings) = if is_p6(path) { mkperth_p6xml::write(&self.project) } else { mkperth_perth::write(&self.project) };
+        self.save_as(path, None)
+    }
+
+    /// Writes the project in `format`; without one, in the format it was opened in when it goes
+    /// back to the same file, else as the path's extension says.
+    pub fn save_as(&mut self, path: &Path, format: Option<Format>) -> Result<(), EngineError> {
+        let same = self.path.as_deref() == Some(path);
+        let format = format.or(self.format.filter(|_| same)).unwrap_or_else(|| Format::of_path(path));
+        let (text, warnings) = write_text(&self.project, format);
+        self.format = Some(format);
         write_atomic(path, text.as_bytes()).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
         self.path = Some(path.to_path_buf());
         self.modified = false;

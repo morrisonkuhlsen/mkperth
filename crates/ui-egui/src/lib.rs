@@ -505,12 +505,12 @@ impl PerthApp {
         }
     }
 
-    /// A copy of the project as `extension` (`xml` for P6, `json` for Perth), where the person
-    /// picks; the open project stays as it was.
-    pub fn export(&mut self, extension: &str) {
+    /// A copy of the project in `format`, where the person picks; the open project stays as it was.
+    pub fn export(&mut self, format: mkperth_engine::Format) {
+        let extension = if format == mkperth_engine::Format::Perth { "json" } else { "xml" };
         let suggested = format!("{}.{extension}", self.session.project.name.replace(['/', '\\'], "-"));
         if let Some(path) = self.services.pick_save.as_ref().and_then(|pick| pick(&suggested)) {
-            self.run("project.export", json!({"path": path.display().to_string()}));
+            self.run("project.export", json!({"path": path.display().to_string(), "format": format.code()}));
         }
     }
 

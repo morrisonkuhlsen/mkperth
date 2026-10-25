@@ -142,7 +142,7 @@ fn main() -> eframe::Result {
             rfd::FileDialog::new()
                 .add_filter("Projects (.json, .xml)", &["json", "xml"])
                 .add_filter("Perth.jl project (.json)", &["json"])
-                .add_filter("Primavera P6 XML (.xml)", &["xml"])
+                .add_filter("Primavera P6 or Microsoft Project XML (.xml)", &["xml"])
                 .add_filter("All files", &["*"])
                 .pick_file()
         })),
@@ -150,7 +150,9 @@ fn main() -> eframe::Result {
             let dialog = if suggested.ends_with(".tex") {
                 rfd::FileDialog::new().add_filter("LaTeX (.tex)", &["tex"])
             } else {
-                rfd::FileDialog::new().add_filter("Perth.jl project (.json)", &["json"]).add_filter("Primavera P6 XML (.xml)", &["xml"])
+                rfd::FileDialog::new()
+                    .add_filter("Perth.jl project (.json)", &["json"])
+                    .add_filter("Primavera P6 or Microsoft Project XML (.xml)", &["xml"])
             };
             dialog.set_file_name(suggested).save_file()
         })),

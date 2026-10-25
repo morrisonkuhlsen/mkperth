@@ -43,8 +43,8 @@ pub(crate) enum Action {
     Browse,
     Save,
     SaveAs,
-    /// A copy as P6 XML (`xml`) or Perth's JSON (`json`).
-    Export(&'static str),
+    /// A copy in another format: P6 XML, Microsoft Project XML or Perth's JSON.
+    Export(mkperth_engine::Format),
     /// The selected activity's calculation as LaTeX.
     Latex,
     ToggleAutoSave,
@@ -239,10 +239,13 @@ fn pages(ui: &mut Ui, view: &View) -> Option<Action> {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = vec2(16.0, 16.0);
                 if card(ui, Icon::Share, &tr!("backstage-export-p6"), &tr!("backstage-export-p6-line")) {
-                    action = Some(Action::Export("xml"));
+                    action = Some(Action::Export(mkperth_engine::Format::P6));
+                }
+                if card(ui, Icon::Share, &tr!("backstage-export-msp"), &tr!("backstage-export-msp-line")) {
+                    action = Some(Action::Export(mkperth_engine::Format::Msp));
                 }
                 if card(ui, Icon::Share, &tr!("backstage-export-perth"), &tr!("backstage-export-perth-line")) {
-                    action = Some(Action::Export("json"));
+                    action = Some(Action::Export(mkperth_engine::Format::Perth));
                 }
                 let line = view.selected.map_or_else(|| tr!("backstage-export-tex-none"), |id| tr!("backstage-export-tex-line", id = id));
                 if ui.add_enabled_ui(view.selected.is_some(), |ui| card(ui, Icon::Latex, &tr!("export-tex"), &line)).inner {

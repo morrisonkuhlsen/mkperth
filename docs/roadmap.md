@@ -71,8 +71,17 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   rounded up with a warning; a region's holidays written as ten years of dates; what isn't read is
   named once in the warnings; Open and Save choose the format by the extension. To check against
   Oracle's XSD: #31.
-- **Next:** Microsoft Project XML (#9). XER is the user's decision (#10: no specification from
-  Oracle).
+- *Done (#9):* Microsoft Project's XML (MSPDI, `mkperth-mspxml`) from Microsoft's published
+  schema reference: tasks in outline order as the WBS (their IDs kept as WBS codes), durations
+  from their hours whatever unit they're shown in (elapsed ones on a 24-hour calendar), links
+  with their lags in tenths of a minute in every format, the eight constraints and the
+  deadline, task types, physical percent complete, actual dates and the work left; calendars
+  with their weekdays' work periods and their exceptions (days off, days worked, days of their
+  own hours; recurring ones said and left out); work and material resources with their rates,
+  assignments with their work and units. Told from P6 XML by its content; saved in the format
+  it came in. The sample written and read back schedules to the same dates and floats.
+- **Next:** XER is the user's decision (#10: no specification from Oracle); MSPDI's recurring
+  calendar exceptions, percent lags and cost resources.
 
 ## M2 — the engine and the command line
 - *Started:* `mkperth-engine`: the session (the project, its schedule, what opening it said) and

@@ -93,9 +93,10 @@
   the S-curve. PERT's three estimates as an analysis.
 - **Every date with its calculation:** the selected activity's dates step by step, exported to
   LaTeX.
-- **Files:** Perth.jl's projects, read and written back byte for byte; Primavera P6 XML, read and
-  written (calendars, WBS, activities, relationships, constraints, progress, baselines,
-  resources, costs, budgets, earned value).
+- **Files:** Perth.jl's projects, read and written back byte for byte; Primavera P6 XML and
+  Microsoft Project XML, read and written (calendars, WBS, activities, relationships with their
+  lags, constraints, progress, resources and assignments; in P6 XML also baselines, costs,
+  budgets, earned value, codes, the EPS and OBS).
 - **One engine, every way in:** the window, the command line (`mkperth-cli`) and an MCP server
   for agents (`mkperth-mcp`) run the same commands, each with undo; English and Português
   (Brasil), light and dark.
@@ -148,7 +149,7 @@ An engine-first Cargo workspace with enforced layering (`cargo xtask layers`):
 | Layer | Crates |
 |-------|--------|
 | L0    | `i18n` (message catalogs) · `core` (dates, calendars, the project) |
-| L1    | `sched` (the critical path method) · `perth` (Perth.jl's JSON) · `p6xml` (Primavera P6's XML) |
+| L1    | `sched` (the critical path method) · `perth` (Perth.jl's JSON) · `p6xml` (Primavera P6's XML) · `mspxml` (Microsoft Project's XML) |
 | L2    | `engine` (the session and its commands) |
 | L3    | `ui-egui` (the Activities window) |
 | L4    | `apps/mkperth` (desktop) · `apps/mkperth-cli` (command line) · `apps/mkperth-mcp` (MCP server) |

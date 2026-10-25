@@ -24,6 +24,11 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Microsoft Project XML (#9): MSPDI files opened (told from P6 XML by their content), saved in
+  the format they came in, and exported (File ▸ Export ▸ Microsoft Project XML, or
+  `project.export` with `"format": "msp"`). Tasks and their outline as the WBS, durations and
+  lags in every unit, constraints and deadlines, task types, progress, calendars and their
+  exceptions, resources and assignments; what has no place in the format is said in a warning.
 - Activity codes and user-defined fields (#26): codes with their values in a hierarchy
   (`code.add`, `.delete`, `code-value.add`, `.delete`), fields of a kind each (text, number,
   integer, cost, date or a red, yellow, green or blue indicator; `field.add`, `.delete`), and

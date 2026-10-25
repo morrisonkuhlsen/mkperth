@@ -25,14 +25,9 @@ fn kind_of(params: &Value, command: &str) -> Result<RelationshipType, EngineErro
     })
 }
 
-/// Reads a project file: P6 XML (`.xml`) or Perth's JSON.
+/// Reads a project file in whatever format it is in.
 fn read(path: &Path) -> Result<Project, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    if crate::is_p6(path) {
-        mkperth_p6xml::read(&text).map(|r| r.project).map_err(|e| e.to_string())
-    } else {
-        mkperth_perth::read(&text).map(|r| r.project).map_err(|e| e.to_string())
-    }
+    crate::read_file(path).map(|(p, _, _)| p).map_err(|e| e.to_string())
 }
 
 impl Session {
@@ -234,6 +229,40 @@ mod tests {
         let _ = std::fs::remove_file(dir.join("p.json"));
         run(&mut again, "project.schedule", json!(null));
         assert!(again.warnings.iter().any(|w| w.contains("p.json")), "{:?}", again.warnings);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A Microsoft Project file, told from a P6 one by its content though both end in `.xml`:
+    /// the sample written as one, opened, saved again in the same format; it schedules to the
+    /// sample's dates, and its IDs come back.
+    #[test]
+    fn microsoft_project_files() {
+        let dir = std::env::temp_dir().join(format!("mkperth-msp-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("sample.xml");
+        let mut s = Session::default();
+        run(&mut s, "project.export", json!({"path": path.display().to_string(), "format": "msp"}));
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("schemas.microsoft.com/project"));
+        let mut opened = Session::default();
+        run(&mut opened, "project.open", json!({"path": path.display().to_string()}));
+        assert_eq!(opened.format, Some(crate::Format::Msp));
+        let ids = |s: &Session| s.project.activities.iter().map(|a| a.id.clone()).collect::<Vec<_>>();
+        let mut want = ids(&s);
+        let mut got = ids(&opened);
+        want.sort();
+        got.sort();
+        assert_eq!(got, want);
+        let dates = |s: &Session| {
+            let mut v: Vec<_> =
+                s.schedule.as_ref().unwrap().activities.iter().map(|a| (a.id.clone(), a.early_start, a.early_finish, a.total_float)).collect();
+            v.sort();
+            v
+        };
+        assert_eq!(dates(&opened), dates(&s), "the same dates and floats");
+        run(&mut opened, "project.save", json!({}));
+        assert!(std::fs::read_to_string(&path).unwrap().contains("schemas.microsoft.com/project"), "saved as it came");
+        assert!(opened.run("project.export", &json!({"path": path.display().to_string(), "format": "mpp"})).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

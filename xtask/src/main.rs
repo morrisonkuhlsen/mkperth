@@ -15,12 +15,13 @@ use std::process::{Command, ExitCode};
 
 /// Each internal crate's layer: L0 `i18n`/`core` → L1 `sched`/`perth` → L2 `engine` → L3 `ui-egui`/`mcp`
 /// → L4 `apps/*`. A crate added without a row here fails the gate.
-const LAYERS: [(&str, u8); 10] = [
+const LAYERS: [(&str, u8); 11] = [
     ("mkperth-i18n", 0),
     ("mkperth-core", 0),
     ("mkperth-sched", 1),
     ("mkperth-perth", 1),
     ("mkperth-p6xml", 1),
+    ("mkperth-mspxml", 1),
     ("mkperth-engine", 2),
     ("mkperth-ui-egui", 3),
     ("mkperth", 4),
@@ -149,6 +150,8 @@ fn wasm() -> Result<(), String> {
         "mkperth-perth",
         "--package",
         "mkperth-p6xml",
+        "--package",
+        "mkperth-mspxml",
         "--package",
         "mkperth-engine",
         "--target",
