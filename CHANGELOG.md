@@ -10,6 +10,12 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- A stored close keeps each period's own amounts, not the total to date: planned and earned
+  value and the actual cost by kind (labour, non-labour, material, expenses) and actual units
+  (labour, non-labour) for each activity, as P6's `ActivityPeriodActual` holds them; P6 XML
+  reads and writes them (they were left out with a warning). Perth projects with closes stored
+  as totals to date are read and turned into each period's own amounts (the actual becomes
+  expenses).
 ### Changed results
 
 - **A resource-dependent activity** (P6 XML's "Resource Dependent", or the box in Details)
@@ -83,8 +89,8 @@ Read it before re-scheduling a plan with a new version.
   written; the techniques, periods and stored closes travel in `mkperth_earned_value`. P6 XML
   reads and writes the physical percent complete (`PhysicalPercentComplete`,
   `PercentCompleteType`), the techniques (`EarnedValueComputeType`, `EarnedValueUserPercent`,
-  `EarnedValueETCComputeType`) and the financial periods (`FinancialPeriod`); the stored closes
-  are left out of it, with a warning.
+  `EarnedValueETCComputeType`), the financial periods (`FinancialPeriod`) and the stored closes
+  (`ActivityPeriodActual`).
 - The Earned value pane (Project ▸ Earned value…): the techniques chosen, the measures at the
   data date (BAC, PV, EV, AC, CV, SV, CPI, SPI, ETC, EAC, VAC, TCPI), the S-curve (planned day
   by day, earned and actual at each stored close and at the data date), and the financial

@@ -124,6 +124,52 @@ fn by_day(project: &Project, schedule: &Schedule) -> Vec<[Vec<(Date, i64)>; 3]> 
     out
 }
 
+/// An activity's actual cost to the data date by kind of cost, and its actual units of labour
+/// and non-labour work, in hundredths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ActualByKind {
+    pub labor_cost: i64,
+    pub nonlabor_cost: i64,
+    pub material_cost: i64,
+    pub expense_cost: i64,
+    pub labor_units: i64,
+    pub nonlabor_units: i64,
+}
+
+/// Each activity's own actual cost by kind (a summary's is nothing of its own), priced and
+/// accrued as `costs` prices them, so the kinds add up to its actual cost.
+pub fn actual_by_kind(project: &Project, schedule: &Schedule) -> Vec<ActualByKind> {
+    let index: HashMap<&str, usize> = project.activities.iter().enumerate().map(|(i, a)| (a.id.as_str(), i)).collect();
+    let days: Vec<Option<Days>> = (0..project.activities.len()).map(|i| days_of(project, i, schedule)).collect();
+    let mut out = vec![ActualByKind::default(); project.activities.len()];
+    let sum = |v: Vec<(Date, i64)>| v.iter().fold(0i64, |s, (_, c)| s.saturating_add(*c));
+    for x in &project.assignments {
+        let (Some(&i), Some(r)) = (index.get(x.activity.as_str()), x.resource.as_deref().and_then(|r| project.resources.iter().find(|y| y.id == r)))
+        else {
+            continue;
+        };
+        let (Some(Some(d)), Some(slot)) = (days.get(i), out.get_mut(i)) else { continue };
+        let cost = sum(priced(x.actual, &d.actual, &|day: Date| r.price_on(day)));
+        match r.kind {
+            mkperth_core::ResourceKind::Labor => {
+                slot.labor_cost = slot.labor_cost.saturating_add(cost);
+                slot.labor_units = slot.labor_units.saturating_add(x.actual);
+            }
+            mkperth_core::ResourceKind::Nonlabor => {
+                slot.nonlabor_cost = slot.nonlabor_cost.saturating_add(cost);
+                slot.nonlabor_units = slot.nonlabor_units.saturating_add(x.actual);
+            }
+            mkperth_core::ResourceKind::Material => slot.material_cost = slot.material_cost.saturating_add(cost),
+        }
+    }
+    for e in &project.expenses {
+        let Some(&i) = index.get(e.activity.as_str()) else { continue };
+        let (Some(Some(d)), Some(slot)) = (days.get(i), out.get_mut(i)) else { continue };
+        slot.expense_cost = slot.expense_cost.saturating_add(sum(accrued(e.actual, &d.actual, e.accrual)));
+    }
+    out
+}
+
 /// Each activity's costs, in the project's order; a summary's are its own and its children's.
 pub fn costs(project: &Project, schedule: &Schedule) -> Vec<Cost> {
     let own: Vec<Cost> = by_day(project, schedule)

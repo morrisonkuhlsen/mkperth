@@ -857,14 +857,48 @@ fn earned_of(v: &Value) -> Result<EarnedValue, PerthError> {
     for p in list("periods") {
         e.periods.push(FinancialPeriod { name: text(p, "name").ok_or_else(bad)?, start: day(p, "start")?, finish: day(p, "finish")? });
     }
+    let units =
+        |v: &Value, k: &str| v.get(k).and_then(Value::as_f64).filter(|x| x.is_finite() && x.abs() < 1e12).map_or(0, |x| (x * 100.0).round() as i64);
+    // Records written before #34 held amounts to date and one actual cost: made each period's
+    // own by what the period before held, the actual cost kept as an expense.
+    let mut to_date: Vec<(String, String, i64, i64, i64)> = Vec::new();
     for r in list("records") {
+        let (period, activity) = (text(r, "period").ok_or_else(bad)?, text(r, "activity").ok_or_else(bad)?);
+        if r.get("labor_cost").is_none() && r.get("actual").is_some() {
+            to_date.push((period, activity, money(r, "planned")?, money(r, "earned")?, money(r, "actual")?));
+            continue;
+        }
+        let cost = |k: &str| r.get(k).and_then(money_of).unwrap_or(0);
         e.records.push(PeriodRecord {
-            period: text(r, "period").ok_or_else(bad)?,
-            activity: text(r, "activity").ok_or_else(bad)?,
+            period,
+            activity,
             planned: money(r, "planned")?,
             earned: money(r, "earned")?,
-            actual: money(r, "actual")?,
+            labor_cost: cost("labor_cost"),
+            nonlabor_cost: cost("nonlabor_cost"),
+            material_cost: cost("material_cost"),
+            expense_cost: cost("expense_cost"),
+            labor_units: units(r, "labor_units"),
+            nonlabor_units: units(r, "nonlabor_units"),
         });
+    }
+    let start_of = |name: &str| e.periods.iter().find(|q| q.name == name).map(|q| q.start);
+    to_date.sort_by(|a, b| (a.1.as_str(), start_of(&a.0)).cmp(&(b.1.as_str(), start_of(&b.0))));
+    let mut last: Option<(String, i64, i64, i64)> = None;
+    for (period, activity, planned, earned, actual) in to_date {
+        let (p0, e0, a0) = match &last {
+            Some((who, p, e, a)) if *who == activity => (*p, *e, *a),
+            _ => (0, 0, 0),
+        };
+        e.records.push(PeriodRecord {
+            period,
+            activity: activity.clone(),
+            planned: planned - p0,
+            earned: earned - e0,
+            expense_cost: actual - a0,
+            ..PeriodRecord::default()
+        });
+        last = Some((activity, planned, earned, actual));
     }
     Ok(e)
 }
@@ -882,7 +916,9 @@ fn earned_value_value(e: &EarnedValue) -> Value {
         .iter()
         .map(|r| {
             serde_json::json!({"period": r.period, "activity": r.activity, "planned": money_value(r.planned),
-                "earned": money_value(r.earned), "actual": money_value(r.actual)})
+                "earned": money_value(r.earned), "labor_cost": money_value(r.labor_cost), "nonlabor_cost": money_value(r.nonlabor_cost),
+                "material_cost": money_value(r.material_cost), "expense_cost": money_value(r.expense_cost),
+                "labor_units": r.labor_units as f64 / 100.0, "nonlabor_units": r.nonlabor_units as f64 / 100.0})
         })
         .collect();
     serde_json::json!({"technique": e.technique.code(), "share": share, "etc": e.etc.code(), "periods": periods, "records": records})

@@ -20,8 +20,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use mkperth_core::{
     Accrual, Activity, ActivityCode, ActivityKind, Assignment, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus,
     Classification, CodeValue, Constraint, CostAccount, Date, DurationType, EarnedValue, EpsNode, EtcTechnique, EvTechnique, Expense, FieldKind,
-    FieldValue, FinancialPeriod, Fund, FundingSource, Indicator, LevellingPriority, ObsNode, Organisation, Period, Price, Project, Relationship,
-    RelationshipType, Resource, ResourceKind, Role, SpendingMonth, UNIT, UserField, WbsBudget, Weekday,
+    FieldValue, FinancialPeriod, Fund, FundingSource, Indicator, LevellingPriority, ObsNode, Organisation, Period, PeriodRecord, Price, Project,
+    Relationship, RelationshipType, Resource, ResourceKind, Role, SpendingMonth, UNIT, UserField, WbsBudget, Weekday,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -634,7 +634,8 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         "ActivityExpense",
         "FundingSource",
     ];
-    const PROJECT_FIELDS_READ: [&str; 23] = [
+    const PROJECT_FIELDS_READ: [&str; 24] = [
+        "ActivityPeriodActual",
         "ActivityCodeType",
         "ActivityCode",
         "ActivityCodeAssignment",
@@ -669,7 +670,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
     if let Some(id) = p.text_of("Id") {
         extra.insert(format!("{PREFIX}id"), id.to_string());
     }
-    let earned_value = earned_value_of(&root, p, &percent_kinds);
+    let earned_value = earned_value_of(&root, p, &percent_kinds, &by_object);
     let (baselines, baseline_in_use) = baselines_of(&root, p);
     Ok(Read {
         project: Project {
@@ -958,7 +959,7 @@ fn percent_kind(technique: EvTechnique) -> &'static str {
 
 /// The project's earned value techniques and its financial periods. By each activity's percent
 /// complete, the technique is the type most of them have.
-fn earned_value_of(root: &Element, p: &Element, kinds: &BTreeMap<String, usize>) -> EarnedValue {
+fn earned_value_of(root: &Element, p: &Element, kinds: &BTreeMap<String, usize>, by_object: &HashMap<String, String>) -> EarnedValue {
     let technique = match p.text_of("EarnedValueComputeType") {
         Some(EV_ACTIVITY) | None => match kinds.iter().max_by_key(|(_, n)| **n).map(|(k, _)| k.as_str()) {
             Some("Duration") => EvTechnique::Duration,
@@ -980,6 +981,7 @@ fn earned_value_of(root: &Element, p: &Element, kinds: &BTreeMap<String, usize>)
         .map(|(_, t)| *t)
         .unwrap_or_default();
     let mut periods: Vec<FinancialPeriod> = Vec::new();
+    let mut period_by_object: HashMap<&str, String> = HashMap::new();
     for e in root.all("FinancialPeriod").chain(p.all("FinancialPeriod")) {
         let (Some(name), Some(start), Some(finish)) =
             (e.text_of("Name"), e.text_of("StartDate").and_then(date_of), e.text_of("EndDate").and_then(date_of))
@@ -988,10 +990,43 @@ fn earned_value_of(root: &Element, p: &Element, kinds: &BTreeMap<String, usize>)
         };
         if finish >= start && !periods.iter().any(|q| q.name == name || (q.start <= finish && start <= q.finish)) {
             periods.push(FinancialPeriod { name: name.to_string(), start, finish });
+            if let Some(o) = e.text_of("ObjectId") {
+                period_by_object.insert(o, name.to_string());
+            }
         }
     }
     periods.sort_by_key(|q| q.start);
-    EarnedValue { technique, etc, periods, records: Vec::new() }
+    // Each activity's own amounts in each period.
+    let mut records: Vec<PeriodRecord> = Vec::new();
+    for e in p.all("ActivityPeriodActual").chain(root.all("ActivityPeriodActual")) {
+        let (Some(activity), Some(period)) = (
+            e.text_of("ActivityObjectId").and_then(|o| by_object.get(o)),
+            e.text_of("FinancialPeriodObjectId").and_then(|o| period_by_object.get(o)),
+        ) else {
+            continue;
+        };
+        let cost = |k: &str| e.text_of(k).and_then(money_of).unwrap_or(0);
+        let units = |k: &str| {
+            e.text_of(k)
+                .and_then(|x| x.trim().parse::<f64>().ok())
+                .filter(|x| x.is_finite() && x.abs() < 1e12)
+                .map_or(0, |x| (x * UNIT as f64).round() as i64)
+        };
+        records.retain(|r| !(r.activity == *activity && r.period == *period));
+        records.push(PeriodRecord {
+            period: period.clone(),
+            activity: activity.clone(),
+            planned: cost("PlannedValueCost"),
+            earned: cost("EarnedValueCost"),
+            labor_cost: cost("ActualLaborCost"),
+            nonlabor_cost: cost("ActualNonLaborCost"),
+            material_cost: cost("ActualMaterialCost"),
+            expense_cost: cost("ActualExpenseCost"),
+            labor_units: units("ActualLaborUnits"),
+            nonlabor_units: units("ActualNonLaborUnits"),
+        });
+    }
+    EarnedValue { technique, etc, periods, records }
 }
 
 /// P6's money (`1500.5`) as hundredths of the currency.
@@ -1301,9 +1336,6 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     }
     let etc = ETC_TECHNIQUES.iter().find(|(_, t)| *t == ev.etc).map_or("Performance Factor = 1", |(n, _)| n);
     out.push_str(&format!("    <EarnedValueETCComputeType>{etc}</EarnedValueETCComputeType>\n"));
-    if !ev.records.is_empty() {
-        warnings.push(tr!("warn-p6-period-closes"));
-    }
     if let Some(b) = project.budget.of(None) {
         out.push_str(&format!("    <OriginalBudget>{}</OriginalBudget>\n", money(b.original)));
     }
@@ -1499,6 +1531,29 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             out.push_str(&format!("      <FundShare>{}</FundShare>\n", format!("{share:.2}").trim_end_matches('0').trim_end_matches('.')));
         }
         out.push_str("    </ProjectFunding>\n");
+    }
+    // Each activity's own amounts in each stored period.
+    for (k, r) in project.earned_value.records.iter().enumerate() {
+        let (Some(_), Some(period)) = (
+            project.activities.iter().position(|a| a.id == r.activity).filter(|_| !summary(&r.activity)),
+            project.earned_value.periods.iter().position(|q| q.name == r.period),
+        ) else {
+            continue;
+        };
+        out.push_str(&format!(
+            "    <ActivityPeriodActual>\n      <ObjectId>{}</ObjectId>\n      <ActivityObjectId>{}</ActivityObjectId>\n      <FinancialPeriodObjectId>{}</FinancialPeriodObjectId>\n      <ProjectObjectId>1</ProjectObjectId>\n      <ActualLaborCost>{}</ActualLaborCost>\n      <ActualNonLaborCost>{}</ActualNonLaborCost>\n      <ActualMaterialCost>{}</ActualMaterialCost>\n      <ActualExpenseCost>{}</ActualExpenseCost>\n      <ActualLaborUnits>{}</ActualLaborUnits>\n      <ActualNonLaborUnits>{}</ActualNonLaborUnits>\n      <EarnedValueCost>{}</EarnedValueCost>\n      <PlannedValueCost>{}</PlannedValueCost>\n    </ActivityPeriodActual>\n",
+            k + 1,
+            object(&r.activity),
+            period + 1,
+            money(r.labor_cost),
+            money(r.nonlabor_cost),
+            money(r.material_cost),
+            money(r.expense_cost),
+            units_text(r.labor_units),
+            units_text(r.nonlabor_units),
+            money(r.earned),
+            money(r.planned)
+        ));
     }
     // Each activity's code values and field values; a summary is a WBS element and takes none.
     for a in project.activities.iter().filter(|a| !summary(&a.id)) {

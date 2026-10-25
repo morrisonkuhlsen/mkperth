@@ -135,9 +135,10 @@ impl Session {
     }
 
     /// Stores a period's close: the period `name`, else the last one begun before the data
-    /// date. For each activity with none under it, its planned value by the period's end, and
-    /// its earned value and actual cost to the data date; what was stored for it before is
-    /// replaced.
+    /// date. For each activity with none under it, what it did in the period: its planned value
+    /// by the period's end, its earned value, its actual cost by kind and its actual units to
+    /// the data date, less what the periods before it hold. What was stored for the period
+    /// before is replaced.
     fn store_period(&mut self, params: &Value) -> Result<(), EngineError> {
         const C: &str = "period.store";
         let name = text(params, C, "name")?.filter(|n| !n.is_empty() && n.chars().count() <= MAX_TEXT);
@@ -151,18 +152,32 @@ impl Session {
         .cloned()
         .ok_or_else(|| bad(C, "name"))?;
         let by_end = mkperth_sched::earned_value(p, &schedule, period.finish);
+        let kinds = mkperth_sched::actual_by_kind(p, &schedule);
         let parents: HashSet<&str> = p.activities.iter().filter_map(|a| a.parent.as_deref()).collect();
+        // The periods before this one, whose amounts are already counted.
+        let before: HashSet<&str> = p.earned_value.periods.iter().filter(|q| q.finish < period.start).map(|q| q.name.as_str()).collect();
         let records: Vec<PeriodRecord> = p
             .activities
             .iter()
             .zip(by_end)
-            .filter(|(a, _)| !parents.contains(a.id.as_str()))
-            .map(|(a, e)| PeriodRecord {
-                period: period.name.clone(),
-                activity: a.id.clone(),
-                planned: e.planned,
-                earned: e.earned,
-                actual: e.actual,
+            .zip(kinds)
+            .filter(|((a, _), _)| !parents.contains(a.id.as_str()))
+            .map(|((a, e), k)| {
+                let earlier: Vec<&PeriodRecord> =
+                    p.earned_value.records.iter().filter(|r| r.activity == a.id && before.contains(r.period.as_str())).collect();
+                let prior = |f: fn(&PeriodRecord) -> i64| earlier.iter().fold(0i64, |s, r| s.saturating_add(f(r)));
+                PeriodRecord {
+                    period: period.name.clone(),
+                    activity: a.id.clone(),
+                    planned: e.planned.saturating_sub(prior(|r| r.planned)),
+                    earned: e.earned.saturating_sub(prior(|r| r.earned)),
+                    labor_cost: k.labor_cost.saturating_sub(prior(|r| r.labor_cost)),
+                    nonlabor_cost: k.nonlabor_cost.saturating_sub(prior(|r| r.nonlabor_cost)),
+                    material_cost: k.material_cost.saturating_sub(prior(|r| r.material_cost)),
+                    expense_cost: k.expense_cost.saturating_sub(prior(|r| r.expense_cost)),
+                    labor_units: k.labor_units.saturating_sub(prior(|r| r.labor_units)),
+                    nonlabor_units: k.nonlabor_units.saturating_sub(prior(|r| r.nonlabor_units)),
+                }
             })
             .collect();
         self.change(tr!("undo-store-period", name = period.name.as_str()), |p| {
@@ -211,7 +226,7 @@ mod tests {
         run(&mut s, "expense.add", json!({"activity": "A10", "name": "Survey", "planned": 500, "actual": 350}));
         run(&mut s, "period.store", json!({}));
         let r = s.project.earned_value.records.iter().find(|r| r.activity == "A10").unwrap().clone();
-        assert_eq!((r.period.as_str(), r.earned, r.actual), ("2026-11", 30_000, 35_000));
+        assert_eq!((r.period.as_str(), r.earned, r.actual()), ("2026-11", 30_000, 35_000));
         assert!(s.project.earned_value.records.iter().all(|r| r.period == "2026-11"));
         assert!(!s.project.earned_value.records.iter().any(|r| r.activity == "W1"), "summaries take their children's");
         let count = s.project.earned_value.records.len();
@@ -219,6 +234,17 @@ mod tests {
         assert_eq!(s.project.earned_value.records.len(), count, "replaced, not added");
         let points = mkperth_sched::period_points(&s.project, s.schedule.as_ref().unwrap());
         assert_eq!(points.iter().find(|q| q.period == "2026-11").and_then(|q| q.earned), Some(30_000));
+        // December holds only what December did: A10 earned 60 % of 500.00 by November and
+        // 100 % by 1 January, so 300.00 + 200.00; its 350.00 of expenses all fell in November.
+        let mut d = s.clone();
+        run(&mut d, "project.options", json!({"data_date": "2027-01-01"}));
+        run(&mut d, "activity.edit", json!({"id": "A10", "percent_complete": 100}));
+        run(&mut d, "period.store", json!({"name": "2026-12"}));
+        let dec = d.project.earned_value.records.iter().find(|r| r.activity == "A10" && r.period == "2026-12").unwrap().clone();
+        assert_eq!((dec.earned, dec.actual(), dec.expense_cost), (20_000, 0, 0));
+        let points = mkperth_sched::period_points(&d.project, d.schedule.as_ref().unwrap());
+        let dec_point = points.iter().find(|q| q.period == "2026-12").unwrap();
+        assert_eq!((dec_point.earned, dec_point.actual), (Some(50_000), Some(35_000)), "the points are cumulative");
         // Renamed, an activity carries what was stored for it.
         run(&mut s, "activity.edit", json!({"id": "A10", "new_id": "A11"}));
         assert!(s.project.earned_value.records.iter().any(|r| r.activity == "A11"));

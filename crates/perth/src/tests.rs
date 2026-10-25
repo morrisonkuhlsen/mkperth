@@ -468,7 +468,17 @@ fn progress_and_earned_value() {
         technique: EvTechnique::Custom(2_500),
         etc: EtcTechnique::Cpi,
         periods: vec![FinancialPeriod { name: "2026-09".into(), start: day(2026, 9, 1), finish: day(2026, 9, 30) }],
-        records: vec![PeriodRecord { period: "2026-09".into(), activity: "a".into(), planned: 120_050, earned: 100_000, actual: 90_000 }],
+        records: vec![PeriodRecord {
+            period: "2026-09".into(),
+            activity: "a".into(),
+            planned: 120_050,
+            earned: 100_000,
+            labor_cost: 60_000,
+            material_cost: 20_000,
+            expense_cost: 10_000,
+            labor_units: 4_050,
+            ..PeriodRecord::default()
+        }],
     };
     let (text, _) = write(&q);
     assert!(text.contains("\"progress\":33.5") && text.contains("mkperth_earned_value"), "{text}");

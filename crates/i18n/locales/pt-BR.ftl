@@ -612,7 +612,6 @@ warn-p6-comments = { $n } comentários não são gravados: o P6 XML não tem lug
 warn-p6-assignments = { $n } alocações de recurso citam uma atividade, ou um recurso ou função, que o arquivo não tem: deixadas de fora.
 warn-p6-summary-assignments = { $n } alocações em resumos não são gravadas: no P6 um resumo é um elemento da EAP, que não recebe alocações.
 warn-p6-budget-not-wbs = { $n } orçamentos ou mudanças de orçamento em atividades que não são resumos não são gravados: o P6 só guarda orçamentos no projeto e na sua EAP.
-warn-p6-period-closes = Os fechamentos armazenados dos períodos não são gravados: o P6 guarda os valores de cada período por tipo de custo, que o MK Perth não tem.
 warn-p6-external = { $n } relações com atividades de outros projetos não são gravadas: o P6 XML guarda um projeto.
 warn-p6-responsible = Os responsáveis de { $n } atividades não são gravados: o P6 guarda quem responde no projeto e na EAP.
 warn-p6-fields = { $n } campos definidos pelo usuário deixados de fora: o MK Perth guarda os campos das atividades, e nenhum calculado a partir de um código.

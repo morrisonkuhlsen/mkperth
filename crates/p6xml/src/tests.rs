@@ -400,8 +400,28 @@ fn earned_value_read_back() {
         assert_eq!(back.project.earned_value, p.earned_value, "{technique:?}");
         assert_eq!(back.project.activities[leaf].percent_complete, Some(3_350));
     }
-    p.earned_value.records.push(PeriodRecord { period: "2026-11".into(), activity: "x".into(), planned: 1, earned: 1, actual: 1 });
-    assert_eq!(write(&p).1.len(), 1);
+    // Each period's own amounts by kind travel as ActivityPeriodActual (#34).
+    let id = p.activities[leaf].id.clone();
+    for (period, labor) in [("2026-11", 40_000), ("2026-12", 25_050)] {
+        p.earned_value.records.push(PeriodRecord {
+            period: period.into(),
+            activity: id.clone(),
+            planned: 50_000,
+            earned: 45_000,
+            labor_cost: labor,
+            nonlabor_cost: 12_000,
+            material_cost: 8_000,
+            expense_cost: 3_000,
+            labor_units: 3_250,
+            nonlabor_units: 800,
+        });
+    }
+    let (text, warnings) = write(&p);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(text.contains("<ActualLaborCost>250.5</ActualLaborCost>") && text.contains("<ActualLaborUnits>32.5</ActualLaborUnits>"), "{text}");
+    let back = read(&text).unwrap();
+    assert!(!back.warnings.iter().any(|w| w.starts_with("Left out")), "{:?}", back.warnings);
+    assert_eq!(back.project.earned_value.records, p.earned_value.records);
 }
 
 /// The names checked against Oracle's public P6 reference (#31): the estimate to complete's

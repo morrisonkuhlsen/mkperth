@@ -718,15 +718,29 @@ pub struct FinancialPeriod {
     pub finish: Date,
 }
 
-/// An activity's performance stored at a period's close, each to date, in hundredths of the
-/// currency: its planned value by the period's end, its earned value and its actual cost.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What an activity did in one financial period, its own amounts (not to date), as P6 keeps
+/// them: its planned and earned value in the period, its actual cost by kind (labour, non-labour,
+/// material, expenses) and its actual units of labour and non-labour work. Money in hundredths
+/// of the currency, units in hundredths. To date is the sum over the periods up to it.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PeriodRecord {
     pub period: String,
     pub activity: String,
     pub planned: i64,
     pub earned: i64,
-    pub actual: i64,
+    pub labor_cost: i64,
+    pub nonlabor_cost: i64,
+    pub material_cost: i64,
+    pub expense_cost: i64,
+    pub labor_units: i64,
+    pub nonlabor_units: i64,
+}
+
+impl PeriodRecord {
+    /// The actual cost in the period, every kind together.
+    pub fn actual(&self) -> i64 {
+        self.labor_cost.saturating_add(self.nonlabor_cost).saturating_add(self.material_cost).saturating_add(self.expense_cost)
+    }
 }
 
 /// Earned value: how it is measured and estimated, the financial periods and what was stored

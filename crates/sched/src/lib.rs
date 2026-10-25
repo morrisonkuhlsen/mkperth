@@ -39,7 +39,7 @@ mod usage;
 
 pub use baseline::{Variance, variances, working_days_between};
 pub use budget::{BudgetLine, budget, funding, spending_by_month};
-pub use costs::{Cost, costs, project_cost, spending};
+pub use costs::{ActualByKind, Cost, actual_by_kind, costs, project_cost, spending};
 pub use earned::{Earned, PeriodPoint, earned_value, performance, period_points, planned_curve, project_earned};
 pub use level::{Levelling, MAX_ROUNDS, Overload, level, overloads};
 pub use pert::{PertActivity, PertAnalysis, normal, pert};

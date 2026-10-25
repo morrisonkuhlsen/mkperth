@@ -242,15 +242,17 @@ pub fn period_points(project: &Project, schedule: &Schedule) -> Vec<PeriodPoint>
     ev.periods
         .iter()
         .map(|p| {
-            let records: Vec<_> = ev.records.iter().filter(|r| r.period == p.name && leaf.contains(r.activity.as_str())).collect();
+            // To date: this period's own amounts and every earlier period's.
+            let stored = ev.records.iter().any(|r| r.period == p.name && leaf.contains(r.activity.as_str()));
+            let earlier: HashSet<&str> = ev.periods.iter().filter(|q| q.finish <= p.finish).map(|q| q.name.as_str()).collect();
+            let records: Vec<_> = ev.records.iter().filter(|r| earlier.contains(r.period.as_str()) && leaf.contains(r.activity.as_str())).collect();
             let sum = |f: fn(&mkperth_core::PeriodRecord) -> i64| records.iter().fold(0i64, |s, r| s.saturating_add(f(r)));
-            let stored = !records.is_empty();
             PeriodPoint {
                 period: p.name.clone(),
                 finish: p.finish,
                 planned: project_earned(project, schedule, p.finish).planned,
                 earned: stored.then(|| sum(|r| r.earned)),
-                actual: stored.then(|| sum(|r| r.actual)),
+                actual: stored.then(|| sum(mkperth_core::PeriodRecord::actual)),
             }
         })
         .collect()

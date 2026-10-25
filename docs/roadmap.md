@@ -191,8 +191,9 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   made by the week or the month and their closes stored; the S-curve. Perth.jl's `_scurve` is
   the oracle (planned and earned on calendar days agree); P6 XML's percent complete, techniques
   and financial periods; the Earned value pane.
-- **Next:** each period's own actuals by kind of cost (labour, non-labour, material, expenses),
-  for P6's `ActivityPeriodActual`; currencies and their exchange rates; WBS milestones as an
+- *Done (#34):* each period's own actuals by kind of cost (labour, non-labour, material,
+  expenses) and units, stored with its close; P6 XML's `ActivityPeriodActual` read and written.
+- **Next:** currencies and their exchange rates; WBS milestones as an
   earned value technique.
 
 ## Classification and the enterprise
