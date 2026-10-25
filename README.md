@@ -38,11 +38,32 @@
   <a href="#license-and-credits">License and credits</a>
 </p>
 
+<p align="center">
+  <img src="docs/images/activities.png" alt="The Activities window: the activity table (ID, name, duration, early and late dates, total and free float) beside the Gantt chart with the critical path in red, a year-end band and a council inspection marker; under it, the Calculation pane showing the selected activity's forward and backward pass step by step" width="100%">
+  <br><sub><b>The Activities window.</b> The table beside the Gantt chart, the critical path in red; under it, the selected activity's dates worked out step by step.</sub>
+</p>
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/earned-value-dark.png" alt="MK Perth in dark mode with the Earned value pane: budget at completion, planned and earned value, actual cost, the variances and indices, the estimates to and at completion, and an S-curve of planned, earned and actual with the data date dashed" width="100%"><p align="center"><sub><b>Earned value, in dark mode.</b> BAC, PV, EV and AC; CPI, SPI, ETC, EAC, VAC and TCPI; the S-curve and the financial periods.</sub></p></td>
+<td width="50%" valign="top"><img src="docs/images/resources.png" alt="The Resources view: a table of resources with their type, unit, calendar and budgeted hours; the selected resource's details, prices and assignments; its work by week as a histogram against its capacity, over-allocated weeks in red" width="100%"><p align="center"><sub><b>Resources.</b> Prices over time, assignments, and the work by week against capacity, over-allocation in red.</sub></p></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/costs-pt-BR.png" alt="MK Perth in Brazilian Portuguese with the Costs pane: the currency, the project's budgeted, actual, remaining and at-completion costs, and the budget month by month as bars" width="100%"><p align="center"><sub><b>Costs, in Português (Brasil).</b> The project's costs and its spending month by month.</sub></p></td>
+<td width="50%" valign="top"><img src="docs/images/calendars-dark.png" alt="MK Perth in dark mode with the Calendars pane: the working week as toggles, the work periods, Brazil's national holidays, days off and days worked; the Calculation pane explains an activity's dates on that calendar" width="100%"><p align="center"><sub><b>Calendars.</b> Working weeks, work periods, national holidays and exceptions; each date's calculation says which calendar placed it.</sub></p></td>
+</tr>
+</table>
+
+<p align="center">
+  <img src="docs/images/splash.png" alt="The splash screen: on the left, on dark ink, MK Perth's hexagonal P mark and name, the motto Festina lente, the tagline, the version and a loading bar, and Powered by the Morrison Kühlsen wordmark; on the right, a schedule's bars cascading down to a milestone on a violet dusk" width="560">
+</p>
+
 ## Why MK Perth
 
 - **Every date with its calculation.** A schedule is only as good as the trust in its dates.
   MK Perth's scheduler is small, documented rule by rule, and each rule lands with networks
-  scheduled by hand; the step-by-step explanation of any activity's dates is on the roadmap.
+  scheduled by hand; any activity's dates are shown step by step (the bounds of each pass, the
+  one that wins, the calendar's placing, the floats), and exported to LaTeX.
 - **Parity measured, not claimed.** The scheduling options of enterprise tools are listed one by
   one in [`docs/scheduling-parity.md`](docs/scheduling-parity.md), each marked done or next.
   Where Perth.jl schedules the same network, its dates are the reference.
@@ -55,17 +76,29 @@
 
 - **The critical path method:** finish-to-start, start-to-start, finish-to-finish and
   start-to-finish relationships with lags and leads; the forward and backward pass; total and
-  free float; critical activities.
-- **Calendars:** worked weekdays, holidays and exceptions; a calendar per activity; the calendar
-  lags count on.
+  free float (finish, start or the smaller); critical at a float threshold or on the longest
+  path; durations and lags in hours on calendars with work periods.
+- **Calendars:** worked weekdays, work periods, Brazil's national holidays, days off and days
+  worked, exception days with hours of their own; a calendar per activity and for lags.
 - **Milestones, constraints and the WBS:** start and finish milestones; start or finish on, on or
   after, on or before, mandatory, as late as possible, a secondary constraint, a must-finish-by
   date; summaries that roll up their children.
+- **Progress:** a data date, actual dates, work left and expected finishes, retained logic or
+  progress override; baselines with their bars and variance columns.
+- **Resources:** labour, equipment and materials with prices over time, roles, assignments,
+  duration types, resource-dependent activities, work by week against capacity, and levelling.
+- **Costs and earned value:** expenses and cost accounts; budgeted, actual, remaining and
+  at-completion costs; the project's and the WBS's budgets with their change log, spending plan
+  and funding; earned value by six techniques, its indices and estimates, financial periods and
+  the S-curve. PERT's three estimates as an analysis.
+- **Every date with its calculation:** the selected activity's dates step by step, exported to
+  LaTeX.
 - **Files:** Perth.jl's projects, read and written back byte for byte; Primavera P6 XML, read and
-  written (WBS, activities, relationships, constraints, calendars).
-
-- **A first window:** the activity table beside the Gantt chart, early and late dates, floats and
-  the critical path, for the sample project or any Perth.jl project.
+  written (calendars, WBS, activities, relationships, constraints, progress, baselines,
+  resources, costs, budgets, earned value).
+- **One engine, every way in:** the window, the command line (`mkperth-cli`) and an MCP server
+  for agents (`mkperth-mcp`) run the same commands, each with undo; English and Português
+  (Brasil), light and dark.
 
 ## Roadmap
 

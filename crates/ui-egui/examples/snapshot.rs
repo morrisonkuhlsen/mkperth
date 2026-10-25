@@ -2,7 +2,7 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang CODE]
-//!  [--select N] [--side details|filters|notes|calendars] [--details general|status|relationships|notes|resources|comments] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--present] [--splash] [--backstage home|new|open|info|export|about] [--view activities|resources] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1;
+//!  [--select N] [--resource N] [--side details|filters|notes|calendars|levelling|pert|baselines|costs|budget|earned] [--details general|status|relationships|notes|resources|comments] [--scale PT_PER_DAY] [--offset DAYS] [--toolbar-hidden] [--present] [--splash] [--backstage home|new|open|info|export|about] [--view activities|resources] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1, `--resource` the resource;
 //!  `--click` clicks what has that accessible name, in order: `--click View --click Theme` opens a submenu)
 
 use egui_kittest::kittest::Queryable as _;
@@ -69,7 +69,13 @@ fn main() -> Result<(), String> {
                     Some("filters") => Some(mkperth_ui_egui::Side::Filters),
                     Some("notes") => Some(mkperth_ui_egui::Side::Notes),
                     Some("calendars") => Some(mkperth_ui_egui::Side::Calendars),
-                    _ => return Err("--side details|filters|notes|calendars".into()),
+                    Some("levelling") => Some(mkperth_ui_egui::Side::Levelling),
+                    Some("pert") => Some(mkperth_ui_egui::Side::Pert),
+                    Some("baselines") => Some(mkperth_ui_egui::Side::Baselines),
+                    Some("costs") => Some(mkperth_ui_egui::Side::Costs),
+                    Some("budget") => Some(mkperth_ui_egui::Side::Budget),
+                    Some("earned") => Some(mkperth_ui_egui::Side::EarnedValue),
+                    _ => return Err("--side details|filters|notes|calendars|levelling|pert|baselines|costs|budget|earned".into()),
                 };
             }
             "--details" => {
@@ -93,6 +99,10 @@ fn main() -> Result<(), String> {
             "--click" => {
                 i += 1;
                 clicks.push(args.get(i).ok_or("--click needs a label")?.clone());
+            }
+            "--resource" => {
+                i += 1;
+                app.resource_selected = args.get(i).and_then(|n| n.parse::<usize>().ok()).and_then(|n| n.checked_sub(1));
             }
             "--select" => {
                 i += 1;
