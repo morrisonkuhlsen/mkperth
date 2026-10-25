@@ -20,21 +20,21 @@ impl PerthApp {
         let mut pending: Option<(&str, Value)> = None;
         let name = &mut self.baseline_name;
         egui::ScrollArea::vertical().id_salt("baselines-pane").auto_shrink(false).show(ui, |ui| {
-            let heading = |ui: &mut egui::Ui, text: String| {
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new(text).size(12.5).color(t.text).strong());
-            };
+            let heading = |ui: &mut egui::Ui, text: String| theme::section(ui, &text);
             heading(ui, tr!("baseline-new"));
-            ui.horizontal(|ui| {
-                let label = ui.label(egui::RichText::new(tr!("baseline-name")).size(12.0).color(t.text_dim));
-                ui.add(egui::TextEdit::singleline(name).desired_width(170.0).hint_text(tr!("baseline-numbered", n = p.baselines.len() + 1)))
-                    .labelled_by(label.id);
+            theme::row(ui, &tr!("baseline-name"), |ui, label| {
+                let hint = tr!("baseline-numbered", n = p.baselines.len() + 1);
+                ui.add(egui::TextEdit::singleline(name).desired_width(theme::fill(ui)).hint_text(hint)).labelled_by(label);
             });
-            if ui.button(tr!("baseline-assign")).on_hover_text(tr!("baseline-assign-tip")).clicked() {
-                let given = name.trim();
-                pending = Some(("baseline.assign", if given.is_empty() { json!({}) } else { json!({ "name": given }) }));
-                name.clear();
-            }
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.add_space(theme::LABEL_WIDTH + ui.spacing().item_spacing.x);
+                if ui.button(tr!("baseline-assign")).on_hover_text(tr!("baseline-assign-tip")).clicked() {
+                    let given = name.trim();
+                    pending = Some(("baseline.assign", if given.is_empty() { json!({}) } else { json!({ "name": given }) }));
+                    name.clear();
+                }
+            });
 
             heading(ui, tr!("baseline-list"));
             if ui.radio(p.baseline().is_none(), tr!("baseline-none")).clicked() && p.baseline_in_use.is_some() {
@@ -46,14 +46,16 @@ impl PerthApp {
                     if ui.radio(on, b.name.as_str()).clicked() && !on {
                         pending = Some(("baseline.use", json!({ "name": b.name })));
                     }
-                    ui.label(egui::RichText::new(tr!("baseline-count", n = b.activities.len())).size(11.5).color(t.text_dim));
-                    if icon_button(ui, Icon::Close, &tr!("baseline-delete", name = b.name.as_str())) {
-                        pending = Some(("baseline.delete", json!({ "name": b.name })));
-                    }
+                    ui.label(egui::RichText::new(tr!("baseline-count", n = b.activities.len())).size(12.0).color(t.text_dim));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if icon_button(ui, Icon::Close, &tr!("baseline-delete", name = b.name.as_str())) {
+                            pending = Some(("baseline.delete", json!({ "name": b.name })));
+                        }
+                    });
                 });
             }
-            ui.add_space(10.0);
-            ui.label(egui::RichText::new(tr!("baseline-help")).size(11.5).color(t.text_dim));
+            ui.add_space(12.0);
+            theme::hint(ui, &tr!("baseline-help"));
         });
         if let Some((command, params)) = pending {
             self.run(command, params);

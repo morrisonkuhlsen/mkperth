@@ -225,3 +225,90 @@ pub fn ghost(ui: &mut egui::Ui, text: &str, tip: &str, enabled: bool) -> bool {
     let response = if tip.is_empty() { response } else { response.on_hover_text(tip) };
     response.clicked()
 }
+
+/// The width of a pane's form labels: one column, so the fields after them line up.
+pub const LABEL_WIDTH: f32 = 118.0;
+
+/// A section of a pane: space above, its title small and quiet in capitals, as panels in
+/// design tools head theirs.
+pub fn section(ui: &mut egui::Ui, title: &str) {
+    let t = Tokens::get(ui.ctx());
+    ui.add_space(10.0);
+    // Drawn in capitals; read out as written.
+    let galley = ui.painter().layout(title.to_uppercase(), egui::FontId::proportional(11.0), t.text_dim, ui.available_width());
+    let (rect, response) = ui.allocate_exact_size(galley.size(), egui::Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, title));
+    ui.painter().galley(rect.min, galley.clone(), t.text_dim);
+    // Strong by drawing twice, half a point apart: the built-in fonts have no bold face.
+    ui.painter().galley(rect.min + egui::vec2(0.4, 0.0), galley, t.text_dim);
+    ui.add_space(2.0);
+}
+
+/// Dim text under a section: what is empty, a line of help.
+pub fn hint(ui: &mut egui::Ui, text: &str) {
+    let t = Tokens::get(ui.ctx());
+    ui.label(egui::RichText::new(text).size(12.0).color(t.text_dim));
+}
+
+/// A form's row: `label` in the label column, then what `add` puts after it, given the label's
+/// id (for `labelled_by`) and filling the rest of the width.
+pub fn row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui, egui::Id) -> R) -> R {
+    let t = Tokens::get(ui.ctx());
+    ui.horizontal(|ui| {
+        ui.set_min_height(24.0);
+        let id = ui
+            .allocate_ui_with_layout(egui::vec2(LABEL_WIDTH, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_width(LABEL_WIDTH);
+                ui.add(egui::Label::new(egui::RichText::new(label).size(12.5).color(t.text_dim)).wrap()).id
+            })
+            .inner;
+        add(ui, id)
+    })
+    .inner
+}
+
+/// An item of a list in a pane: a colour swatch if it has one, its text, quieter detail after
+/// it, and a button to delete it at the row's right edge. True when that button is clicked.
+pub fn list_item(ui: &mut egui::Ui, swatch: Option<Color32>, text: &str, detail: &str, delete: &str) -> bool {
+    let t = Tokens::get(ui.ctx());
+    ui.horizontal(|ui| {
+        ui.set_min_height(22.0);
+        if let Some(color) = swatch {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+            ui.painter().rect_filled(r, 0.0, color);
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let deleted = crate::icon_button(ui, crate::icons::Icon::Close, delete);
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(text).size(12.5).color(t.text)).truncate());
+                if !detail.is_empty() {
+                    ui.add(egui::Label::new(egui::RichText::new(detail).size(12.0).color(t.text_dim)).truncate());
+                }
+            });
+            deleted
+        })
+        .inner
+    })
+    .inner
+}
+
+/// A fact in a pane: its name in the label column, its value at the row's right edge, as
+/// figures line up in a table.
+pub fn fact(ui: &mut egui::Ui, name: &str, value: &str, color: Color32) {
+    row(ui, name, |ui, _| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(egui::RichText::new(value).size(12.5).color(color));
+        });
+    });
+}
+
+/// The space a button under a form's fields leaves on its left, so it starts where they do.
+pub fn under_fields(ui: &mut egui::Ui) {
+    ui.add_space(LABEL_WIDTH + ui.spacing().item_spacing.x);
+}
+
+/// The width a text field or a combo box is given to fill the rest of a row: their frames add
+/// a margin on each side to the width asked for.
+pub fn fill(ui: &egui::Ui) -> f32 {
+    (ui.available_width() - 2.0 * ui.spacing().button_padding.x - 2.0).max(40.0)
+}

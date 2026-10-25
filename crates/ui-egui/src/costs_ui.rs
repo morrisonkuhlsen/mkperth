@@ -2,7 +2,7 @@
 //! currency, the project's costs, its spending month by month and the cost accounts). Every
 //! change is a command, undoable as any other.
 
-use mkperth_engine::core::{Accrual, Date, Project};
+use mkperth_engine::core::{Accrual, Project};
 use mkperth_engine::i18n::{self, Lang, tr};
 use mkperth_engine::sched::{Cost, Schedule};
 use serde_json::{Value, json};
@@ -59,20 +59,15 @@ fn accrual_name(a: Accrual) -> String {
 
 /// An activity's costs, facts in a grid.
 fn cost_facts(ui: &mut egui::Ui, t: &Tokens, c: Cost, currency: &str) {
-    egui::Grid::new("cost-facts").num_columns(2).spacing(egui::vec2(12.0, 4.0)).show(ui, |ui| {
-        for (name, value) in [
-            (tr!("cost-budget"), c.budget),
-            (tr!("cost-actual"), c.actual),
-            (tr!("cost-remaining"), c.remaining),
-            (tr!("cost-at-completion"), c.at_completion()),
-            (tr!("cost-variance"), c.variance()),
-        ] {
-            ui.label(egui::RichText::new(name).size(12.0).color(t.text_dim));
-            let color = if value < 0 { t.red } else { t.text };
-            ui.label(egui::RichText::new(money_text(value, currency)).size(12.5).color(color));
-            ui.end_row();
-        }
-    });
+    for (name, value) in [
+        (tr!("cost-budget"), c.budget),
+        (tr!("cost-actual"), c.actual),
+        (tr!("cost-remaining"), c.remaining),
+        (tr!("cost-at-completion"), c.at_completion()),
+        (tr!("cost-variance"), c.variance()),
+    ] {
+        theme::fact(ui, &name, &money_text(value, currency), if value < 0 { t.red } else { t.text });
+    }
 }
 
 /// Details' Costs tab: the activity's costs, its expenses (the actual typed in place, each
@@ -90,13 +85,12 @@ pub(crate) fn costs_tab(
     if let Some(c) = mkperth_engine::sched::costs(project, schedule).get(i).copied() {
         cost_facts(ui, t, c, &project.currency);
     }
-    ui.add_space(8.0);
-    ui.label(egui::RichText::new(tr!("expenses")).size(12.5).color(t.text).strong());
+    theme::section(ui, &tr!("expenses"));
     let mine: Vec<_> = project.expenses.iter().filter(|e| e.activity == a.id).collect();
     if mine.is_empty() {
-        ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+        theme::hint(ui, &tr!("detail-none"));
     }
-    egui::Grid::new("expenses").striped(true).num_columns(5).spacing(egui::vec2(8.0, 4.0)).show(ui, |ui| {
+    egui::Grid::new("expenses").striped(false).num_columns(5).spacing(egui::vec2(8.0, 4.0)).show(ui, |ui| {
         for e in &mine {
             let name = ui.label(egui::RichText::new(&e.name).size(12.0)).id;
             ui.label(egui::RichText::new(money_text(e.planned, "")).size(12.0));
@@ -123,19 +117,18 @@ pub(crate) fn costs_tab(
             ui.end_row();
         }
     });
-    ui.add_space(6.0);
-    ui.label(egui::RichText::new(tr!("expense-new")).size(12.0).color(t.text_dim));
-    ui.horizontal(|ui| {
-        let l = ui.label(egui::RichText::new(tr!("expense-name")).size(11.5).color(t.text_dim)).id;
-        ui.add(egui::TextEdit::singleline(&mut form.name).desired_width(110.0)).labelled_by(l);
-        let l = ui.label(egui::RichText::new(tr!("cost-budget")).size(11.5).color(t.text_dim)).id;
-        ui.add(egui::TextEdit::singleline(&mut form.planned).desired_width(70.0)).labelled_by(l);
+    theme::section(ui, &tr!("expense-new"));
+    theme::row(ui, &tr!("expense-name"), |ui, l| {
+        ui.add(egui::TextEdit::singleline(&mut form.name).desired_width(theme::fill(ui))).labelled_by(l);
     });
-    ui.horizontal(|ui| {
-        let l = ui.label(egui::RichText::new(tr!("expense-accrual")).size(11.5).color(t.text_dim)).id;
+    theme::row(ui, &tr!("cost-budget"), |ui, l| {
+        ui.add(egui::TextEdit::singleline(&mut form.planned).desired_width(110.0)).labelled_by(l);
+    });
+    theme::row(ui, &tr!("expense-accrual"), |ui, l| {
         egui::ComboBox::from_id_salt("expense-accrual")
             .selected_text(accrual_name(form.accrual))
-            .width(110.0)
+            .width(theme::fill(ui))
+            .truncate()
             .show_ui(ui, |ui| {
                 for x in Accrual::ALL {
                     ui.selectable_value(&mut form.accrual, x, accrual_name(x));
@@ -143,12 +136,14 @@ pub(crate) fn costs_tab(
             })
             .response
             .labelled_by(l);
-        if !project.cost_accounts.is_empty() {
-            let l = ui.label(egui::RichText::new(tr!("expense-account")).size(11.5).color(t.text_dim)).id;
+    });
+    if !project.cost_accounts.is_empty() {
+        theme::row(ui, &tr!("expense-account"), |ui, l| {
             let shown = if form.account.is_empty() { tr!("expense-no-account") } else { form.account.clone() };
             egui::ComboBox::from_id_salt("expense-account")
                 .selected_text(shown)
-                .width(90.0)
+                .width(theme::fill(ui))
+                .truncate()
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut form.account, String::new(), tr!("expense-no-account"));
                     for c in &project.cost_accounts {
@@ -157,19 +152,23 @@ pub(crate) fn costs_tab(
                 })
                 .response
                 .labelled_by(l);
+        });
+    }
+    ui.add_space(4.0);
+    let planned = read_money(&form.planned);
+    ui.horizontal(|ui| {
+        theme::under_fields(ui);
+        if ui.add_enabled(!form.name.trim().is_empty() && planned.is_some(), egui::Button::new(tr!("expense-add"))).clicked() {
+            let mut params = json!({"activity": a.id, "name": form.name.trim(), "planned": planned, "accrual": form.accrual.code()});
+            if !form.account.is_empty()
+                && let Some(m) = params.as_object_mut()
+            {
+                m.insert("account".into(), json!(form.account));
+            }
+            pending = Some(("expense.add", params));
+            *form = ExpenseForm::default();
         }
     });
-    let planned = read_money(&form.planned);
-    if ui.add_enabled(!form.name.trim().is_empty() && planned.is_some(), egui::Button::new(tr!("expense-add"))).clicked() {
-        let mut params = json!({"activity": a.id, "name": form.name.trim(), "planned": planned, "accrual": form.accrual.code()});
-        if !form.account.is_empty()
-            && let Some(m) = params.as_object_mut()
-        {
-            m.insert("account".into(), json!(form.account));
-        }
-        pending = Some(("expense.add", params));
-        *form = ExpenseForm::default();
-    }
     pending
 }
 
@@ -196,14 +195,10 @@ impl PerthApp {
         let form = &mut self.costs_form;
         let mut pending: Option<(&str, Value)> = None;
         egui::ScrollArea::vertical().id_salt("costs-pane").auto_shrink(false).show(ui, |ui| {
-            let heading = |ui: &mut egui::Ui, text: String| {
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new(text).size(12.5).color(t.text).strong());
-            };
-            ui.horizontal(|ui| {
-                let l = ui.label(egui::RichText::new(tr!("cost-currency")).size(12.0).color(t.text_dim)).id;
+            let heading = |ui: &mut egui::Ui, text: String| theme::section(ui, &text);
+            theme::row(ui, &tr!("cost-currency"), |ui, l| {
                 let mut text = form.currency.clone().unwrap_or_else(|| p.currency.clone());
-                let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(50.0).hint_text("R$")).labelled_by(l);
+                let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(70.0).hint_text("R$")).labelled_by(l);
                 if r.lost_focus() {
                     if text.trim() != p.currency {
                         pending = Some(("project.options", json!({"currency": text.trim()})));
@@ -218,35 +213,31 @@ impl PerthApp {
                 cost_facts(ui, &t, mkperth_engine::sched::project_cost(p, s), &p.currency);
                 // The budget month by month: the spending plan.
                 heading(ui, tr!("cost-by-month"));
-                let mut months: Vec<(Date, i64)> = Vec::new();
-                for (d, c) in mkperth_engine::sched::spending(p, s) {
-                    let (y, m, _) = d.ymd();
-                    let first = Date::from_ymd(y, m, 1).unwrap_or(d);
-                    match months.last_mut() {
-                        Some((at, sum)) if *at == first => *sum += c,
-                        _ => months.push((first, c)),
-                    }
-                }
+                let months = mkperth_engine::sched::spending_by_month(p, s);
                 if months.is_empty() {
-                    ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+                    theme::hint(ui, &tr!("detail-none"));
                 }
                 let most = months.iter().map(|(_, c)| *c).max().unwrap_or(1).max(1);
-                egui::Grid::new("cost-months").num_columns(3).spacing(egui::vec2(10.0, 3.0)).show(ui, |ui| {
-                    for (m, c) in &months {
-                        let (y, n, _) = m.ymd();
-                        ui.label(egui::RichText::new(format!("{} {y}", tr!(&format!("month-{n}")))).size(12.0).color(t.text_dim));
-                        let (rect, _) = ui.allocate_exact_size(egui::vec2(90.0, 10.0), egui::Sense::hover());
+                for (m, c) in &months {
+                    let (y, n, _) = m.ymd();
+                    theme::row(ui, &format!("{} {y}", tr!(&format!("month-{n}"))), |ui, _| {
+                        // The amount at the right edge, the bar in the space before it.
+                        let amount = money_text(*c, &p.currency);
+                        let galley = ui.painter().layout_no_wrap(amount, egui::FontId::proportional(12.5), t.text);
+                        let bar_width = (ui.available_width() - galley.size().x - 12.0).max(10.0);
+                        let (rect, _) = ui.allocate_exact_size(egui::vec2(bar_width, 10.0), egui::Sense::hover());
                         let w = rect.width() * (*c as f32 / most as f32);
                         ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::vec2(w, rect.height())), 0.0, crate::splash::BRAND);
-                        ui.label(egui::RichText::new(money_text(*c, &p.currency)).size(12.0));
-                        ui.end_row();
-                    }
-                });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(egui::RichText::new(galley.text()).size(12.5).color(t.text));
+                        });
+                    });
+                }
             }
 
             heading(ui, tr!("cost-accounts"));
             if p.cost_accounts.is_empty() {
-                ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+                theme::hint(ui, &tr!("detail-none"));
             }
             // In their hierarchy: each under its parent, indented.
             let depth = |id: &str| {
@@ -260,25 +251,26 @@ impl PerthApp {
             for c in &p.cost_accounts {
                 ui.horizontal(|ui| {
                     ui.add_space(depth(&c.id) as f32 * 14.0);
-                    ui.label(egui::RichText::new(format!("{} · {}", c.id, c.name)).size(12.0));
-                    if icon_button(ui, Icon::Close, &tr!("cost-account-delete", id = c.id.as_str())) {
-                        pending = Some(("cost-account.delete", json!({"id": c.id})));
-                    }
+                    ui.vertical(|ui| {
+                        if theme::list_item(ui, None, &c.id, &c.name, &tr!("cost-account-delete", id = c.id.as_str())) {
+                            pending = Some(("cost-account.delete", json!({"id": c.id})));
+                        }
+                    });
                 });
             }
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                let l = ui.label(egui::RichText::new(tr!("cost-account-id")).size(11.5).color(t.text_dim)).id;
-                ui.add(egui::TextEdit::singleline(&mut form.id).desired_width(50.0)).labelled_by(l);
-                let l = ui.label(egui::RichText::new(tr!("cost-account-name")).size(11.5).color(t.text_dim)).id;
-                ui.add(egui::TextEdit::singleline(&mut form.name).desired_width(110.0)).labelled_by(l);
+            heading(ui, tr!("cost-account-new"));
+            theme::row(ui, &tr!("cost-account-id"), |ui, l| {
+                ui.add(egui::TextEdit::singleline(&mut form.id).desired_width(80.0)).labelled_by(l);
             });
-            ui.horizontal(|ui| {
-                let l = ui.label(egui::RichText::new(tr!("cost-account-parent")).size(11.5).color(t.text_dim)).id;
+            theme::row(ui, &tr!("cost-account-name"), |ui, l| {
+                ui.add(egui::TextEdit::singleline(&mut form.name).desired_width(theme::fill(ui))).labelled_by(l);
+            });
+            theme::row(ui, &tr!("cost-account-parent"), |ui, l| {
                 let shown = if form.parent.is_empty() { tr!("expense-no-account") } else { form.parent.clone() };
                 egui::ComboBox::from_id_salt("cost-account-parent")
                     .selected_text(shown)
-                    .width(90.0)
+                    .width(theme::fill(ui))
+                    .truncate()
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut form.parent, String::new(), tr!("expense-no-account"));
                         for c in &p.cost_accounts {
@@ -287,6 +279,10 @@ impl PerthApp {
                     })
                     .response
                     .labelled_by(l);
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                theme::under_fields(ui);
                 if ui.add_enabled(!form.id.trim().is_empty() && !form.name.trim().is_empty(), egui::Button::new(tr!("cost-account-add"))).clicked() {
                     let parent = (!form.parent.is_empty()).then(|| form.parent.clone());
                     pending = Some(("cost-account.add", json!({"id": form.id.trim(), "name": form.name.trim(), "parent": parent})));

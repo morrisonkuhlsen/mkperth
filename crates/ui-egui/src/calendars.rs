@@ -7,7 +7,7 @@ use mkperth_engine::i18n::tr;
 use serde_json::json;
 
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme;
 use crate::{PerthApp, date_field, icon_button, show_date};
 
 /// What the Calendars pane is editing: the calendar (empty for the project's own), the work
@@ -54,7 +54,6 @@ fn day_periods(c: &Calendar) -> Vec<Period> {
 
 impl PerthApp {
     pub(crate) fn calendars_pane(&mut self, ui: &mut egui::Ui) {
-        let t = Tokens::get(ui.ctx());
         if theme::pane_header(ui, Icon::Calendar, &tr!("pane-calendars"), &tr!("pane-calendars-tip"), |ui| {
             icon_button(ui, Icon::ChevronRight, &tr!("pane-close"))
         }) {
@@ -80,14 +79,10 @@ impl PerthApp {
         };
         let form = &mut self.calendar_form;
         egui::ScrollArea::vertical().id_salt("calendars-pane").auto_shrink(false).show(ui, |ui| {
-            let heading = |ui: &mut egui::Ui, text: String| {
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new(text).size(12.5).color(t.text).strong());
-            };
             // Which calendar.
-            let label = ui.label(egui::RichText::new(tr!("calendar-which")).size(12.0).color(t.text_dim));
+            theme::section(ui, &tr!("calendar-which"));
             let shown = if own { tr!("calendar-project", name = calendar.name.as_str()) } else { calendar.name.clone() };
-            let combo = egui::ComboBox::from_id_salt("calendar-which").selected_text(shown).width(260.0).show_ui(ui, |ui| {
+            let combo = egui::ComboBox::from_id_salt("calendar-which").selected_text(shown).width(theme::fill(ui)).truncate().show_ui(ui, |ui| {
                 for (k, name) in names.iter().enumerate() {
                     let text = if k == 0 { tr!("calendar-project", name = name.as_str()) } else { name.clone() };
                     let chosen = if k == 0 { String::new() } else { name.clone() };
@@ -96,14 +91,17 @@ impl PerthApp {
                     }
                 }
             });
-            combo.response.labelled_by(label.id);
+            combo.response.on_hover_text(tr!("calendar-which"));
 
-            heading(ui, tr!("calendar-week"));
+            // The week: seven toggles sharing the width.
+            theme::section(ui, &tr!("calendar-week"));
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 3.0;
+                let gap = 3.0;
+                ui.spacing_mut().item_spacing.x = gap;
+                let width = ((ui.available_width() - 6.0 * gap) / 7.0).floor().max(24.0);
                 for day in 0..7 {
                     let on = calendar.week.get(day).copied().unwrap_or(false);
-                    if ui.selectable_label(on, tr!(&format!("weekday-{}", day + 1))).clicked() {
+                    if ui.add_sized(egui::vec2(width, 24.0), egui::Button::selectable(on, tr!(&format!("weekday-{}", day + 1)))).clicked() {
                         let mut week = calendar.week;
                         if let Some(d) = week.get_mut(day) {
                             *d = !on;
@@ -113,13 +111,12 @@ impl PerthApp {
                 }
             });
 
-            heading(ui, tr!("calendar-periods"));
+            theme::section(ui, &tr!("calendar-periods"));
             let periods = day_periods(&calendar);
             // The text typed for this calendar and these periods, else theirs.
             let typed = form.periods.as_ref().filter(|(name, was, _)| *name == calendar.name && *was == periods).map(|(_, _, text)| text.clone());
             let mut text = typed.unwrap_or_else(|| periods_text(&periods));
-            let label = ui.label(egui::RichText::new(tr!("calendar-periods-tip")).size(11.5).color(t.text_dim));
-            let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(260.0)).labelled_by(label.id);
+            let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(theme::fill(ui))).on_hover_text(tr!("calendar-periods-tip"));
             if response.lost_focus() {
                 form.periods = None;
                 match read_periods(&text) {
@@ -131,9 +128,9 @@ impl PerthApp {
                 form.periods = Some((calendar.name.clone(), periods.clone(), text));
             }
             let minutes: u32 = periods.iter().map(|(a, b)| u32::from(b.saturating_sub(*a))).sum();
-            ui.label(egui::RichText::new(tr!("calendar-hours", hours = f64::from(minutes) / 60.0)).size(12.0).color(t.text_dim));
+            theme::hint(ui, &format!("{} · {}", tr!("calendar-hours", hours = f64::from(minutes) / 60.0), tr!("calendar-periods-tip")));
 
-            heading(ui, tr!("calendar-region"));
+            theme::section(ui, &tr!("calendar-region"));
             let mut brazil = calendar.region == Some(Region::Brazil);
             if ui.checkbox(&mut brazil, tr!("calendar-brazil")).on_hover_text(tr!("calendar-brazil-tip")).clicked() {
                 edit(json!({"region": if brazil { json!("brazil") } else { json!(null) }}));
@@ -144,21 +141,17 @@ impl PerthApp {
                 (tr!("calendar-holidays"), &calendar.holidays, &mut form.holiday, "holidays_add", "holidays_remove", "calendar-holiday"),
                 (tr!("calendar-worked"), &calendar.extra_days, &mut form.worked, "worked_add", "worked_remove", "calendar-worked"),
             ] {
-                heading(ui, title);
+                theme::section(ui, &title);
                 if list.is_empty() {
-                    ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+                    theme::hint(ui, &tr!("detail-none"));
                 }
                 for d in list {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(show_date(*d)).size(12.0).color(t.text));
-                        if icon_button(ui, Icon::Close, &tr!("calendar-remove-day")) {
-                            edit(json!({remove: [d.to_string()]}));
-                        }
-                    });
+                    if theme::list_item(ui, None, &show_date(*d), "", &tr!("calendar-remove-day")) {
+                        edit(json!({remove: [d.to_string()]}));
+                    }
                 }
-                ui.horizontal(|ui| {
-                    let label = ui.label(egui::RichText::new(tr!("notes-date")).size(12.0).color(t.text_dim)).id;
-                    if let Some(d) = date_field(ui, egui::Id::unique(id), label, *field, 100.0) {
+                theme::row(ui, &tr!("notes-date"), |ui, label| {
+                    if let Some(d) = date_field(ui, egui::Id::unique(id), label, *field, 96.0) {
                         *field = d;
                     }
                     if ui.add_enabled(field.is_some(), egui::Button::new(tr!("notes-add"))).clicked()

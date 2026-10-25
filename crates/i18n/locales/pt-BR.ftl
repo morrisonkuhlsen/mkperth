@@ -73,6 +73,7 @@ cost-currency = Moeda
 cost-project = O projeto
 cost-by-month = Orçado por mês
 cost-accounts = Contas de custo
+cost-account-new = Nova conta de custo
 cost-account-id = ID
 cost-account-name = Nome
 cost-account-parent = Sob

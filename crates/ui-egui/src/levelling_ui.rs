@@ -69,13 +69,8 @@ impl PerthApp {
             p.resources.iter().filter(|r| r.kind != ResourceKind::Material).map(|r| (r.id.clone(), r.name.clone())).collect();
         let (mut level, mut clear, mut pick) = (false, false, None);
         egui::ScrollArea::vertical().id_salt("levelling-pane").auto_shrink(false).show(ui, |ui| {
-            let heading = |ui: &mut egui::Ui, text: String| {
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new(text).size(12.5).color(t.text).strong());
-            };
-            let dim = |ui: &mut egui::Ui, text: String| {
-                ui.label(egui::RichText::new(text).size(12.0).color(t.text_dim));
-            };
+            let heading = |ui: &mut egui::Ui, text: String| theme::section(ui, &text);
+            let dim = |ui: &mut egui::Ui, text: String| theme::hint(ui, &text);
             // What is over its limit now, resource by resource.
             heading(ui, tr!("level-over"));
             if over.is_empty() {

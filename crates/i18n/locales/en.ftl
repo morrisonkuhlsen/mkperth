@@ -73,6 +73,7 @@ cost-currency = Currency
 cost-project = The project
 cost-by-month = Budget by month
 cost-accounts = Cost accounts
+cost-account-new = New cost account
 cost-account-id = ID
 cost-account-name = Name
 cost-account-parent = Under

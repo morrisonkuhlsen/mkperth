@@ -25,9 +25,10 @@ const CHANCES: [(u8, f64); 4] = [(50, 0.0), (80, 0.841_621), (90, 1.281_552), (9
 pub(crate) fn pert_fields(ui: &mut egui::Ui, a: &Activity) -> Option<Value> {
     let t = Tokens::get(ui.ctx());
     let mut out = None;
-    ui.horizontal(|ui| {
-        let label = ui.add_sized(egui::vec2(120.0, 18.0), egui::Label::new(egui::RichText::new(tr!("detail-pert")).size(12.0).color(t.text_dim)));
-        label.on_hover_text(tr!("detail-pert-tip"));
+    theme::row(ui, &tr!("detail-pert"), |ui, _| {
+        // Three short fields sharing the row, each after its letter.
+        let gap = ui.spacing().item_spacing.x;
+        let width = ((ui.available_width() - 3.0 * (12.0 + 2.0 * gap)) / 3.0 - 2.0 * ui.spacing().button_padding.x).floor().max(28.0);
         let now = a.pert.map(|p| [p.optimistic, p.most_likely, p.pessimistic]);
         let mut texts: [String; 3] = std::array::from_fn(|k| now.and_then(|n| n.get(k).copied()).map(days).unwrap_or_default());
         let mut left = false;
@@ -43,9 +44,9 @@ pub(crate) fn pert_fields(ui: &mut egui::Ui, a: &Activity) -> Option<Value> {
             {
                 *slot = typed;
             }
-            let name = ui.label(egui::RichText::new(short).size(11.5).color(t.text_dim)).on_hover_text(tip);
+            let name = ui.label(egui::RichText::new(short).size(11.5).color(t.text_dim)).on_hover_text(format!("{tip} · {}", tr!("detail-pert-tip")));
             let Some(text) = texts.get_mut(k) else { continue };
-            let response = ui.add(egui::TextEdit::singleline(text).desired_width(38.0)).labelled_by(name.id);
+            let response = ui.add(egui::TextEdit::singleline(text).desired_width(width)).labelled_by(name.id);
             // Kept while the three are being typed, until they are read.
             left |= response.lost_focus();
             if response.changed() || response.has_focus() || response.lost_focus() {
@@ -113,21 +114,13 @@ impl PerthApp {
         let mut target = self.pert_target;
         let mut pick = None;
         egui::ScrollArea::vertical().id_salt("pert-pane").auto_shrink(false).show(ui, |ui| {
-            let heading = |ui: &mut egui::Ui, text: String| {
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new(text).size(12.5).color(t.text).strong());
-            };
-            let fact = |ui: &mut egui::Ui, name: String, value: String| {
-                ui.horizontal(|ui| {
-                    ui.add_sized(egui::vec2(150.0, 18.0), egui::Label::new(egui::RichText::new(name).size(12.0).color(t.text_dim)));
-                    ui.label(egui::RichText::new(value).size(12.5).color(t.text));
-                });
-            };
-            ui.label(egui::RichText::new(tr!("pert-only-analysis")).size(11.5).color(t.text_dim));
+            let heading = |ui: &mut egui::Ui, text: String| theme::section(ui, &text);
+            let fact = |ui: &mut egui::Ui, name: String, value: String| theme::fact(ui, &name, &value, t.text);
+            theme::hint(ui, &tr!("pert-only-analysis"));
             let a = match analysis {
                 None => {
                     ui.add_space(6.0);
-                    ui.label(egui::RichText::new(tr!("pert-none")).size(12.0).color(t.text_dim));
+                    theme::hint(ui, &tr!("pert-none"));
                     return;
                 }
                 Some(Err(e)) => {
@@ -142,9 +135,8 @@ impl PerthApp {
             fact(ui, tr!("pert-expected-duration"), tr!("pert-days-sigma", t = a.expected_days, sigma = format!("{:.1}", a.sigma).as_str()));
 
             heading(ui, tr!("pert-chance-by"));
-            ui.horizontal(|ui| {
-                let label = ui.label(egui::RichText::new(tr!("pert-target")).size(12.0).color(t.text_dim));
-                if let Some(d) = date_field(ui, egui::Id::unique("pert-target"), label.id, Some(target.unwrap_or(a.planned_finish)), 100.0) {
+            theme::row(ui, &tr!("pert-target"), |ui, label| {
+                if let Some(d) = date_field(ui, egui::Id::unique("pert-target"), label, Some(target.unwrap_or(a.planned_finish)), 110.0) {
                     target = d;
                 }
             });
@@ -162,7 +154,7 @@ impl PerthApp {
             }
 
             heading(ui, tr!("pert-path"));
-            egui::Grid::new("pert-path").striped(true).spacing(egui::vec2(10.0, 4.0)).show(ui, |ui| {
+            egui::Grid::new("pert-path").striped(false).spacing(egui::vec2(10.0, 4.0)).show(ui, |ui| {
                 for head in ["col-id", "pert-o", "pert-m", "pert-p", "pert-te", "pert-sigma"] {
                     ui.label(egui::RichText::new(tr!(head)).size(11.5).color(t.header_text).strong());
                 }

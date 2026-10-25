@@ -1332,11 +1332,7 @@ impl PerthApp {
             }
         };
         let fact = |ui: &mut egui::Ui, name: String, value: String| {
-            ui.horizontal(|ui| {
-                ui.add_sized(egui::vec2(120.0, 18.0), egui::Label::new(egui::RichText::new(name).size(12.0).color(t.text_dim)));
-                ui.label(egui::RichText::new(value).size(12.5).color(t.text));
-            });
-            ui.add_space(3.0);
+            theme::row(ui, &name, |ui, _| ui.add(egui::Label::new(egui::RichText::new(value).size(12.5).color(t.text)).truncate()));
         };
         let mut pending: Option<(&str, serde_json::Value)> = None;
         let day = self.day_minutes_of(i);
@@ -1379,53 +1375,49 @@ impl PerthApp {
                     if !summary && !a.kind.is_milestone() {
                         fact(ui, tr!("detail-duration"), tr!("detail-days", n = days_text(a.working_minutes(day), day).as_str()));
                         // What follows when its duration, its units or their units an hour change.
-                        ui.horizontal(|ui| {
-                            let label = ui.add_sized(
-                                egui::vec2(120.0, 18.0),
-                                egui::Label::new(egui::RichText::new(tr!("detail-duration-type")).size(12.0).color(t.text_dim)),
-                            );
+                        theme::row(ui, &tr!("detail-duration-type"), |ui, label| {
                             let name = |d: mkperth_engine::core::DurationType| tr!(&format!("duration-type-{}", d.code()));
                             let mut chosen = a.duration_type;
-                            let combo = egui::ComboBox::from_id_salt("duration-type").selected_text(name(chosen)).width(190.0).show_ui(ui, |ui| {
-                                for d in mkperth_engine::core::DurationType::ALL {
-                                    ui.selectable_value(&mut chosen, d, name(d)).on_hover_text(tr!(&format!("duration-type-{}-tip", d.code())));
-                                }
-                            });
-                            combo.response.labelled_by(label.id);
+                            let combo = egui::ComboBox::from_id_salt("duration-type")
+                                .selected_text(name(chosen))
+                                .width(theme::fill(ui))
+                                .truncate()
+                                .show_ui(ui, |ui| {
+                                    for d in mkperth_engine::core::DurationType::ALL {
+                                        ui.selectable_value(&mut chosen, d, name(d)).on_hover_text(tr!(&format!("duration-type-{}-tip", d.code())));
+                                    }
+                                });
+                            combo.response.labelled_by(label);
                             if chosen != a.duration_type {
                                 pending = Some(("activity.edit", json!({"id": a.id, "duration_type": chosen.code()})));
                             }
                         });
-                        ui.add_space(3.0);
                         // Its resources each on their own calendar, finishing with the last.
                         ui.horizontal(|ui| {
-                            ui.add_space(124.0);
+                            theme::under_fields(ui);
                             let mut on = a.resource_dependent;
                             if ui.checkbox(&mut on, tr!("detail-resource-dependent")).on_hover_text(tr!("detail-resource-dependent-tip")).clicked() {
                                 pending = Some(("activity.edit", json!({"id": a.id, "resource_dependent": on})));
                             }
                         });
-                        ui.add_space(3.0);
                         // Which of two activities keeps a resource both want when levelling.
-                        ui.horizontal(|ui| {
-                            let label = ui.add_sized(
-                                egui::vec2(120.0, 18.0),
-                                egui::Label::new(egui::RichText::new(tr!("detail-levelling-priority")).size(12.0).color(t.text_dim)),
-                            );
+                        theme::row(ui, &tr!("detail-levelling-priority"), |ui, label| {
                             let name = |l: mkperth_engine::core::LevellingPriority| tr!(&format!("levelling-priority-{}", l.code()));
                             let mut chosen = a.levelling_priority;
-                            let combo =
-                                egui::ComboBox::from_id_salt("levelling-priority").selected_text(name(chosen)).width(190.0).show_ui(ui, |ui| {
+                            let combo = egui::ComboBox::from_id_salt("levelling-priority")
+                                .selected_text(name(chosen))
+                                .width(theme::fill(ui))
+                                .truncate()
+                                .show_ui(ui, |ui| {
                                     for l in mkperth_engine::core::LevellingPriority::ALL {
                                         ui.selectable_value(&mut chosen, l, name(l));
                                     }
                                 });
-                            combo.response.labelled_by(label.id).on_hover_text(tr!("detail-levelling-priority-tip"));
+                            combo.response.labelled_by(label).on_hover_text(tr!("detail-levelling-priority-tip"));
                             if chosen != a.levelling_priority {
                                 pending = Some(("activity.edit", json!({"id": a.id, "levelling_priority": chosen.code()})));
                             }
                         });
-                        ui.add_space(3.0);
                         // PERT's three estimates, for the analysis only.
                         if let Some(v) = pert_ui::pert_fields(ui, a) {
                             pending = Some(("activity.edit", json!({"id": a.id, "pert": v})));
@@ -1460,22 +1452,15 @@ impl PerthApp {
                             fields.push((tr!("detail-expected-finish"), "expected_finish", a.expected_finish));
                         }
                         for (name, key, value) in fields {
-                            ui.horizontal(|ui| {
-                                let label =
-                                    ui.add_sized(egui::vec2(120.0, 18.0), egui::Label::new(egui::RichText::new(name).size(12.0).color(t.text_dim)));
-                                if let Some(d) = date_field(ui, ui.scope_id().with((key, i)), label.id, value, 100.0) {
+                            theme::row(ui, &name, |ui, label| {
+                                if let Some(d) = date_field(ui, ui.scope_id().with((key, i)), label, value, 100.0) {
                                     pending = Some(("activity.edit", json!({"id": a.id, key: d.map(|d| d.to_string())})));
                                 }
                             });
-                            ui.add_space(3.0);
                         }
                         if a.actual_start.is_some() && a.actual_finish.is_none() {
                             let left = scheduled.map_or(0, |s| s.remaining_minutes);
-                            ui.horizontal(|ui| {
-                                ui.add_sized(
-                                    egui::vec2(120.0, 18.0),
-                                    egui::Label::new(egui::RichText::new(tr!("detail-remaining")).size(12.0).color(t.text_dim)),
-                                );
+                            theme::row(ui, &tr!("detail-remaining"), |ui, _| {
                                 let mut days = left as f64 / day.max(1) as f64;
                                 let response = ui.add(
                                     egui::DragValue::new(&mut days)
@@ -1494,7 +1479,6 @@ impl PerthApp {
                                     }
                                 }
                             });
-                            ui.add_space(3.0);
                         }
                     }
                     if let Some(s) = scheduled {
@@ -1683,33 +1667,42 @@ impl PerthApp {
 
     /// The Filters pane: find by ID or name, critical only, late bars.
     fn filters(&mut self, ui: &mut egui::Ui) {
-        let t = Tokens::get(ui.ctx());
         if theme::pane_header(ui, Icon::Filter, &tr!("filters"), "", |ui| icon_button(ui, Icon::ChevronRight, &tr!("pane-close"))) {
             self.side = None;
         }
-        ui.spacing_mut().item_spacing.y = 6.0;
         let count = usize::from(self.options.critical_only) + usize::from(!self.options.search.trim().is_empty());
-        ui.label(egui::RichText::new(tr!("filter-search")).size(12.0).color(t.text_dim));
-        ui.add(egui::TextEdit::singleline(&mut self.options.search).hint_text(tr!("filter-search-hint")).desired_width(f32::INFINITY));
-        ui.add_space(4.0);
-        ui.checkbox(&mut self.options.critical_only, tr!("critical-only"));
-        ui.checkbox(&mut self.options.late_bars, tr!("late-bars"));
-        ui.checkbox(&mut self.options.links, tr!("links"));
-        if count > 0 && ui.button(tr!("filters-clear")).clicked() {
-            self.options.critical_only = false;
-            self.options.search.clear();
-        }
-        // The table's columns: the ID and the name stay.
-        ui.add_space(8.0);
-        ui.label(egui::RichText::new(tr!("filter-columns")).size(12.0).color(t.text_dim));
-        for (k, (id, _)) in activities::COLUMNS.iter().enumerate().skip(2) {
-            if let Some(hidden) = self.options.hidden.get_mut(k) {
-                let mut shown = !*hidden;
-                if ui.checkbox(&mut shown, tr!(id)).changed() {
-                    *hidden = !shown;
+        let options = &mut self.options;
+        egui::ScrollArea::vertical().id_salt("filters-pane").auto_shrink(false).show(ui, |ui| {
+            theme::section(ui, &tr!("filter-search"));
+            ui.add(egui::TextEdit::singleline(&mut options.search).hint_text(tr!("filter-search-hint")).desired_width(theme::fill(ui)));
+            theme::section(ui, &tr!("group-show"));
+            ui.checkbox(&mut options.critical_only, tr!("critical-only"));
+            ui.checkbox(&mut options.late_bars, tr!("late-bars"));
+            ui.checkbox(&mut options.links, tr!("links"));
+            if count > 0 {
+                ui.add_space(4.0);
+                if ui.button(tr!("filters-clear")).clicked() {
+                    options.critical_only = false;
+                    options.search.clear();
                 }
             }
-        }
+            // The table's columns, two to a row: the ID and the name stay.
+            theme::section(ui, &tr!("filter-columns"));
+            let half = (ui.available_width() / 2.0).floor();
+            egui::Grid::new("filter-columns").striped(false).num_columns(2).min_col_width(half - 8.0).spacing(egui::vec2(8.0, 4.0)).show(ui, |ui| {
+                for (n, (k, (id, _))) in activities::COLUMNS.iter().enumerate().skip(2).enumerate() {
+                    if let Some(hidden) = options.hidden.get_mut(k) {
+                        let mut shown = !*hidden;
+                        if ui.checkbox(&mut shown, tr!(id)).changed() {
+                            *hidden = !shown;
+                        }
+                    }
+                    if n % 2 == 1 {
+                        ui.end_row();
+                    }
+                }
+            });
+        });
     }
 
     /// The chart's notes: each kind listed with a button to delete it, and a form for a new one.
@@ -1721,99 +1714,75 @@ impl PerthApp {
         }
         let p = &self.session.project;
         let mut pending: Option<(&str, serde_json::Value)> = None;
-        let swatch = |ui: &mut egui::Ui, color: egui::Color32| {
-            let (r, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-            ui.painter().rect_filled(r, 0.0, color);
-        };
         let hex = |h: &str, fallback: egui::Color32| activities::note_color(h, fallback);
         egui::ScrollArea::vertical().id_salt("notes-pane").auto_shrink(false).show(ui, |ui| {
-            let heading = |ui: &mut egui::Ui, text: String| {
-                ui.add_space(6.0);
-                ui.label(egui::RichText::new(text).size(12.5).color(t.text).strong());
-            };
-            heading(ui, tr!("notes-bands"));
+            theme::section(ui, &tr!("notes-bands"));
             if p.bands.is_empty() {
-                ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+                theme::hint(ui, &tr!("detail-none"));
             }
             for (k, b) in p.bands.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    swatch(ui, hex(&b.color, t.blue));
-                    ui.label(egui::RichText::new(format!("{}  {} – {}", b.name, show_date(b.from), show_date(b.to))).size(12.0).color(t.text));
-                    if icon_button(ui, Icon::Close, &tr!("notes-delete")) {
-                        pending = Some(("band.delete", json!({"index": k})));
-                    }
-                });
+                let when = format!("{} – {}", show_date(b.from), show_date(b.to));
+                if theme::list_item(ui, Some(hex(&b.color, t.blue)), &b.name, &when, &tr!("notes-delete")) {
+                    pending = Some(("band.delete", json!({"index": k})));
+                }
             }
-            heading(ui, tr!("notes-markers"));
+            theme::section(ui, &tr!("notes-markers"));
             if p.markers.is_empty() {
-                ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+                theme::hint(ui, &tr!("detail-none"));
             }
             for (k, m) in p.markers.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    swatch(ui, hex(&m.color, t.orange));
-                    ui.label(egui::RichText::new(format!("{}  {}", m.name, show_date(m.date))).size(12.0).color(t.text));
-                    if icon_button(ui, Icon::Close, &tr!("notes-delete")) {
-                        pending = Some(("marker.delete", json!({"index": k})));
-                    }
-                });
+                if theme::list_item(ui, Some(hex(&m.color, t.orange)), &m.name, &show_date(m.date), &tr!("notes-delete")) {
+                    pending = Some(("marker.delete", json!({"index": k})));
+                }
             }
-            heading(ui, tr!("notes-months"));
+            theme::section(ui, &tr!("notes-months"));
             if p.month_marks.is_empty() {
-                ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+                theme::hint(ui, &tr!("detail-none"));
             }
             for (k, m) in p.month_marks.iter().enumerate() {
                 let (y, month, _) = m.month.ymd();
-                ui.horizontal(|ui| {
-                    swatch(ui, hex(&m.color, t.red));
-                    let name = if m.name.is_empty() { String::new() } else { format!(" · {}", m.name) };
-                    ui.label(egui::RichText::new(format!("{} {y}{name}", tr!(&format!("month-{month}")))).size(12.0).color(t.text));
-                    if icon_button(ui, Icon::Close, &tr!("notes-delete")) {
-                        pending = Some(("month-mark.delete", json!({"index": k})));
-                    }
-                });
+                let when = format!("{} {y}", tr!(&format!("month-{month}")));
+                if theme::list_item(ui, Some(hex(&m.color, t.red)), &when, &m.name, &tr!("notes-delete")) {
+                    pending = Some(("month-mark.delete", json!({"index": k})));
+                }
             }
-            // A new note.
-            ui.add_space(10.0);
+            // A new note: its kind, then a form whose fields line up after their labels.
+            ui.add_space(8.0);
             ui.separator();
-            ui.label(egui::RichText::new(tr!("notes-new")).size(12.5).color(t.text).strong());
+            theme::section(ui, &tr!("notes-new"));
             let f = &mut self.note_form;
             ui.horizontal(|ui| {
                 for (k, name) in [(0u8, tr!("notes-band")), (1, tr!("notes-marker")), (2, tr!("notes-month"))] {
                     ui.selectable_value(&mut f.kind, k, name);
                 }
             });
-            let row = |ui: &mut egui::Ui, name: String| {
-                ui.add_sized(egui::vec2(70.0, 18.0), egui::Label::new(egui::RichText::new(name).size(12.0).color(t.text_dim))).id
-            };
-            ui.horizontal(|ui| {
-                let label = row(ui, tr!("notes-name"));
-                ui.add(egui::TextEdit::singleline(&mut f.name).desired_width(170.0)).labelled_by(label);
+            ui.add_space(4.0);
+            theme::row(ui, &tr!("notes-name"), |ui, label| {
+                ui.add(egui::TextEdit::singleline(&mut f.name).desired_width(theme::fill(ui))).labelled_by(label);
             });
             let first = match f.kind {
                 0 => tr!("notes-from"),
                 1 => tr!("notes-date"),
                 _ => tr!("notes-month-of"),
             };
-            ui.horizontal(|ui| {
-                let label = row(ui, first);
-                if let Some(d) = date_field(ui, egui::Id::unique("note-from"), label, f.from, 100.0) {
+            theme::row(ui, &first, |ui, label| {
+                if let Some(d) = date_field(ui, egui::Id::unique("note-from"), label, f.from, 110.0) {
                     f.from = d;
                 }
             });
             if f.kind == 0 {
-                ui.horizontal(|ui| {
-                    let label = row(ui, tr!("notes-to"));
-                    if let Some(d) = date_field(ui, egui::Id::unique("note-to"), label, f.to, 100.0) {
+                theme::row(ui, &tr!("notes-to"), |ui, label| {
+                    if let Some(d) = date_field(ui, egui::Id::unique("note-to"), label, f.to, 110.0) {
                         f.to = d;
                     }
                 });
             }
-            ui.horizontal(|ui| {
-                row(ui, tr!("notes-color"));
+            theme::row(ui, &tr!("notes-color"), |ui, _| {
+                ui.spacing_mut().item_spacing.x = 4.0;
                 let fallback = [t.blue, t.orange, t.red].get(usize::from(f.kind)).copied().unwrap_or(t.blue);
                 for code in std::iter::once("").chain(NOTE_COLORS) {
                     let color = hex(code, fallback);
-                    let (r, response) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
+                    let (r, response) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
                     ui.painter().rect_filled(r.shrink(2.0), 0.0, color);
                     if f.color == code {
                         ui.painter().rect_stroke(r, 0.0, egui::Stroke::new(1.5, t.text), egui::StrokeKind::Inside);
@@ -1824,15 +1793,19 @@ impl PerthApp {
                     }
                 }
             });
-            ui.add_space(4.0);
-            if ui.button(tr!("notes-add")).clicked() {
-                let day = |d: Option<Date>| d.map(|d| d.to_string());
-                pending = Some(match f.kind {
-                    0 => ("band.add", json!({"name": f.name, "from": day(f.from), "to": day(f.to.or(f.from)), "color": f.color})),
-                    1 => ("marker.add", json!({"name": f.name, "date": day(f.from), "color": f.color})),
-                    _ => ("month-mark.add", json!({"month": day(f.from), "name": f.name, "color": f.color})),
-                });
-            }
+            ui.add_space(6.0);
+            // The button under the fields, where they start.
+            ui.horizontal(|ui| {
+                ui.add_space(theme::LABEL_WIDTH + ui.spacing().item_spacing.x);
+                if ui.button(tr!("notes-add")).clicked() {
+                    let day = |d: Option<Date>| d.map(|d| d.to_string());
+                    pending = Some(match f.kind {
+                        0 => ("band.add", json!({"name": f.name, "from": day(f.from), "to": day(f.to.or(f.from)), "color": f.color})),
+                        1 => ("marker.add", json!({"name": f.name, "date": day(f.from), "color": f.color})),
+                        _ => ("month-mark.add", json!({"month": day(f.from), "name": f.name, "color": f.color})),
+                    });
+                }
+            });
         });
         if let Some((command, params)) = pending {
             let adding = command.ends_with(".add");

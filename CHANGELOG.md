@@ -222,6 +222,11 @@ Read it before re-scheduling a plan with a new version.
 - The panes keep their places: a wide pane (Calendars' working week) no longer pushes the strip
   of panes on the right out of the window, and the views' tabs keep their row above the status
   line instead of being covered.
+- The side panes share one layout: sections headed in small capitals with space between them,
+  form labels in one column with their fields lined up after them and filling the pane, lists
+  with their delete buttons at the right edge, figures aligned right; nothing runs past a
+  pane's edge any more (Details' duration type, Calendars' week). Filters lists the columns two
+  to a row.
 - The Resources view lines up: its table drawn as the activities' (a header band, fixed columns,
   banded rows), and the forms to add a resource and a role aligned under it.
 - A column title wider than its column wraps onto a second line instead of being cut off
