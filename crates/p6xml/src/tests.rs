@@ -368,3 +368,38 @@ fn the_budget_read_back() {
     assert!(warnings[0].starts_with("2 budgets"));
     assert_eq!(read(&text).unwrap().project.budget.budgets.len(), 2);
 }
+
+/// Earned value as P6 keeps it: each technique (by percent complete type, 0/100, 50/50, a custom
+/// share) and each estimate to complete written and read back, the physical percent complete,
+/// the financial periods; the stored closes left out with a warning.
+#[test]
+fn earned_value_read_back() {
+    use mkperth_core::{EtcTechnique, EvTechnique, FinancialPeriod, PeriodRecord};
+    let mut p = read(&file()).unwrap().project;
+    let leaf = p.activities.iter().position(|a| !p.activities.iter().any(|b| b.parent.as_deref() == Some(a.id.as_str()))).unwrap();
+    p.activities[leaf].percent_complete = Some(3_350);
+    p.earned_value.periods = vec![
+        FinancialPeriod { name: "2026-11".into(), start: day(2026, 11, 1), finish: day(2026, 11, 30) },
+        FinancialPeriod { name: "2026-12".into(), start: day(2026, 12, 1), finish: day(2026, 12, 31) },
+    ];
+    let techniques = [
+        EvTechnique::Physical,
+        EvTechnique::Duration,
+        EvTechnique::Units,
+        EvTechnique::ZeroHundred,
+        EvTechnique::FiftyFifty,
+        EvTechnique::Custom(2_550),
+    ];
+    for (technique, etc) in techniques.into_iter().zip(EtcTechnique::ALL.into_iter().cycle()) {
+        p.earned_value.technique = technique;
+        p.earned_value.etc = etc;
+        let (text, warnings) = write(&p);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let back = read(&text).unwrap();
+        assert!(!back.warnings.iter().any(|w| w.starts_with("Left out")), "{:?}", back.warnings);
+        assert_eq!(back.project.earned_value, p.earned_value, "{technique:?}");
+        assert_eq!(back.project.activities[leaf].percent_complete, Some(3_350));
+    }
+    p.earned_value.records.push(PeriodRecord { period: "2026-11".into(), activity: "x".into(), planned: 1, earned: 1, actual: 1 });
+    assert_eq!(write(&p).1.len(), 1);
+}

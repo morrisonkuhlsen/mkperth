@@ -477,6 +477,7 @@ warn-p6-comments = { $n } comments aren't written: P6 XML has no place for them 
 warn-p6-assignments = { $n } resource assignments name an activity, or a resource or role, the file doesn't have: left out.
 warn-p6-summary-assignments = { $n } assignments on summaries aren't written: in P6 a summary is a WBS element, which takes none.
 warn-p6-budget-not-wbs = { $n } budgets or budget changes on activities that aren't summaries aren't written: P6 keeps budgets on the project and its WBS only.
+warn-p6-period-closes = The periods' stored closes aren't written: P6 keeps each period's own amounts by kind of cost, which MK Perth doesn't hold.
 warn-p6-skipped = Left out, not read yet: { $kinds }.
 undo-options = change the scheduling options
 undo-edit-calendar = edit calendar { $name }

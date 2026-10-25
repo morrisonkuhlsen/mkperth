@@ -14,8 +14,9 @@
 
 use mkperth_core::{
     Accrual, Activity, ActivityKind, Assignment, Band, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus, Comment,
-    Constraint, CostAccount, Date, Expense, Extra, Fund, FundingSource, LevelBy, Levelled, LevellingOptions, LevellingPriority, Marker, MonthMark,
-    Pert, Price, Project, Region, Relationship, RelationshipType, Resource, SpendingMonth, UNIT, WbsBudget,
+    Constraint, CostAccount, Date, EarnedValue, EtcTechnique, EvTechnique, Expense, Extra, FinancialPeriod, Fund, FundingSource, LevelBy, Levelled,
+    LevellingOptions, LevellingPriority, Marker, MonthMark, PeriodRecord, Pert, Price, Project, Region, Relationship, RelationshipType, Resource,
+    SpendingMonth, UNIT, WbsBudget,
 };
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
@@ -77,11 +78,12 @@ const TASK_FIELDS: [&str; 22] = [
 const PROJECT_FIELDS: [&str; 12] =
     ["id", "name", "tasks", "calendar", "people", "bands", "markers", "month_marks", "file_path", "baseline_at", "created_at", "updated_at"];
 /// The fields the model holds itself; the rest go to `extra`.
-const TASK_MAPPED: [&str; 13] = [
+const TASK_MAPPED: [&str; 14] = [
     "id",
     "name",
     "start",
     "duration",
+    "progress",
     "dependencies",
     "milestone",
     "deadline",
@@ -94,7 +96,11 @@ const TASK_MAPPED: [&str; 13] = [
 ];
 /// The longest a PERT estimate may be, in days.
 const MAX_ESTIMATE: f64 = 1e6;
-const PROJECT_MAPPED: [&str; 11] = ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING, BASELINES, COSTS, BUDGET];
+const PROJECT_MAPPED: [&str; 12] =
+    ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING, BASELINES, COSTS, BUDGET, EARNED];
+/// MK Perth's earned value: its techniques, the financial periods and their stored closes;
+/// written only when they say something.
+const EARNED: &str = "mkperth_earned_value";
 /// MK Perth's budget: the original budgets and their spending plans, the change log, the
 /// funding sources and the funds; written only when there is one.
 const BUDGET: &str = "mkperth_budget";
@@ -293,6 +299,17 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             }
         };
         let (optimistic, most_likely, pessimistic) = (estimate("optimistic")?, estimate("most_likely")?, estimate("pessimistic")?);
+        // Its progress in percent, MK Perth's physical percent complete; 0 is none.
+        let percent_complete = match t.get("progress") {
+            None | Some(Value::Null) => None,
+            Some(v) => {
+                let p = v
+                    .as_f64()
+                    .filter(|x| x.is_finite() && (0.0..=100.0).contains(x))
+                    .ok_or_else(|| PerthError::Field(label.clone(), "progress".into()))?;
+                (p > 0.0).then(|| (p * 100.0).round() as i64)
+            }
+        };
         let pert = (optimistic > 0 || most_likely > 0 || pessimistic > 0).then_some(Pert { optimistic, most_likely, pessimistic });
         let levelling_priority = match t.get(PRIORITY) {
             None | Some(Value::Null) => LevellingPriority::default(),
@@ -351,7 +368,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             levelling_priority,
             levelled,
             pert,
-            percent_complete: None,
+            percent_complete,
             extra,
         });
         dependencies.push((label, deps));
@@ -510,6 +527,11 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             r.prices = list;
         }
     }
+    let earned_value = match root.get(EARNED) {
+        Some(v @ Value::Object(_)) => earned_of(v)?,
+        Some(Value::Null) | None => EarnedValue::default(),
+        Some(_) => return Err(PerthError::Field(String::new(), EARNED.into())),
+    };
     let budget = match root.get(BUDGET) {
         Some(v @ Value::Object(_)) => budget_of(v)?,
         Some(Value::Null) | None => Budgeting::default(),
@@ -541,7 +563,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             cost_accounts,
             currency,
             budget,
-            earned_value: Default::default(),
+            earned_value,
             activities,
             relationships,
             extra,
@@ -596,6 +618,53 @@ fn budget_of(v: &Value) -> Result<Budgeting, PerthError> {
         b.funds.push(Fund { source: text(f, "source").ok_or_else(bad)?, amount: money(f, "amount")? });
     }
     Ok(b)
+}
+
+/// MK Perth's earned value from its field.
+fn earned_of(v: &Value) -> Result<EarnedValue, PerthError> {
+    let bad = || PerthError::Field(String::new(), EARNED.into());
+    let list = |k: &str| v.get(k).and_then(Value::as_array).map(|a| a.iter().take(MAX_TASKS).collect::<Vec<_>>()).unwrap_or_default();
+    let text = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
+    let day = |v: &Value, k: &str| text(v, k).and_then(|d| Date::parse(&d)).ok_or_else(bad);
+    let money = |v: &Value, k: &str| v.get(k).and_then(money_of).ok_or_else(bad);
+    let share = v.get("share").and_then(Value::as_f64).filter(|x| x.is_finite()).map_or(0, |x| (x * 100.0).round() as i64);
+    let mut e = EarnedValue {
+        technique: text(v, "technique").map_or(Some(EvTechnique::default()), |t| EvTechnique::from_code(&t, share)).ok_or_else(bad)?,
+        etc: text(v, "etc").map_or(Some(EtcTechnique::default()), |t| EtcTechnique::from_code(&t)).ok_or_else(bad)?,
+        ..EarnedValue::default()
+    };
+    for p in list("periods") {
+        e.periods.push(FinancialPeriod { name: text(p, "name").ok_or_else(bad)?, start: day(p, "start")?, finish: day(p, "finish")? });
+    }
+    for r in list("records") {
+        e.records.push(PeriodRecord {
+            period: text(r, "period").ok_or_else(bad)?,
+            activity: text(r, "activity").ok_or_else(bad)?,
+            planned: money(r, "planned")?,
+            earned: money(r, "earned")?,
+            actual: money(r, "actual")?,
+        });
+    }
+    Ok(e)
+}
+
+/// MK Perth's earned value as its field.
+fn earned_value_value(e: &EarnedValue) -> Value {
+    let share = match e.technique {
+        EvTechnique::Custom(s) => Value::from(s as f64 / 100.0),
+        _ => Value::Null,
+    };
+    let periods: Vec<Value> =
+        e.periods.iter().map(|p| serde_json::json!({"name": p.name, "start": p.start.to_string(), "finish": p.finish.to_string()})).collect();
+    let records: Vec<Value> = e
+        .records
+        .iter()
+        .map(|r| {
+            serde_json::json!({"period": r.period, "activity": r.activity, "planned": money_value(r.planned),
+                "earned": money_value(r.earned), "actual": money_value(r.actual)})
+        })
+        .collect();
+    serde_json::json!({"technique": e.technique.code(), "share": share, "etc": e.etc.code(), "periods": periods, "records": records})
 }
 
 /// MK Perth's budget as its field.
@@ -657,7 +726,14 @@ fn perth_baseline(activities: &[Activity], calendar: &Calendar) -> Option<Baseli
                 steps += 1;
                 left -= i64::from(calendar.is_working(finish));
             }
-            Some(BaselineActivity { id: a.id.clone(), start, finish, duration: days.saturating_mul(day), cost: 0 })
+            // Its cost the task's: Perth keeps none apart for its baseline.
+            let cost = a
+                .extra
+                .get("perth.cost")
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|c| c.is_finite() && c.abs() < 1e13)
+                .map_or(0, |c| (c * 100.0).round() as i64);
+            Some(BaselineActivity { id: a.id.clone(), start, finish, duration: days.saturating_mul(day), cost })
         })
         .collect();
     (!list.is_empty()).then(|| Baseline { name: PERTH_BASELINE.into(), activities: list })
@@ -707,6 +783,8 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             Some(_) => warnings.push(tr!("warn-perth-constraint", task = a.id.as_str())),
         }
         known.insert("duration".into(), Value::from(a.duration));
+        let percent = a.percent_complete.unwrap_or(0);
+        known.insert("progress".into(), if percent % 100 == 0 { Value::from(percent / 100) } else { Value::from(percent as f64 / 100.0) });
         let deps: Vec<Value> = project
             .relationships
             .iter()
@@ -758,7 +836,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             "milestone" => value.as_bool() == Some(true),
             "deadline" => !value.is_null(),
             "parent" | "notes" | "assignee" => value.as_str().is_some_and(|p| !p.is_empty()),
-            "optimistic" | "most_likely" | "pessimistic" => value.as_f64().is_some_and(|d| d != 0.0),
+            "optimistic" | "most_likely" | "pessimistic" | "progress" => value.as_f64().is_some_and(|d| d != 0.0),
             _ => true,
         };
         let mut fields: Vec<(String, Value)> = Vec::new();
@@ -841,6 +919,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     }
     if !project.budget.is_empty() {
         fields.push((BUDGET.into(), budget_value(&project.budget)));
+    }
+    if !project.earned_value.is_empty() {
+        fields.push((EARNED.into(), earned_value_value(&project.earned_value)));
     }
     // The baselines, unless they are just the one Perth's task fields already say.
     let from_tasks = perth_baseline(&project.activities, &project.calendar);

@@ -33,6 +33,12 @@ Read it before re-scheduling a plan with a new version.
   (`etc_technique`), the estimate and variance at completion and the TCPI. Financial periods
   (`period.add`, `period.generate` by the week or the month, `period.delete`) and their closes
   stored (`period.store`): the S-curve's points.
+- Earned value in the files: Perth's task `progress` is the physical percent complete, read and
+  written; the techniques, periods and stored closes travel in `mkperth_earned_value`. P6 XML
+  reads and writes the physical percent complete (`PhysicalPercentComplete`,
+  `PercentCompleteType`), the techniques (`EarnedValueComputeType`, `EarnedValueUserPercent`,
+  `EarnedValueETCComputeType`) and the financial periods (`FinancialPeriod`); the stored closes
+  are left out of it, with a warning.
 - The budget (#24): the project's and each WBS's original budget (`budget.set`); a log of
   changes, pending, approved or not approved (`budget-change.add`, `.edit`, `.delete`), from
   which the current budget (the approved ones) and the proposed (the pending too); the spending
@@ -231,6 +237,9 @@ Read it before re-scheduling a plan with a new version.
 
 ### Changed
 
+- The baseline a Perth file's `baseline_start` and `baseline_duration` make now has the task's
+  cost, as Perth.jl's S-curve weighs it: its cost variance was the whole cost at completion
+  (against a baseline of nothing) and is now the cost's change since.
 - The window's header works as its title bar, as in MK Sigma: a double click maximizes or
   restores the window, a drag moves it; the project's name sits in its middle, and an AutoSave
   switch at its top left saves every change to the file (asking for one first when there is none).

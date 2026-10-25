@@ -438,3 +438,42 @@ fn the_budget_in_its_own_field() {
     bad["mkperth_budget"] = Value::from(3);
     assert!(read(&bad.to_string()).is_err());
 }
+
+/// Perth's progress is MK Perth's physical percent complete, read and written back; earned
+/// value's techniques, periods and closes travel in a field of their own.
+#[test]
+fn progress_and_earned_value() {
+    use mkperth_core::{EarnedValue, EtcTechnique, EvTechnique, FinancialPeriod, PeriodRecord};
+    let p = read(&full().to_string()).unwrap().project;
+    assert_eq!(p.activities[0].percent_complete, Some(10_000), "a's 100");
+    assert_eq!(p.activities[1].percent_complete, None, "b's 0");
+    let mut q = p.clone();
+    q.activities[1].percent_complete = Some(3_350);
+    q.earned_value = EarnedValue {
+        technique: EvTechnique::Custom(2_500),
+        etc: EtcTechnique::Cpi,
+        periods: vec![FinancialPeriod { name: "2026-09".into(), start: day(2026, 9, 1), finish: day(2026, 9, 30) }],
+        records: vec![PeriodRecord { period: "2026-09".into(), activity: "a".into(), planned: 120_050, earned: 100_000, actual: 90_000 }],
+    };
+    let (text, _) = write(&q);
+    assert!(text.contains("\"progress\":33.5") && text.contains("mkperth_earned_value"), "{text}");
+    let back = read(&text).unwrap().project;
+    assert_eq!(back.activities[1].percent_complete, Some(3_350));
+    assert_eq!(back.earned_value, q.earned_value);
+}
+
+/// Perth.jl's S-curve as the oracle: two tasks on calendar days, x (1 to 10 October, 1 000,
+/// 60 % done) then y (11 to 30 October, 3 000, 10 % done), their baselines the same. Perth.jl's
+/// `_scurve` on 25 October 2026 gave planned 3 250.0 (1 000 + 15 days × 150), earned 900.0
+/// (600 + 300) and a total of 4 000.0; MK Perth, judged physically, the same.
+#[test]
+fn earned_value_as_perth_jl_works_it() {
+    let text = r#"{"name":"EV oracle","calendar":"","tasks":[
+ {"id":"x","name":"Survey","start":"2026-10-01","duration":10,"progress":60,"dependencies":[],"cost":1000,"baseline_start":"2026-10-01","baseline_duration":10},
+ {"id":"y","name":"Build","start":"2026-10-11","duration":20,"progress":10,"dependencies":["x"],"cost":3000,"baseline_start":"2026-10-11","baseline_duration":20}
+]}"#;
+    let p = read(text).unwrap().project;
+    let s = mkperth_sched::schedule(&p).unwrap();
+    let e = mkperth_sched::project_earned(&p, &s, day(2026, 10, 25));
+    assert_eq!((e.planned, e.earned, e.budget), (325_000, 90_000, 400_000));
+}

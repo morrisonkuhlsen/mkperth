@@ -19,8 +19,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use mkperth_core::{
     Accrual, Activity, ActivityKind, Assignment, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus, Constraint,
-    CostAccount, Date, DurationType, Expense, Fund, FundingSource, LevellingPriority, Period, Price, Project, Relationship, RelationshipType,
-    Resource, ResourceKind, Role, SpendingMonth, UNIT, WbsBudget, Weekday,
+    CostAccount, Date, DurationType, EarnedValue, EtcTechnique, EvTechnique, Expense, FinancialPeriod, Fund, FundingSource, LevellingPriority,
+    Period, Price, Project, Relationship, RelationshipType, Resource, ResourceKind, Role, SpendingMonth, UNIT, WbsBudget, Weekday,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -268,6 +268,9 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         }
     }
 
+    // How the activities measure their percent complete, counted: the project's technique when
+    // it is by each activity's percent complete.
+    let mut percent_kinds: BTreeMap<String, usize> = BTreeMap::new();
     // Activities, by ObjectId for the relationships.
     let mut by_object: HashMap<String, String> = HashMap::new();
     for (n, e) in p.all("Activity").enumerate() {
@@ -316,6 +319,15 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         a.actual_start = e.text_of("ActualStartDate").and_then(date_of);
         a.actual_finish = e.text_of("ActualFinishDate").and_then(date_of);
         a.expected_finish = e.text_of("ExpectedFinishDate").and_then(date_of);
+        // P6's physical percent complete, from 0 to 100; 0 is none.
+        a.percent_complete = e
+            .text_of("PhysicalPercentComplete")
+            .and_then(|x| x.trim().parse::<f64>().ok())
+            .filter(|x| x.is_finite() && *x > 0.0 && *x <= 100.0)
+            .map(|x| (x * 100.0).round() as i64);
+        if let Some(kind) = e.text_of("PercentCompleteType") {
+            *percent_kinds.entry(kind.to_string()).or_insert(0usize) += 1;
+        }
         if a.actual_start.is_some() && a.actual_finish.is_none() {
             a.remaining_minutes = match e.text_of("RemainingDuration") {
                 Some(h) => {
@@ -594,7 +606,8 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
     }
 
     // What else the project and the file hold, each kind named once.
-    const READ: [&str; 14] = [
+    const READ: [&str; 15] = [
+        "FinancialPeriod",
         "Project",
         "Calendar",
         "WBS",
@@ -640,6 +653,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
     if let Some(id) = p.text_of("Id") {
         extra.insert(format!("{PREFIX}id"), id.to_string());
     }
+    let earned_value = earned_value_of(&root, p, &percent_kinds);
     let (baselines, baseline_in_use) = baselines_of(&root, p);
     Ok(Read {
         project: Project {
@@ -667,7 +681,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             cost_accounts,
             currency: String::new(),
             budget,
-            earned_value: Default::default(),
+            earned_value,
             activities,
             relationships,
             extra,
@@ -710,6 +724,61 @@ fn baselines_of(root: &Element, p: &Element) -> (Vec<Baseline>, Option<String>) 
     }
     let in_use = p.text_of("CurrentBaselineProjectObjectId").and_then(|o| by_object.get(o).cloned());
     (list, in_use)
+}
+
+/// P6's names for the earned value techniques: how earned value is computed, and the
+/// estimate to complete.
+const EV_ACTIVITY: &str = "Activity Percent Complete";
+const EV_TECHNIQUES: [(&str, EvTechnique); 3] =
+    [("0 / 100", EvTechnique::ZeroHundred), ("50 / 50", EvTechnique::FiftyFifty), ("Custom Percent Complete", EvTechnique::Custom(0))];
+const ETC_TECHNIQUES: [(&str, EtcTechnique); 4] = [
+    ("ETC = Remaining Cost for Activity", EtcTechnique::Remaining),
+    ("PF = 1", EtcTechnique::Planned),
+    ("PF = 1 / Cost Performance Index", EtcTechnique::Cpi),
+    ("PF = 1 / (Cost Performance Index * Schedule Performance Index)", EtcTechnique::CpiSpi),
+];
+
+/// The percent complete type P6 gives an activity measured by `technique`.
+fn percent_kind(technique: EvTechnique) -> &'static str {
+    match technique {
+        EvTechnique::Duration => "Duration",
+        EvTechnique::Units => "Units",
+        _ => "Physical",
+    }
+}
+
+/// The project's earned value techniques and its financial periods. By each activity's percent
+/// complete, the technique is the type most of them have.
+fn earned_value_of(root: &Element, p: &Element, kinds: &BTreeMap<String, usize>) -> EarnedValue {
+    let technique = match p.text_of("EarnedValueComputeType") {
+        Some(EV_ACTIVITY) | None => match kinds.iter().max_by_key(|(_, n)| **n).map(|(k, _)| k.as_str()) {
+            Some("Duration") => EvTechnique::Duration,
+            Some("Units") => EvTechnique::Units,
+            _ => EvTechnique::Physical,
+        },
+        Some(name) => match EV_TECHNIQUES.iter().find(|(n, _)| *n == name).map(|(_, t)| *t) {
+            Some(EvTechnique::Custom(_)) => {
+                let share = p.text_of("EarnedValueUserPercent").and_then(|x| x.trim().parse::<f64>().ok()).filter(|x| x.is_finite());
+                EvTechnique::Custom(share.map_or(0, |x| (x * 100.0).round().clamp(0.0, 10_000.0) as i64))
+            }
+            Some(t) => t,
+            None => EvTechnique::Physical,
+        },
+    };
+    let etc = p.text_of("EarnedValueETCComputeType").and_then(|n| ETC_TECHNIQUES.iter().find(|(x, _)| *x == n)).map(|(_, t)| *t).unwrap_or_default();
+    let mut periods: Vec<FinancialPeriod> = Vec::new();
+    for e in root.all("FinancialPeriod").chain(p.all("FinancialPeriod")) {
+        let (Some(name), Some(start), Some(finish)) =
+            (e.text_of("Name"), e.text_of("StartDate").and_then(date_of), e.text_of("EndDate").and_then(date_of))
+        else {
+            continue;
+        };
+        if finish >= start && !periods.iter().any(|q| q.name == name || (q.start <= finish && start <= q.finish)) {
+            periods.push(FinancialPeriod { name: name.to_string(), start, finish });
+        }
+    }
+    periods.sort_by_key(|q| q.start);
+    EarnedValue { technique, etc, periods, records: Vec::new() }
 }
 
 /// P6's money (`1500.5`) as hundredths of the currency.
@@ -907,6 +976,15 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         out.push_str("  </FundingSource>\n");
     }
+    for (k, q) in project.earned_value.periods.iter().enumerate() {
+        out.push_str(&format!(
+            "  <FinancialPeriod>\n    <ObjectId>{}</ObjectId>\n    <Name>{}</Name>\n    <StartDate>{}T00:00:00</StartDate>\n    <EndDate>{}T23:59:59</EndDate>\n  </FinancialPeriod>\n",
+            k + 1,
+            esc(&q.name),
+            q.start,
+            q.finish
+        ));
+    }
     let mut pairs = 0usize;
     for r in &project.resources {
         for role in r.roles.iter().filter_map(|id| role_object(id)) {
@@ -928,6 +1006,20 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     }
     if let Some(d) = project.data_date {
         out.push_str(&format!("    <DataDate>{}</DataDate>\n", timestamp(d, false)));
+    }
+    let ev = &project.earned_value;
+    let compute = match ev.technique {
+        EvTechnique::Physical | EvTechnique::Duration | EvTechnique::Units => EV_ACTIVITY,
+        t => EV_TECHNIQUES.iter().find(|(_, x)| std::mem::discriminant(x) == std::mem::discriminant(&t)).map_or(EV_ACTIVITY, |(n, _)| n),
+    };
+    out.push_str(&format!("    <EarnedValueComputeType>{compute}</EarnedValueComputeType>\n"));
+    if let EvTechnique::Custom(share) = ev.technique {
+        out.push_str(&format!("    <EarnedValueUserPercent>{}</EarnedValueUserPercent>\n", share as f64 / 100.0));
+    }
+    let etc = ETC_TECHNIQUES.iter().find(|(_, t)| *t == ev.etc).map_or("PF = 1", |(n, _)| n);
+    out.push_str(&format!("    <EarnedValueETCComputeType>{etc}</EarnedValueETCComputeType>\n"));
+    if !ev.records.is_empty() {
+        warnings.push(tr!("warn-p6-period-closes"));
     }
     if let Some(b) = project.budget.of(None) {
         out.push_str(&format!("    <OriginalBudget>{}</OriginalBudget>\n", money(b.original)));
@@ -983,6 +1075,14 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         out.push_str(&format!("      <DurationType>{}</DurationType>\n", duration_type_name(a.duration_type)));
         if a.levelling_priority != LevellingPriority::default() {
             out.push_str(&format!("      <LevelingPriority>{}</LevelingPriority>\n", levelling_priority_name(a.levelling_priority)));
+        }
+        out.push_str(&format!("      <PercentCompleteType>{}</PercentCompleteType>\n", percent_kind(project.earned_value.technique)));
+        if let Some(x) = a.percent_complete {
+            let percent = format!("{:.2}", x as f64 / 100.0);
+            out.push_str(&format!(
+                "      <PhysicalPercentComplete>{}</PhysicalPercentComplete>\n",
+                percent.trim_end_matches('0').trim_end_matches('.')
+            ));
         }
         if let Some(d) = a.actual_start {
             out.push_str(&format!("      <ActualStartDate>{}</ActualStartDate>\n", timestamp(d, false)));

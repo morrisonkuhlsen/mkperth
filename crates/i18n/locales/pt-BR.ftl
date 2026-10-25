@@ -477,6 +477,7 @@ warn-p6-comments = { $n } comentários não são gravados: o P6 XML não tem lug
 warn-p6-assignments = { $n } alocações de recurso citam uma atividade, ou um recurso ou função, que o arquivo não tem: deixadas de fora.
 warn-p6-summary-assignments = { $n } alocações em resumos não são gravadas: no P6 um resumo é um elemento da EAP, que não recebe alocações.
 warn-p6-budget-not-wbs = { $n } orçamentos ou mudanças de orçamento em atividades que não são resumos não são gravados: o P6 só guarda orçamentos no projeto e na sua EAP.
+warn-p6-period-closes = Os fechamentos armazenados dos períodos não são gravados: o P6 guarda os valores de cada período por tipo de custo, que o MK Perth não tem.
 warn-p6-skipped = Deixados de fora, ainda não lidos: { $kinds }.
 undo-options = alterar as opções de agendamento
 undo-edit-calendar = editar o calendário { $name }
