@@ -943,46 +943,49 @@ impl PerthApp {
         // The activities take the width; a side pane, when open, sits beside the strip.
         let side_width = if self.side.is_some() { SIDE_WIDTH + gap } else { 0.0 };
         let left_width = (ui.available_width() - RAIL_WIDTH - SIDE_STRIP - side_width - 2.0 * gap).floor();
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(gap, 0.0);
-            let top_down = egui::Layout::top_down(egui::Align::Min);
-            self.view_rail(ui, body);
-            ui.allocate_ui_with_layout(egui::vec2(left_width, body), top_down, |ui| {
-                ui.set_width(left_width);
-                ui.set_height(body);
-                // The active view, and the open views as tabs under it, as a spreadsheet's sheets.
-                let above = (body - VIEW_TABS - 4.0).max(100.0);
-                match self.view {
-                    View::Activities => self.left_pane(ui, above),
-                    View::Resources => self.resources_view(ui, above),
+        // Each column in a place of its own, clipped to it: what one holds never pushes the next
+        // (a wide calendar row once pushed the strip out of the window).
+        let (area, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), body), egui::Sense::hover());
+        let place = |ui: &mut egui::Ui, left: f32, top: f32, width: f32, height: f32| {
+            let rect = egui::Rect::from_min_size(egui::pos2(left, top), egui::vec2(width, height));
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+            child.set_clip_rect(rect.intersect(ui.clip_rect()));
+            child.set_width(width);
+            child.set_height(height);
+            child
+        };
+        let column = |ui: &mut egui::Ui, left: f32, width: f32| place(ui, left, area.top(), width, body);
+        let mut rail = column(ui, area.left(), RAIL_WIDTH);
+        self.view_rail(&mut rail, body);
+        // The active view, and the open views as tabs under it, as a spreadsheet's sheets: each
+        // its own place, so a view that fills its height leaves the tabs theirs.
+        let above = (body - VIEW_TABS - 4.0).max(100.0);
+        let x = area.left() + RAIL_WIDTH + gap;
+        let mut view = place(ui, x, area.top(), left_width, above);
+        match self.view {
+            View::Activities => self.left_pane(&mut view, above),
+            View::Resources => self.resources_view(&mut view, above),
+        }
+        let mut tabs = place(ui, x, area.top() + above, left_width, body - above);
+        self.view_tabs(&mut tabs);
+        if let Some(side) = self.side {
+            let mut pane = column(ui, area.right() - SIDE_STRIP - gap - SIDE_WIDTH, SIDE_WIDTH);
+            theme::card(&t).fill(t.paper).show(&mut pane, |ui| {
+                ui.set_min_size(ui.available_size());
+                match side {
+                    Side::Details => self.details(ui),
+                    Side::Filters => self.filters(ui),
+                    Side::Notes => self.notes_pane(ui),
+                    Side::Calendars => self.calendars_pane(ui),
+                    Side::Levelling => self.levelling_pane(ui),
+                    Side::Pert => self.pert_pane(ui),
+                    Side::Baselines => self.baselines_pane(ui),
+                    Side::Costs => self.costs_pane(ui),
                 }
-                self.view_tabs(ui);
             });
-            if let Some(side) = self.side {
-                ui.allocate_ui_with_layout(egui::vec2(SIDE_WIDTH, body), top_down, |ui| {
-                    ui.set_width(SIDE_WIDTH);
-                    ui.set_height(body);
-                    theme::card(&t).fill(t.paper).show(ui, |ui| {
-                        ui.set_min_size(ui.available_size());
-                        match side {
-                            Side::Details => self.details(ui),
-                            Side::Filters => self.filters(ui),
-                            Side::Notes => self.notes_pane(ui),
-                            Side::Calendars => self.calendars_pane(ui),
-                            Side::Levelling => self.levelling_pane(ui),
-                            Side::Pert => self.pert_pane(ui),
-                            Side::Baselines => self.baselines_pane(ui),
-                            Side::Costs => self.costs_pane(ui),
-                        }
-                    });
-                });
-            }
-            ui.allocate_ui_with_layout(egui::vec2(SIDE_STRIP, body), top_down, |ui| {
-                ui.set_width(SIDE_STRIP);
-                ui.set_height(body);
-                self.side_strip(ui);
-            });
-        });
+        }
+        let mut strip = column(ui, area.right() - SIDE_STRIP, SIDE_STRIP);
+        self.side_strip(&mut strip);
         ui.add_space(2.0);
         self.status_line(ui);
         self.quick_note_window(ui.ctx());

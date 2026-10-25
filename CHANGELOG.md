@@ -208,6 +208,11 @@ Read it before re-scheduling a plan with a new version.
 - The window's header works as its title bar, as in MK Sigma: a double click maximizes or
   restores the window, a drag moves it; the project's name sits in its middle, and an AutoSave
   switch at its top left saves every change to the file (asking for one first when there is none).
+- The panes keep their places: a wide pane (Calendars' working week) no longer pushes the strip
+  of panes on the right out of the window, and the views' tabs keep their row above the status
+  line instead of being covered.
+- The Resources view lines up: its table drawn as the activities' (a header band, fixed columns,
+  banded rows), and the forms to add a resource and a role aligned under it.
 - A column title wider than its column wraps onto a second line instead of being cut off
   ("ID da atividade").
 - The top of the window is quieter, as in an online spreadsheet: the project's name with whether
