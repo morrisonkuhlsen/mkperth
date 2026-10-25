@@ -846,3 +846,31 @@ fn the_budget_in_its_pane() {
     assert_eq!(log.len(), 1, "{:?}", h.state().status);
     assert_eq!((log[0].amount, log[0].reason.as_str()), (-30_000, "scope"));
 }
+
+/// The Earned value pane from the Project menu: months made for the project; Details' percent
+/// complete typed for an activity.
+#[test]
+fn earned_value_in_its_pane_and_details() {
+    use egui::accesskit::Role;
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Project").click();
+    h.run_steps(2);
+    h.get_by_label("Earned value…").click();
+    h.run_steps(2);
+    assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::EarnedValue));
+    h.get_by_label("Make months").click();
+    h.run_steps(2);
+    let months = h.state().session.project.earned_value.periods.len();
+    assert!(months >= 6, "November to April: {months}");
+    click(&mut h, egui::pos2(TABLE_X, ROW_A10), egui::Modifiers::NONE);
+    h.state_mut().side = Some(mkperth_ui_egui::Side::Details);
+    h.state_mut().details_tab = mkperth_ui_egui::DetailsTab::Status;
+    h.run_steps(2);
+    h.get_by_role_and_label(Role::TextInput, "Percent complete").click();
+    h.run_steps(1);
+    h.get_by_role_and_label(Role::TextInput, "Percent complete").type_text("62.5");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    let a = h.state().session.project.activities.iter().find(|a| a.id == "A10").unwrap().clone();
+    assert_eq!(a.percent_complete, Some(6_250));
+}

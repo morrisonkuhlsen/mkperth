@@ -56,6 +56,8 @@ pub(crate) enum Action {
     Costs,
     /// The Budget pane.
     Budget,
+    /// The Earned value pane.
+    EarnedValue,
     /// The baseline's bars under the schedule's.
     BaselineBars,
     /// Every other row of the table tinted.
@@ -407,6 +409,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         }
         if item(ui, &tr!("budget-menu"), None, true) {
             set(Action::Budget);
+        }
+        if item(ui, &tr!("earned-menu"), None, true) {
+            set(Action::EarnedValue);
         }
     });
     menu(ui, &tr!("menu-view"), |ui| {

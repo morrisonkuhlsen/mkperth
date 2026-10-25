@@ -14,6 +14,7 @@ mod chrome;
 mod comments_ui;
 mod costs_ui;
 mod datepick;
+mod earned_ui;
 pub mod fonts;
 pub mod icons;
 mod levelling_ui;
@@ -117,6 +118,8 @@ pub enum Side {
     Costs,
     /// The budget: the project's and its WBS's, the spending plan, the log, the funding.
     Budget,
+    /// Earned value: the measures at the data date, the S-curve, the financial periods.
+    EarnedValue,
 }
 
 /// The note the Notes pane is making: its kind (0 a band, 1 a marker, 2 a month), name, dates
@@ -594,6 +597,7 @@ impl PerthApp {
             Action::Baselines => self.side = Some(Side::Baselines),
             Action::Costs => self.side = Some(Side::Costs),
             Action::Budget => self.side = Some(Side::Budget),
+            Action::EarnedValue => self.side = Some(Side::EarnedValue),
             Action::Links => self.options.links = !self.options.links,
             Action::Table => self.options.table_hidden = !self.options.table_hidden,
             Action::Options(params) => self.run("project.options", params),
@@ -990,6 +994,7 @@ impl PerthApp {
                     Side::Baselines => self.baselines_pane(ui),
                     Side::Costs => self.costs_pane(ui),
                     Side::Budget => self.budget_pane(ui),
+                    Side::EarnedValue => self.earned_pane(ui),
                 }
             });
         }
@@ -1451,6 +1456,14 @@ impl PerthApp {
                                 mkperth_engine::sched::Status::Completed => tr!("status-completed"),
                             };
                             fact(ui, tr!("detail-status"), status);
+                        }
+                        // How much is done, as judged: earned value's physical percent complete.
+                        if let Some(v) = earned_ui::percent_field(ui, &a.id, a.percent_complete)
+                            && let Some(m) = v.as_object()
+                        {
+                            let mut params = m.clone();
+                            params.insert("id".into(), json!(a.id));
+                            pending = Some(("activity.edit", serde_json::Value::Object(params)));
                         }
                         let mut fields = vec![
                             (tr!("detail-actual-start"), "actual_start", a.actual_start),

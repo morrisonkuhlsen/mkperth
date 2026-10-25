@@ -39,6 +39,11 @@ Read it before re-scheduling a plan with a new version.
   `PercentCompleteType`), the techniques (`EarnedValueComputeType`, `EarnedValueUserPercent`,
   `EarnedValueETCComputeType`) and the financial periods (`FinancialPeriod`); the stored closes
   are left out of it, with a warning.
+- The Earned value pane (Project ▸ Earned value…): the techniques chosen, the measures at the
+  data date (BAC, PV, EV, AC, CV, SV, CPI, SPI, ETC, EAC, VAC, TCPI), the S-curve (planned day
+  by day, earned and actual at each stored close and at the data date), and the financial
+  periods made by the month or the week and stored; Details' Status tab takes the percent
+  complete.
 - The budget (#24): the project's and each WBS's original budget (`budget.set`); a log of
   changes, pending, approved or not approved (`budget-change.add`, `.edit`, `.delete`), from
   which the current budget (the approved ones) and the proposed (the pending too); the spending

@@ -170,9 +170,15 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   leave undistributed, the spending plan by month and what it leaves unplanned, funding sources
   in a hierarchy and the funds with what they leave unfunded, the activities' budgeted cost
   beside it; in P6 XML and Perth's JSON; the Budget pane.
-- **Next:** earned value (planned value, earned value, actual cost; CPI, SPI, EAC, ETC) with the
-  usual percent-complete methods (#25); financial periods that store each period's actuals;
-  currencies. Perth.jl's task costs and S-curve are the oracle for what it covers.
+- *Done (#25):* earned value: each activity's physical percent complete; BAC, PV (over the
+  baseline's working days), EV by six techniques (physical, duration, units, 0/100, 50/50, a
+  custom share), AC; CV, SV, CPI, SPI, ETC by four techniques, EAC, VAC, TCPI; financial periods
+  made by the week or the month and their closes stored; the S-curve. Perth.jl's `_scurve` is
+  the oracle (planned and earned on calendar days agree); P6 XML's percent complete, techniques
+  and financial periods; the Earned value pane.
+- **Next:** each period's own actuals by kind of cost (labour, non-labour, material, expenses),
+  for P6's `ActivityPeriodActual`; currencies and their exchange rates; WBS milestones as an
+  earned value technique.
 
 ## Beyond P6 — billing (the user's to schedule)
 P6 has no billing: measurements and invoices are left to other products. MK Perth could close
