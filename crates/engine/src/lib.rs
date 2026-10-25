@@ -4,6 +4,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod baselines;
+mod budget;
 mod comments;
 mod costs;
 mod edit;
@@ -82,7 +83,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 45] = [
+pub const COMMANDS: [&str; 53] = [
     "project.new",
     "project.open",
     "project.save",
@@ -115,6 +116,14 @@ pub const COMMANDS: [&str; 45] = [
     "expense.delete",
     "cost-account.add",
     "cost-account.delete",
+    "budget.set",
+    "budget.plan",
+    "budget-change.add",
+    "budget-change.edit",
+    "budget-change.delete",
+    "funding-source.add",
+    "funding-source.delete",
+    "fund.set",
     "comment.add",
     "comment.reply",
     "comment.edit",
@@ -190,6 +199,7 @@ impl Session {
             .or_else(|| self.comment_command(id, params))
             .or_else(|| self.baseline_command(id, params))
             .or_else(|| self.cost_command(id, params))
+            .or_else(|| self.budget_command(id, params))
         {
             return result;
         }

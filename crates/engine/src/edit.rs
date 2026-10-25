@@ -467,6 +467,12 @@ impl Session {
                 for e in p.expenses.iter_mut().filter(|e| e.activity == id) {
                     e.activity = new.to_string();
                 }
+                for b in p.budget.budgets.iter_mut().filter(|b| b.wbs.as_deref() == Some(id.as_str())) {
+                    b.wbs = Some(new.to_string());
+                }
+                for c in p.budget.log.iter_mut().filter(|c| c.wbs.as_deref() == Some(id.as_str())) {
+                    c.wbs = Some(new.to_string());
+                }
             }
             if let Some(par) = parent.as_deref().filter(|s| !s.is_empty()) {
                 if par == id {
@@ -592,6 +598,8 @@ impl Session {
                 p.assignments.retain(|a| a.activity != *id);
                 p.comments.retain(|c| c.activity != *id);
                 p.expenses.retain(|e| e.activity != *id);
+                p.budget.budgets.retain(|b| b.wbs.as_deref() != Some(id.as_str()));
+                p.budget.log.retain(|c| c.wbs.as_deref() != Some(id.as_str()));
                 for a in &mut p.activities {
                     if a.parent.as_deref() == Some(id.as_str()) {
                         a.parent = removed.parent.clone();

@@ -32,6 +32,7 @@ pub(crate) fn empty(name: String, start: Date) -> Project {
         expenses: Vec::new(),
         cost_accounts: Vec::new(),
         currency: String::new(),
+        budget: Default::default(),
         extra: Default::default(),
     }
 }
@@ -115,6 +116,7 @@ pub(crate) fn project() -> Project {
         expenses: Vec::new(),
         cost_accounts: Vec::new(),
         currency: String::new(),
+        budget: Default::default(),
         activities,
         relationships: vec![
             tie("M0", "A10", FinishToStart, 0),

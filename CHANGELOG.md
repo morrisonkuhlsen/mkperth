@@ -24,6 +24,13 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- The budget (#24): the project's and each WBS's original budget (`budget.set`); a log of
+  changes, pending, approved or not approved (`budget-change.add`, `.edit`, `.delete`), from
+  which the current budget (the approved ones) and the proposed (the pending too); the spending
+  plan month by month (`budget.plan`); funding sources in a hierarchy and what each gives
+  (`funding-source.add`, `.delete`, `fund.set`). Each budget shows what its WBS take and leave
+  undistributed, what its plan leaves unplanned, what the funds leave unfunded, and beside it
+  the activities' budgeted cost.
 - Resource levelling (#21): Project > Level resources…, or the Levelling pane on the right
   strip, delays activities so that no resource (but a material) is asked, on any day, for more
   units an hour than its max units. Day by day from the first over-allocation, the activities on

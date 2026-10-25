@@ -9,18 +9,18 @@ use serde_json::Value;
 use crate::{EngineError, Session};
 
 /// The most expenses or cost accounts a project may hold, and prices a resource may have.
-const MAX_ITEMS: usize = 100_000;
+pub(crate) const MAX_ITEMS: usize = 100_000;
 const MAX_PRICES: usize = 1000;
 /// The longest a name or an ID may be, in characters.
-const MAX_TEXT: usize = 200;
+pub(crate) const MAX_TEXT: usize = 200;
 /// The most an amount may be, in the currency.
-const MAX_MONEY: f64 = 1e13;
+pub(crate) const MAX_MONEY: f64 = 1e13;
 
-fn bad(command: &str, param: &str) -> EngineError {
+pub(crate) fn bad(command: &str, param: &str) -> EngineError {
     EngineError::Value(command.into(), param.into())
 }
 
-fn text(params: &Value, command: &str, name: &str) -> Result<Option<String>, EngineError> {
+pub(crate) fn text(params: &Value, command: &str, name: &str) -> Result<Option<String>, EngineError> {
     match params.get(name) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) if s.chars().count() <= MAX_TEXT => Ok(Some(s.trim().to_string())),
@@ -28,7 +28,7 @@ fn text(params: &Value, command: &str, name: &str) -> Result<Option<String>, Eng
     }
 }
 
-fn required(params: &Value, command: &str, name: &str) -> Result<String, EngineError> {
+pub(crate) fn required(params: &Value, command: &str, name: &str) -> Result<String, EngineError> {
     text(params, command, name)?.filter(|s| !s.is_empty()).ok_or_else(|| EngineError::Param(command.into(), name.into()))
 }
 
@@ -38,7 +38,7 @@ fn money_of(v: &Value) -> Option<i64> {
 }
 
 /// An amount given as `name`, if given.
-fn money(params: &Value, command: &str, name: &str) -> Result<Option<i64>, EngineError> {
+pub(crate) fn money(params: &Value, command: &str, name: &str) -> Result<Option<i64>, EngineError> {
     match params.get(name) {
         None | Some(Value::Null) => Ok(None),
         Some(v) => money_of(v).map(Some).ok_or_else(|| bad(command, name)),

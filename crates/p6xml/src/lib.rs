@@ -550,6 +550,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             expenses,
             cost_accounts,
             currency: String::new(),
+            budget: Default::default(),
             activities,
             relationships,
             extra,

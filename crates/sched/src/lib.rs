@@ -26,6 +26,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod baseline;
+mod budget;
 mod clock;
 mod costs;
 mod explain;
@@ -35,6 +36,7 @@ mod pert;
 mod usage;
 
 pub use baseline::{Variance, variances, working_days_between};
+pub use budget::{BudgetLine, budget, funding, spending_by_month};
 pub use costs::{Cost, costs, project_cost, spending};
 pub use level::{Levelling, MAX_ROUNDS, Overload, level, overloads};
 pub use pert::{PertActivity, PertAnalysis, normal, pert};

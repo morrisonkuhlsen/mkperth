@@ -515,6 +515,105 @@ pub struct CostAccount {
     pub parent: Option<String>,
 }
 
+/// What became of a proposed change to a budget: only an approved one counts in the current
+/// budget; a pending one counts in the proposed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ChangeStatus {
+    #[default]
+    Pending,
+    Approved,
+    NotApproved,
+}
+
+impl ChangeStatus {
+    pub const ALL: [ChangeStatus; 3] = [ChangeStatus::Pending, ChangeStatus::Approved, ChangeStatus::NotApproved];
+
+    /// The commands' word for it.
+    pub fn code(self) -> &'static str {
+        match self {
+            ChangeStatus::Pending => "pending",
+            ChangeStatus::Approved => "approved",
+            ChangeStatus::NotApproved => "not-approved",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<ChangeStatus> {
+        ChangeStatus::ALL.into_iter().find(|s| s.code() == code)
+    }
+}
+
+/// A change to the project's budget or a WBS's, in the budget log. Money in hundredths of the
+/// currency; a cut is negative.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BudgetChange {
+    /// Its number in the log: from 1, each after the highest there.
+    pub number: u32,
+    /// The WBS (a summary activity, by ID); `None` for the project.
+    pub wbs: Option<String>,
+    pub date: Date,
+    pub amount: i64,
+    pub status: ChangeStatus,
+    pub responsible: String,
+    pub reason: String,
+}
+
+/// What a month of the spending plan is to spend, from its first day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpendingMonth {
+    /// The month's first day.
+    pub month: Date,
+    pub amount: i64,
+}
+
+/// The money first approved for the project or a WBS, and how it is planned to be spent.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WbsBudget {
+    /// The WBS (a summary activity, by ID); `None` for the project.
+    pub wbs: Option<String>,
+    pub original: i64,
+    /// The spending plan, month by month, in date order.
+    pub plan: Vec<SpendingMonth>,
+}
+
+/// Where money comes from: a loan, a grant, the owner's capital; in a hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FundingSource {
+    pub id: String,
+    pub name: String,
+    /// The source it sits under, by ID.
+    pub parent: Option<String>,
+}
+
+/// An amount a funding source gives the project.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Fund {
+    /// The funding source, by ID.
+    pub source: String,
+    pub amount: i64,
+}
+
+/// The money approved and planned: the budgets, their log of changes, the funding sources and
+/// what each gives the project.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Budgeting {
+    pub budgets: Vec<WbsBudget>,
+    pub log: Vec<BudgetChange>,
+    pub sources: Vec<FundingSource>,
+    pub funds: Vec<Fund>,
+}
+
+impl Budgeting {
+    /// The project's budget (`None`) or a WBS's, if it has one.
+    pub fn of(&self, wbs: Option<&str>) -> Option<&WbsBudget> {
+        self.budgets.iter().find(|b| b.wbs.as_deref() == wbs)
+    }
+
+    /// Nothing approved, planned or funded.
+    pub fn is_empty(&self) -> bool {
+        self == &Budgeting::default()
+    }
+}
+
 impl Default for Resource {
     fn default() -> Self {
         Resource {
@@ -686,6 +785,8 @@ pub struct Project {
     pub cost_accounts: Vec<CostAccount>,
     /// The currency's symbol (`R$`, `US$`), written before amounts; none when empty.
     pub currency: String,
+    /// The money approved and planned for the project and its WBS.
+    pub budget: Budgeting,
     pub extra: Extra,
 }
 

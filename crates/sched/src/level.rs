@@ -280,6 +280,7 @@ mod tests {
             expenses: Vec::new(),
             cost_accounts: Vec::new(),
             currency: String::new(),
+            budget: Default::default(),
             extra: Default::default(),
         }
     }

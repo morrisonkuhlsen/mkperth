@@ -230,6 +230,7 @@ mod tests {
             expenses: vec![expense("Permit", 300, Accrual::Start), expense("Crane", 500, Accrual::End), expense("Fuel", 600, Accrual::Uniform)],
             cost_accounts: Vec::new(),
             currency: String::new(),
+            budget: Default::default(),
             extra: Default::default(),
         }
     }

@@ -531,6 +531,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             expenses,
             cost_accounts,
             currency,
+            budget: Default::default(),
             activities,
             relationships,
             extra,
