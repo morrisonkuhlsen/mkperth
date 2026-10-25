@@ -231,7 +231,7 @@ pub const LABEL_WIDTH: f32 = 118.0;
 
 /// A section of a pane: space above, its title small and quiet in capitals, as panels in
 /// design tools head theirs.
-pub fn section(ui: &mut egui::Ui, title: &str) {
+pub fn section(ui: &mut egui::Ui, title: &str) -> egui::Id {
     let t = Tokens::get(ui.ctx());
     ui.add_space(10.0);
     // Drawn in capitals; read out as written.
@@ -242,6 +242,7 @@ pub fn section(ui: &mut egui::Ui, title: &str) {
     // Strong by drawing twice, half a point apart: the built-in fonts have no bold face.
     ui.painter().galley(rect.min + egui::vec2(0.4, 0.0), galley, t.text_dim);
     ui.add_space(2.0);
+    response.id
 }
 
 /// Dim text under a section: what is empty, a line of help.

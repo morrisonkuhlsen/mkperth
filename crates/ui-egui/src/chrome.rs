@@ -54,6 +54,8 @@ pub(crate) enum Action {
     Baselines,
     /// The Costs pane.
     Costs,
+    /// The Budget pane.
+    Budget,
     /// The baseline's bars under the schedule's.
     BaselineBars,
     /// Every other row of the table tinted.
@@ -402,6 +404,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         }
         if item(ui, &tr!("costs-menu"), None, true) {
             set(Action::Costs);
+        }
+        if item(ui, &tr!("budget-menu"), None, true) {
+            set(Action::Budget);
         }
     });
     menu(ui, &tr!("menu-view"), |ui| {

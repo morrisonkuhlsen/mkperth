@@ -80,7 +80,7 @@ impl PerthApp {
         let form = &mut self.calendar_form;
         egui::ScrollArea::vertical().id_salt("calendars-pane").auto_shrink(false).show(ui, |ui| {
             // Which calendar.
-            theme::section(ui, &tr!("calendar-which"));
+            let which = theme::section(ui, &tr!("calendar-which"));
             let shown = if own { tr!("calendar-project", name = calendar.name.as_str()) } else { calendar.name.clone() };
             let combo = egui::ComboBox::from_id_salt("calendar-which").selected_text(shown).width(theme::fill(ui)).truncate().show_ui(ui, |ui| {
                 for (k, name) in names.iter().enumerate() {
@@ -91,7 +91,7 @@ impl PerthApp {
                     }
                 }
             });
-            combo.response.on_hover_text(tr!("calendar-which"));
+            combo.response.labelled_by(which);
 
             // The week: seven toggles sharing the width.
             theme::section(ui, &tr!("calendar-week"));

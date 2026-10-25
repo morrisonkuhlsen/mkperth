@@ -38,6 +38,9 @@ Read it before re-scheduling a plan with a new version.
   summary is left out, with a warning.
 - Perth's project JSON keeps the budget in a field of its own (`mkperth_budget`), read back as it
   was written; Perth.jl passes it through untouched.
+- The Budget pane (Project ▸ Budget…): the budget of the project or of a WBS, how it stands
+  (original, current, proposed, undistributed, the activities' cost), its spending plan by month,
+  its log of changes with their status, and the project's funding and funding sources.
 - Resource levelling (#21): Project > Level resources…, or the Levelling pane on the right
   strip, delays activities so that no resource (but a material) is asked, on any day, for more
   units an hour than its max units. Day by day from the first over-allocation, the activities on

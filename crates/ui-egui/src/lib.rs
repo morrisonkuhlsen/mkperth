@@ -8,6 +8,7 @@
 mod activities;
 pub mod backstage;
 mod baselines_ui;
+mod budget_ui;
 mod calendars;
 mod chrome;
 mod comments_ui;
@@ -114,6 +115,8 @@ pub enum Side {
     Baselines,
     /// The costs: the currency, the project's, its spending, the cost accounts.
     Costs,
+    /// The budget: the project's and its WBS's, the spending plan, the log, the funding.
+    Budget,
 }
 
 /// The note the Notes pane is making: its kind (0 a band, 1 a marker, 2 a month), name, dates
@@ -213,6 +216,8 @@ pub struct PerthApp {
     /// The new expense and cost account being typed.
     expense_form: costs_ui::ExpenseForm,
     costs_form: costs_ui::CostsForm,
+    /// What the Budget pane shows and is typing.
+    pub budget_form: budget_ui::BudgetForm,
     /// The resource selected in the Resources view, by index, and what that view is typing.
     pub resource_selected: Option<usize>,
     pub resource_form: ResourceForm,
@@ -322,6 +327,7 @@ impl PerthApp {
             baseline_name: String::new(),
             expense_form: Default::default(),
             costs_form: Default::default(),
+            budget_form: Default::default(),
             resource_selected: None,
             resource_form: ResourceForm::default(),
             comment_form: CommentForm::default(),
@@ -587,6 +593,7 @@ impl PerthApp {
             Action::Stripes => self.options.striped = !self.options.striped,
             Action::Baselines => self.side = Some(Side::Baselines),
             Action::Costs => self.side = Some(Side::Costs),
+            Action::Budget => self.side = Some(Side::Budget),
             Action::Links => self.options.links = !self.options.links,
             Action::Table => self.options.table_hidden = !self.options.table_hidden,
             Action::Options(params) => self.run("project.options", params),
@@ -982,6 +989,7 @@ impl PerthApp {
                     Side::Pert => self.pert_pane(ui),
                     Side::Baselines => self.baselines_pane(ui),
                     Side::Costs => self.costs_pane(ui),
+                    Side::Budget => self.budget_pane(ui),
                 }
             });
         }

@@ -36,12 +36,17 @@ fn money_with(cents: i64, currency: &str, group: char, point: char) -> String {
     if currency.is_empty() { number } else { format!("{currency} {number}") }
 }
 
-/// Money typed (`1.234,50`, `1234.5`) as hundredths; `None` if it isn't a number.
-fn read_money(text: &str) -> Option<f64> {
+/// Money typed (`1.234,50`, `1234.5`) as a number; `None` if it isn't one, or is negative.
+pub(crate) fn read_money(text: &str) -> Option<f64> {
+    read_signed_money(text).filter(|m| *m >= 0.0)
+}
+
+/// Money typed, a cut with its minus (`-300`); `None` if it isn't a number.
+pub(crate) fn read_signed_money(text: &str) -> Option<f64> {
     let t = text.trim();
     // A comma after the last point is the decimal one (Portuguese), else points are.
     let normal = if t.rfind(',') > t.rfind('.') { t.replace('.', "").replace(',', ".") } else { t.replace(',', "") };
-    normal.parse::<f64>().ok().filter(|m| m.is_finite() && *m >= 0.0)
+    normal.parse::<f64>().ok().filter(|m| m.is_finite())
 }
 
 /// The typed form for a new expense.
@@ -310,5 +315,7 @@ mod tests {
         assert_eq!(read_money("1,234.50"), Some(1234.5));
         assert_eq!(read_money("30,5"), Some(30.5));
         assert_eq!(read_money("x"), None);
+        assert_eq!(read_money("-3"), None);
+        assert_eq!(read_signed_money("-1.234,50"), Some(-1234.5));
     }
 }

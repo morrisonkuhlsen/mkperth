@@ -815,3 +815,34 @@ fn costs_in_their_pane_and_details() {
     assert_eq!(p.expenses.len(), 1);
     assert_eq!((p.expenses[0].activity.as_str(), p.expenses[0].planned), ("A10", 45_050));
 }
+
+/// The Budget pane from the Project menu: the project's original budget typed, a cut logged.
+#[test]
+fn the_budget_in_its_pane() {
+    use egui::accesskit::Role;
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Project").click();
+    h.run_steps(2);
+    h.get_by_label("Budget…").click();
+    h.run_steps(2);
+    assert_eq!(h.state().side, Some(mkperth_ui_egui::Side::Budget));
+    h.get_by_role_and_label(Role::TextInput, "Original").click();
+    h.run_steps(1);
+    h.get_by_role_and_label(Role::TextInput, "Original").type_text("1000000");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project.budget.of(None).map(|b| b.original), Some(100_000_000));
+    for (field, text) in [("Date", "10/11/2026"), ("Amount", "-300"), ("Reason", "scope")] {
+        h.get_by_role_and_label(Role::TextInput, field).click();
+        h.run_steps(1);
+        h.get_by_role_and_label(Role::TextInput, field).type_text(text);
+        h.run_steps(1);
+    }
+    h.key_press(egui::Key::Tab);
+    h.run_steps(2);
+    h.get_by_label("Log the change").click();
+    h.run_steps(2);
+    let log = &h.state().session.project.budget.log;
+    assert_eq!(log.len(), 1, "{:?}", h.state().status);
+    assert_eq!((log[0].amount, log[0].reason.as_str()), (-30_000, "scope"));
+}

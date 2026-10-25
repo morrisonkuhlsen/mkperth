@@ -165,13 +165,14 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   currency's symbol; each activity's budget, actual, remaining and at-completion costs (a price
   change mid-activity counted from its day), the project's, its spending by day; the cost
   variance against a baseline; P6 XML's rates, cost accounts and expenses; Perth's task cost.
-- **Next:** each activity's budgeted, actual, remaining and at-completion costs, from its
-  resources' prices and from expenses (accrued at the start, the end or over the activity); cost
-  accounts as a hierarchy; the project's and the WBS's budget (original and current, the log of
-  its changes, the spending plan per period, funding sources); earned value (planned value,
-  earned value, actual cost; CPI, SPI, EAC, ETC) with the usual percent-complete methods;
-  financial periods that store each period's actuals; currencies. Perth.jl's task costs and
-  S-curve are the oracle for what it covers.
+- *Done (#24):* the project's and each WBS's budget: original, the log of changes (pending,
+  approved, not approved) giving the current and the proposed, what the WBS under it take and
+  leave undistributed, the spending plan by month and what it leaves unplanned, funding sources
+  in a hierarchy and the funds with what they leave unfunded, the activities' budgeted cost
+  beside it; in P6 XML and Perth's JSON; the Budget pane.
+- **Next:** earned value (planned value, earned value, actual cost; CPI, SPI, EAC, ETC) with the
+  usual percent-complete methods (#25); financial periods that store each period's actuals;
+  currencies. Perth.jl's task costs and S-curve are the oracle for what it covers.
 
 ## Beyond P6 — billing (the user's to schedule)
 P6 has no billing: measurements and invoices are left to other products. MK Perth could close
