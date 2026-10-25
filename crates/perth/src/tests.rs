@@ -401,3 +401,40 @@ fn comments_are_written_and_read_back() {
     assert!(warnings.is_empty() && text.contains("\"mkperth_comments\""));
     assert_eq!(read(&text).unwrap().project.comments, p.comments);
 }
+
+/// MK Perth's budget travels in a field of its own, read back as it was written: budgets with
+/// their plans, the log (a cut and a status), sources in a hierarchy, funds. None, no field;
+/// a field Perth didn't write is refused.
+#[test]
+fn the_budget_in_its_own_field() {
+    use mkperth_core::{BudgetChange, ChangeStatus, Fund, FundingSource, SpendingMonth, WbsBudget};
+    let p = read(&full().to_string()).unwrap().project;
+    assert!(!write(&p).0.contains("mkperth_budget"), "nothing to say");
+    let mut q = p.clone();
+    q.budget.budgets = vec![
+        WbsBudget { wbs: None, original: 100_000_050, plan: vec![SpendingMonth { month: day(2026, 11, 1), amount: 40_000_000 }] },
+        WbsBudget { wbs: Some("a".into()), original: 2_000, plan: Vec::new() },
+    ];
+    q.budget.log = vec![BudgetChange {
+        number: 2,
+        wbs: Some("a".into()),
+        date: day(2026, 11, 10),
+        amount: -30_050,
+        status: ChangeStatus::NotApproved,
+        responsible: "PM".into(),
+        reason: "scope".into(),
+    }];
+    q.budget.sources = vec![
+        FundingSource { id: "BANK".into(), name: "Bank".into(), parent: None },
+        FundingSource { id: "B2".into(), name: "Loan".into(), parent: Some("BANK".into()) },
+    ];
+    q.budget.funds = vec![Fund { source: "B2".into(), amount: 5_000_000 }];
+    let (text, _) = write(&q);
+    assert!(text.contains("\"month\":\"2026-11\""), "{text}");
+    assert_eq!(read(&text).unwrap().project.budget, q.budget);
+    let mut bad: Value = serde_json::from_str(&text).unwrap();
+    bad["mkperth_budget"]["log"][0]["date"] = Value::from("soon");
+    assert!(read(&bad.to_string()).is_err());
+    bad["mkperth_budget"] = Value::from(3);
+    assert!(read(&bad.to_string()).is_err());
+}

@@ -13,9 +13,9 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use mkperth_core::{
-    Accrual, Activity, ActivityKind, Assignment, Band, Baseline, BaselineActivity, Calendar, Comment, Constraint, CostAccount, Date, Expense, Extra,
-    LevelBy, Levelled, LevellingOptions, LevellingPriority, Marker, MonthMark, Pert, Price, Project, Region, Relationship, RelationshipType,
-    Resource, UNIT,
+    Accrual, Activity, ActivityKind, Assignment, Band, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus, Comment,
+    Constraint, CostAccount, Date, Expense, Extra, Fund, FundingSource, LevelBy, Levelled, LevellingOptions, LevellingPriority, Marker, MonthMark,
+    Pert, Price, Project, Region, Relationship, RelationshipType, Resource, SpendingMonth, UNIT, WbsBudget,
 };
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
@@ -94,7 +94,10 @@ const TASK_MAPPED: [&str; 13] = [
 ];
 /// The longest a PERT estimate may be, in days.
 const MAX_ESTIMATE: f64 = 1e6;
-const PROJECT_MAPPED: [&str; 10] = ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING, BASELINES, COSTS];
+const PROJECT_MAPPED: [&str; 11] = ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING, BASELINES, COSTS, BUDGET];
+/// MK Perth's budget: the original budgets and their spending plans, the change log, the
+/// funding sources and the funds; written only when there is one.
+const BUDGET: &str = "mkperth_budget";
 /// MK Perth's costs: the currency, the cost accounts, the resources' prices and the expenses,
 /// written only when they say more than Perth's own task `cost` (read as an expense).
 const COSTS: &str = "mkperth_costs";
@@ -506,6 +509,11 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             r.prices = list;
         }
     }
+    let budget = match root.get(BUDGET) {
+        Some(v @ Value::Object(_)) => budget_of(v)?,
+        Some(Value::Null) | None => Budgeting::default(),
+        Some(_) => return Err(PerthError::Field(String::new(), BUDGET.into())),
+    };
     Ok(Read {
         project: Project {
             name,
@@ -531,7 +539,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             expenses,
             cost_accounts,
             currency,
-            budget: Default::default(),
+            budget,
             activities,
             relationships,
             extra,
@@ -550,6 +558,69 @@ fn perth_expenses(activities: &[Activity]) -> Vec<Expense> {
             Some(Expense { activity: a.id.clone(), name: PERTH_COST.into(), planned: (cost * 100.0).round() as i64, ..Expense::default() })
         })
         .collect()
+}
+
+/// MK Perth's budget from its field: each list capped, each item checked.
+fn budget_of(v: &Value) -> Result<Budgeting, PerthError> {
+    let bad = || PerthError::Field(String::new(), BUDGET.into());
+    let list = |k: &str| v.get(k).and_then(Value::as_array).map(|a| a.iter().take(MAX_TASKS).collect::<Vec<_>>()).unwrap_or_default();
+    let text = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
+    let wbs = |v: &Value| text(v, "wbs").filter(|w| !w.is_empty());
+    let money = |v: &Value, k: &str| v.get(k).and_then(money_of).ok_or_else(bad);
+    let mut b = Budgeting::default();
+    for x in list("budgets") {
+        let mut plan = Vec::new();
+        for m in x.get("plan").and_then(Value::as_array).map(|a| a.iter().take(1200).collect::<Vec<_>>()).unwrap_or_default() {
+            let month = text(m, "month").and_then(|t| Date::parse(&format!("{t}-01"))).ok_or_else(bad)?;
+            plan.push(SpendingMonth { month, amount: money(m, "amount")? });
+        }
+        b.budgets.push(WbsBudget { wbs: wbs(x), original: money(x, "original")?, plan });
+    }
+    for c in list("log") {
+        b.log.push(BudgetChange {
+            number: c.get("number").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()).ok_or_else(bad)?,
+            wbs: wbs(c),
+            date: text(c, "date").and_then(|d| Date::parse(&d)).ok_or_else(bad)?,
+            amount: money(c, "amount")?,
+            status: text(c, "status").and_then(|s| ChangeStatus::from_code(&s)).unwrap_or_default(),
+            responsible: text(c, "responsible").unwrap_or_default(),
+            reason: text(c, "reason").unwrap_or_default(),
+        });
+    }
+    for f in list("sources") {
+        b.sources.push(FundingSource { id: text(f, "id").ok_or_else(bad)?, name: text(f, "name").unwrap_or_default(), parent: text(f, "parent") });
+    }
+    for f in list("funds") {
+        b.funds.push(Fund { source: text(f, "source").ok_or_else(bad)?, amount: money(f, "amount")? });
+    }
+    Ok(b)
+}
+
+/// MK Perth's budget as its field.
+fn budget_value(b: &Budgeting) -> Value {
+    let month = |d: Date| {
+        let (y, m, _) = d.ymd();
+        format!("{y:04}-{m:02}")
+    };
+    let budgets: Vec<Value> = b
+        .budgets
+        .iter()
+        .map(|x| {
+            let plan: Vec<Value> = x.plan.iter().map(|m| serde_json::json!({"month": month(m.month), "amount": money_value(m.amount)})).collect();
+            serde_json::json!({"wbs": x.wbs, "original": money_value(x.original), "plan": plan})
+        })
+        .collect();
+    let log: Vec<Value> = b
+        .log
+        .iter()
+        .map(|c| {
+            serde_json::json!({"number": c.number, "wbs": c.wbs, "date": c.date.to_string(), "amount": money_value(c.amount),
+                "status": c.status.code(), "responsible": c.responsible, "reason": c.reason})
+        })
+        .collect();
+    let sources: Vec<Value> = b.sources.iter().map(|f| serde_json::json!({"id": f.id, "name": f.name, "parent": f.parent})).collect();
+    let funds: Vec<Value> = b.funds.iter().map(|f| serde_json::json!({"source": f.source, "amount": money_value(f.amount)})).collect();
+    serde_json::json!({"budgets": budgets, "log": log, "sources": sources, "funds": funds})
 }
 
 /// Hundredths of the currency as a JSON number: whole when it is.
@@ -765,6 +836,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             prices.insert(r.id.clone(), Value::Array(list));
         }
         fields.push((COSTS.into(), serde_json::json!({"currency": project.currency, "accounts": accounts, "prices": prices, "expenses": expenses})));
+    }
+    if !project.budget.is_empty() {
+        fields.push((BUDGET.into(), budget_value(&project.budget)));
     }
     // The baselines, unless they are just the one Perth's task fields already say.
     let from_tasks = perth_baseline(&project.activities, &project.calendar);
