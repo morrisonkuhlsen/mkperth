@@ -80,8 +80,10 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   own hours; recurring ones said and left out); work and material resources with their rates,
   assignments with their work and units. Told from P6 XML by its content; saved in the format
   it came in. The sample written and read back schedules to the same dates and floats.
-- **Next:** XER is the user's decision (#10: no specification from Oracle); MSPDI's recurring
-  calendar exceptions, percent lags and cost resources.
+- *Done (#35):* MSPDI's recurring calendar exceptions expanded into their days, lags in elapsed
+  time and as a share of the predecessor's duration (scheduled as such), cost resources as
+  expenses and back.
+- **Next:** XER is the user's decision (#10: no specification from Oracle).
 
 ## M2 — the engine and the command line
 - *Started:* `mkperth-engine`: the session (the project, its schedule, what opening it said) and

@@ -56,6 +56,22 @@ pub struct Relationship {
     pub lag: i64,
     /// Working minutes, when the lag isn't whole days; it takes the place of `lag`.
     pub lag_minutes: Option<i64>,
+    /// How the lag counts: working time (the default), elapsed time, or a share of the
+    /// predecessor's duration.
+    pub lag_kind: LagKind,
+}
+
+/// How a relationship's lag counts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum LagKind {
+    /// Working time on the lag calendar: `lag`, or `lag_minutes`.
+    #[default]
+    Working,
+    /// Elapsed time, every hour of every day: `lag_minutes` (or `lag` days of 24 hours).
+    Elapsed,
+    /// A share of the predecessor's duration, in hundredths of a percent (5 000 is half); `lag`
+    /// and `lag_minutes` are not used.
+    Percent(i64),
 }
 
 /// What an activity is, as far as scheduling cares.

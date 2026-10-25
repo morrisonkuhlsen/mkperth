@@ -46,7 +46,14 @@ fn project(activities: &[(&str, i64)], ties: &[(&str, &str, RelationshipType, i6
         extra: Default::default(),
         relationships: ties
             .iter()
-            .map(|(p, s, kind, lag)| Relationship { predecessor: p.to_string(), successor: s.to_string(), kind: *kind, lag: *lag, lag_minutes: None })
+            .map(|(p, s, kind, lag)| Relationship {
+                predecessor: p.to_string(),
+                successor: s.to_string(),
+                kind: *kind,
+                lag: *lag,
+                lag_minutes: None,
+                lag_kind: Default::default(),
+            })
             .collect(),
     }
 }
@@ -638,7 +645,14 @@ fn a_start_to_start_successor_counts_from_the_actual_start() {
     // A started Monday, two days left from the data date (to Thursday); C SS+3 from A: Monday + 3
     // working days is Thursday, not the data date + 3.
     let mut p = progressed(ProgressMode::RetainedLogic);
-    p.relationships.push(Relationship { predecessor: "A".into(), successor: "C".into(), kind: SS, lag: 3, lag_minutes: None });
+    p.relationships.push(Relationship {
+        predecessor: "A".into(),
+        successor: "C".into(),
+        kind: SS,
+        lag: 3,
+        lag_minutes: None,
+        lag_kind: Default::default(),
+    });
     p.activities[0].actual_start = Some(day(2026, 10, 5));
     p.activities[0].remaining_minutes = Some(960);
     let s = schedule(&p).unwrap();
@@ -787,4 +801,25 @@ fn a_resource_on_a_longer_week_keeps_its_dates_backwards() {
     assert_eq!(s.activities[1].early_start, day(2026, 10, 13));
     let lines = explain(&p, "A").unwrap().lines(&|d| d.to_string());
     assert!(lines.iter().any(|l| l.contains("Ana, 5 working days on Seven days") && l.contains("2026-10-12")), "{lines:?}");
+}
+
+/// Lags in elapsed time and in a share of the predecessor's duration. A (5 days) runs Monday 5 to
+/// Friday 9 October 2026 on the project's week of 08:00–12:00 and 13:00–17:00. B follows A with
+/// half A's duration as a lag: 2½ working days, 1 200 minutes from Friday at 17:00: Monday and
+/// Tuesday (960), then 240 on Wednesday the 14th, to its noon; B starts there, the 14th. C
+/// follows A with 48 elapsed hours: from Friday at 17:00 to Sunday at 17:00, so Monday the 12th
+/// in the morning. D follows A with 2 working days, for the difference: Wednesday the 14th.
+#[test]
+fn elapsed_and_percent_lags() {
+    use mkperth_core::LagKind;
+    let mut p = project(&[("A", 5), ("B", 1), ("C", 1), ("D", 1)], &[("A", "B", FS, 0), ("A", "C", FS, 0), ("A", "D", FS, 2)]);
+    p.relationships[0].lag_kind = LagKind::Percent(5_000);
+    p.relationships[1].lag_kind = LagKind::Elapsed;
+    p.relationships[1].lag_minutes = Some(48 * 60);
+    let s = schedule(&p).unwrap();
+    let day = |d| Date::from_ymd(2026, 10, d).unwrap();
+    assert_eq!(get(&s, "A").early_finish, day(9));
+    assert_eq!(get(&s, "B").early_start, day(14));
+    assert_eq!(get(&s, "C").early_start, day(12));
+    assert_eq!(get(&s, "D").early_start, day(14));
 }

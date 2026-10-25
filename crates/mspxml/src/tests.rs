@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use mkperth_core::{Constraint, Date, DurationType, RelationshipType, ResourceKind, UNIT};
+use mkperth_core::{Accrual, Constraint, Date, DurationType, LagKind, RelationshipType, ResourceKind, UNIT};
 
 use super::*;
 
@@ -102,7 +102,9 @@ fn every_unit_converts() {
     assert_eq!(lag("D", "MO"), (RelationshipType::FinishToFinish, 2, None));
     assert_eq!(lag("H", "M"), (RelationshipType::FinishToStart, 5, None));
     assert_eq!(lag("WK", "M"), (RelationshipType::StartToFinish, 20, None));
-    assert_eq!(lag("M", "E").2, Some(60), "elapsed, read as working time");
+    assert_eq!(lag("M", "E").2, Some(60), "60 elapsed minutes");
+    let kinds: Vec<LagKind> = p.relationships.iter().filter(|r| r.successor == "E").map(|r| r.lag_kind).collect();
+    assert_eq!(kinds, [LagKind::Elapsed, LagKind::Percent(5_000)], "500 tenths of a percent: half");
     assert_eq!(p.relationships.iter().filter(|r| r.successor == "E").count(), 2);
     // Constraints, the deadline, the task types, the percent complete.
     assert_eq!(a("D").constraint, Some(Constraint::StartOnOrAfter(day(2026, 11, 3))));
@@ -125,8 +127,10 @@ fn every_unit_converts() {
     assert_eq!(p.resources.len(), 2);
     let x = &p.assignments[0];
     assert_eq!((x.planned, x.actual, x.remaining, x.rate), (20 * UNIT, 4 * UNIT, None, Some(50)));
-    // Warnings: the elapsed and percent lags, the recurring exception, the cost resource.
-    assert_eq!(r.warnings.len(), 3, "{:?}", r.warnings);
+    // New Year's Day each year from 2026 to 2030, the weekdays among them off.
+    assert!(p.calendar.holidays.contains(&day(2027, 1, 1)) && p.calendar.holidays.contains(&day(2029, 1, 1)));
+    assert!(!p.calendar.holidays.contains(&day(2028, 1, 1)), "a Saturday");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
 }
 
 /// Written and read back, the project is the same: IDs (kept as WBS codes), the outline,
@@ -197,4 +201,77 @@ fn hostile_files() {
     let r = read(&text).unwrap();
     assert!(r.project.calendar.holidays.len() <= MAX_EXCEPTION_DAYS as usize + 1);
     assert!(r.warnings.iter().any(|w| w.contains("isn't in the file")), "{:?}", r.warnings);
+}
+
+/// The issue's file (#35): a calendar with Tiradentes as a yearly holiday (21 April, 2027–2030),
+/// a team day off every Friday of March 2027, a payday on the last weekday of each month and a
+/// day off on the second Monday of February; a link with half the predecessor's duration as its
+/// lag, one with 48 elapsed hours, and a cost resource on a task. Read without a warning, and
+/// scheduled to dates worked out by hand.
+///
+/// A is 10 days from Monday 1 March 2027, a Monday-to-Friday week: the Fridays of March off
+/// (the 5th, 12th, 19th, 26th), so A works the 1st–4th, 8th–11th, 15th–16th and finishes
+/// Tuesday the 16th. B follows with half A's duration, 5 working days: the 17th, 18th, 22nd,
+/// 23rd, 24th, so it starts Thursday the 25th. C follows A after 48 elapsed hours: from Tuesday
+/// at 17:00 to Thursday the 18th at 17:00, so it starts Monday the 22nd (the 19th a Friday off).
+#[test]
+fn recurring_exceptions_odd_lags_and_cost_resources() {
+    let hours = "<WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes>";
+    let week: String = (1..=7u8)
+        .map(|t| {
+            let working = (2..=6).contains(&t);
+            format!("<WeekDay><DayType>{t}</DayType><DayWorking>{}</DayWorking>{}</WeekDay>", u8::from(working), if working { hours } else { "" })
+        })
+        .collect();
+    let exception = |body: &str| format!("<Exception>{body}<DayWorking>0</DayWorking></Exception>");
+    let exceptions = [
+        exception("<TimePeriod><FromDate>2027-01-01T00:00:00</FromDate><ToDate>2030-12-31T23:59:00</ToDate></TimePeriod><Type>2</Type><Month>3</Month><MonthDay>21</MonthDay>"),
+        exception("<TimePeriod><FromDate>2027-03-01T00:00:00</FromDate><ToDate>2027-03-31T23:59:00</ToDate></TimePeriod><Type>6</Type><Period>1</Period><DaysOfWeek>32</DaysOfWeek>"),
+        exception("<EnteredByOccurrences>1</EnteredByOccurrences><TimePeriod><FromDate>2027-01-01T00:00:00</FromDate><ToDate>2027-01-01T23:59:00</ToDate></TimePeriod><Occurrences>12</Occurrences><Type>5</Type><Period>1</Period><MonthItem>1</MonthItem><MonthPosition>4</MonthPosition>"),
+        exception("<TimePeriod><FromDate>2027-01-01T00:00:00</FromDate><ToDate>2027-12-31T23:59:00</ToDate></TimePeriod><Type>3</Type><Month>1</Month><MonthItem>4</MonthItem><MonthPosition>1</MonthPosition>"),
+    ]
+    .concat();
+    let text = format!(
+        r#"<Project xmlns="http://schemas.microsoft.com/project"><Name>Recurring</Name><StartDate>2027-03-01T08:00:00</StartDate><MinutesPerDay>480</MinutesPerDay><CalendarUID>1</CalendarUID>
+<Calendars><Calendar><UID>1</UID><Name>Standard</Name><IsBaseCalendar>1</IsBaseCalendar><WeekDays>{week}</WeekDays><Exceptions>{exceptions}</Exceptions></Calendar></Calendars>
+<Tasks>
+<Task><UID>1</UID><ID>1</ID><Name>A</Name><WBS>A</WBS><OutlineLevel>1</OutlineLevel><Duration>PT80H0M0S</Duration><DurationFormat>7</DurationFormat></Task>
+<Task><UID>2</UID><ID>2</ID><Name>B</Name><WBS>B</WBS><OutlineLevel>1</OutlineLevel><Duration>PT8H0M0S</Duration><PredecessorLink><PredecessorUID>1</PredecessorUID><Type>1</Type><LinkLag>500</LinkLag><LagFormat>19</LagFormat></PredecessorLink></Task>
+<Task><UID>3</UID><ID>3</ID><Name>C</Name><WBS>C</WBS><OutlineLevel>1</OutlineLevel><Duration>PT8H0M0S</Duration><PredecessorLink><PredecessorUID>1</PredecessorUID><Type>1</Type><LinkLag>28800</LinkLag><LagFormat>6</LagFormat></PredecessorLink></Task>
+</Tasks>
+<Resources><Resource><UID>1</UID><ID>1</ID><Name>Permits</Name><Type>2</Type><AccrueAt>1</AccrueAt></Resource></Resources>
+<Assignments><Assignment><UID>1</UID><TaskUID>1</TaskUID><ResourceUID>1</ResourceUID><Cost>1250.5</Cost><ActualCost>0</ActualCost></Assignment></Assignments>
+</Project>"#
+    );
+    let r = read(&text).unwrap();
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    let p = &r.project;
+    let off = &p.calendar.holidays;
+    // Tiradentes: the 21st of April each year, the weekdays among them.
+    assert!(off.contains(&day(2027, 4, 21)) && off.contains(&day(2028, 4, 21)));
+    assert!(!off.contains(&day(2029, 4, 21)) && !off.contains(&day(2030, 4, 21)), "a Saturday and a Sunday");
+    // Every Friday of March 2027, and no Friday after.
+    assert!([5, 12, 19, 26].iter().all(|d| off.contains(&day(2027, 3, *d))));
+    assert!(!off.contains(&day(2027, 4, 2)));
+    // The last weekday of each month of 2027: 29 January, 26 February, 31 March … 31 December.
+    assert!(off.contains(&day(2027, 1, 29)) && off.contains(&day(2027, 2, 26)) && off.contains(&day(2027, 12, 31)));
+    // The second Monday of February 2027: the 8th.
+    assert!(off.contains(&day(2027, 2, 8)));
+    assert_eq!(p.expenses.len(), 1);
+    let e = &p.expenses[0];
+    assert_eq!((e.activity.as_str(), e.name.as_str(), e.planned, e.accrual), ("A", "Permits", 125_050, Accrual::Start));
+    let s = mkperth_sched::schedule(p).unwrap();
+    let at = |id: &str| {
+        let k = p.activities.iter().position(|a| a.id == id).unwrap();
+        (s.activities[k].early_start, s.activities[k].early_finish)
+    };
+    assert_eq!(at("A"), (day(2027, 3, 1), day(2027, 3, 16)));
+    assert_eq!(at("B").0, day(2027, 3, 25));
+    assert_eq!(at("C").0, day(2027, 3, 22));
+    // Written and read back: the lags' kinds and the expense as a cost resource.
+    let (written, warnings) = write(p);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let back = read(&written).unwrap().project;
+    assert_eq!(back.relationships.iter().map(|r| r.lag_kind).collect::<Vec<_>>(), p.relationships.iter().map(|r| r.lag_kind).collect::<Vec<_>>());
+    assert_eq!(back.expenses, p.expenses);
 }

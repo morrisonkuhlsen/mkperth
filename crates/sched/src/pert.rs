@@ -178,6 +178,7 @@ mod tests {
                 kind: RelationshipType::FinishToStart,
                 lag: 0,
                 lag_minutes: None,
+                lag_kind: Default::default(),
             }],
             bands: Vec::new(),
             markers: Vec::new(),

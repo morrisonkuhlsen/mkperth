@@ -368,7 +368,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             }
             None => (0, None),
         };
-        relationships.push(Relationship { predecessor, successor, kind, lag, lag_minutes });
+        relationships.push(Relationship { predecessor, successor, kind, lag, lag_minutes, lag_kind: Default::default() });
     }
     if dangling > 0 {
         warnings.push(tr!("warn-p6-dangling", n = dangling));
@@ -1050,6 +1050,10 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     }
     if !project.external.is_empty() {
         warnings.push(tr!("warn-p6-external", n = project.external.len()));
+    }
+    let odd_lags = project.relationships.iter().filter(|r| r.lag_kind != mkperth_core::LagKind::Working).count();
+    if odd_lags > 0 {
+        warnings.push(tr!("warn-lag-kinds", n = odd_lags));
     }
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str(&format!("<APIBusinessObjects xmlns=\"{NAMESPACE}\">\n"));

@@ -14,8 +14,8 @@ mod tree;
 use std::collections::{BTreeSet, HashMap};
 
 use mkperth_core::{
-    Activity, ActivityKind, Assignment, Calendar, Constraint, Date, DurationType, Period, Project, Relationship, RelationshipType, Resource,
-    ResourceKind, UNIT,
+    Accrual, Activity, ActivityKind, Assignment, Calendar, Constraint, Date, DurationType, Expense, LagKind, Period, Project, Relationship,
+    RelationshipType, Resource, ResourceKind, UNIT,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -172,6 +172,110 @@ fn days_of(e: &Element) -> Vec<Date> {
     (0..=(to.days() - from.days()).clamp(0, MAX_EXCEPTION_DAYS)).filter_map(|k| Date::from_days(from.days() + k)).collect()
 }
 
+/// The `n`th (from 0; 4 is the last) day of month `m` of year `y` that `item` matches: any day
+/// (0), a weekday (1), a weekend day (2), or Sunday (3) to Saturday (9).
+fn nth_in_month(y: i32, m: u32, item: i64, position: i64) -> Option<Date> {
+    let first = Date::from_ymd(y, m, 1)?;
+    let next = if m == 12 { Date::from_ymd(y + 1, 1, 1)? } else { Date::from_ymd(y, m + 1, 1)? };
+    // Sunday 0 to Saturday 6.
+    let sunday_first = |d: Date| (d.weekday().index() + 1) % 7;
+    let fits = |d: Date| match item {
+        0 => true,
+        1 => (1..=5).contains(&sunday_first(d)),
+        2 => matches!(sunday_first(d), 0 | 6),
+        3..=9 => sunday_first(d) as i64 == item - 3,
+        _ => false,
+    };
+    let days: Vec<Date> = (first.days()..next.days()).filter_map(Date::from_days).filter(|d| fits(*d)).collect();
+    match position {
+        4 => days.last().copied(),
+        0..=3 => days.get(position as usize).copied(),
+        _ => None,
+    }
+}
+
+/// The days a calendar exception covers, by its recurrence: daily every `Period` days (1),
+/// yearly on a day of a month (2) or at a position in it (3), monthly on a day (4) or at a
+/// position (5) every `Period` months, weekly on `DaysOfWeek` every `Period` weeks (6); from its
+/// `TimePeriod`'s first day, to its last or for its `Occurrences`. `None` for a kind not read.
+fn recurrence_days(x: &Element) -> Option<Vec<Date>> {
+    let int = |name: &str| x.text_of(name).and_then(|t| t.parse::<i64>().ok());
+    let p = x.child("TimePeriod")?;
+    let from = p.text_of("FromDate").and_then(date_of)?;
+    let to = p.text_of("ToDate").and_then(date_of).unwrap_or(from);
+    let by_count = x.text_of("EnteredByOccurrences") == Some("1");
+    let limit = if by_count { int("Occurrences").unwrap_or(1).clamp(0, 5_000) as usize } else { 5_000 };
+    // Counted occurrences may run past the period's end: a century at most.
+    let last = if by_count { Date::from_days(from.days() + 36_600).unwrap_or(to) } else { to };
+    let period = int("Period").unwrap_or(1).clamp(1, 1_000);
+    let (month, day, item, position) =
+        (int("Month").unwrap_or(0), int("MonthDay").unwrap_or(1), int("MonthItem").unwrap_or(0), int("MonthPosition").unwrap_or(0));
+    let mut out: Vec<Date> = Vec::new();
+    let mut keep = |d: Date| {
+        if d >= from && d <= last && out.len() < limit && !out.contains(&d) {
+            out.push(d);
+        }
+    };
+    let (y0, m0, _) = from.ymd();
+    let (y1, _, _) = last.ymd();
+    match int("Type").unwrap_or(1) {
+        1 => {
+            let mut k = from.days();
+            while k <= last.days() && (k - from.days()) / (period as i32) < 5_000 {
+                if let Some(d) = Date::from_days(k) {
+                    keep(d);
+                }
+                k += period as i32;
+            }
+        }
+        2 | 3 => {
+            let m = u32::try_from(month + 1).ok().filter(|m| (1..=12).contains(m))?;
+            for y in y0..=y1.min(y0 + 200) {
+                let d = if int("Type") == Some(2) {
+                    u32::try_from(day).ok().and_then(|d| Date::from_ymd(y, m, d))
+                } else {
+                    nth_in_month(y, m, item, position)
+                };
+                if let Some(d) = d {
+                    keep(d);
+                }
+            }
+        }
+        4 | 5 => {
+            let (mut y, mut m) = (y0, m0);
+            let mut steps = 0;
+            while (y, m) <= (y1, 12) && steps < 2_400 {
+                let d = if int("Type") == Some(4) {
+                    u32::try_from(day).ok().and_then(|d| Date::from_ymd(y, m, d))
+                } else {
+                    nth_in_month(y, m, item, position)
+                };
+                if let Some(d) = d {
+                    keep(d);
+                }
+                for _ in 0..period {
+                    (y, m) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
+                }
+                steps += 1;
+            }
+        }
+        6 => {
+            let mask = int("DaysOfWeek").unwrap_or(0);
+            // Weeks counted from the Sunday on or before the first day.
+            let week0 = from.days() - ((from.weekday().index() as i32 + 1) % 7);
+            for k in from.days()..=last.days().min(from.days() + 36_600) {
+                let Some(d) = Date::from_days(k) else { continue };
+                let bit = 1i64 << ((d.weekday().index() + 1) % 7);
+                if mask & bit != 0 && ((k - week0) / 7) % (period as i32) == 0 {
+                    keep(d);
+                }
+            }
+        }
+        _ => return None,
+    }
+    Some(out)
+}
+
 /// A calendar from its element; the counts of recurring exceptions left out are added to `skipped`.
 fn calendar_of(e: &Element, base: Option<&Calendar>, skipped: &mut usize) -> Calendar {
     let mut c = base.cloned().unwrap_or_default();
@@ -195,10 +299,9 @@ fn calendar_of(e: &Element, base: Option<&Calendar>, skipped: &mut usize) -> Cal
         }
     }
     for x in e.child("Exceptions").map(|x| x.all("Exception").collect::<Vec<_>>()).unwrap_or_default() {
-        // Only the exceptions over a stretch of days: every day of it.
-        match x.text_of("Type").and_then(|t| t.parse::<u8>().ok()) {
-            None | Some(1) => exceptions.push((days_of(x), x.text_of("DayWorking") == Some("1"), periods_of(x))),
-            Some(_) => *skipped += 1,
+        match recurrence_days(x) {
+            Some(days) => exceptions.push((days, x.text_of("DayWorking") == Some("1"), periods_of(x))),
+            None => *skipped += 1,
         }
     }
     for (days, working, periods) in exceptions {
@@ -371,7 +474,7 @@ pub fn read(text: &str) -> Result<Read, MspError> {
         activities.push(a);
     }
     // Links: the lag in tenths of a minute of working time, shown in the format given.
-    let (mut odd_lags, mut dangling, mut across) = (0usize, 0usize, 0usize);
+    let (mut dangling, mut across) = (0usize, 0usize);
     let mut relationships = Vec::new();
     for (successor, l) in links {
         if l.text_of("CrossProject") == Some("1") {
@@ -382,27 +485,17 @@ pub fn read(text: &str) -> Result<Read, MspError> {
             dangling += 1;
             continue;
         };
-        let tenths = int(l, "LinkLag").unwrap_or(0);
+        let tenths = int(l, "LinkLag").unwrap_or(0).clamp(-100_000_000_000, 100_000_000_000);
         let format = int(l, "LagFormat").and_then(format_unit);
-        let minutes = match format {
-            Some((Unit::Percent, _)) => {
-                odd_lags += 1;
-                0
-            }
-            Some((_, true)) => {
-                odd_lags += 1;
-                tenths / 10
-            }
-            _ => tenths / 10,
-        };
+        let minutes = tenths / 10;
         let whole = minutes % per_day == 0;
-        relationships.push(Relationship {
-            predecessor,
-            successor,
-            kind: link_of(int(l, "Type").unwrap_or(1)),
-            lag: if whole { minutes / per_day } else { 0 },
-            lag_minutes: (!whole).then_some(minutes),
-        });
+        let (lag, lag_minutes, lag_kind) = match format {
+            // A share of the predecessor's duration, in tenths of a percent like the minutes.
+            Some((Unit::Percent, _)) => (0, None, LagKind::Percent(tenths.saturating_mul(10).clamp(-10_000_000, 10_000_000))),
+            Some((_, true)) => (0, Some(minutes), LagKind::Elapsed),
+            _ => (if whole { minutes / per_day } else { 0 }, (!whole).then_some(minutes), LagKind::Working),
+        };
+        relationships.push(Relationship { predecessor, successor, kind: link_of(int(l, "Type").unwrap_or(1)), lag, lag_minutes, lag_kind });
     }
     // A milestone after a predecessor sits at its finish, as Microsoft Project draws it: a
     // finish milestone; one with none, at the start.
@@ -410,9 +503,6 @@ pub fn read(text: &str) -> Result<Read, MspError> {
         if relationships.iter().any(|r| r.successor == a.id) {
             a.kind = ActivityKind::FinishMilestone;
         }
-    }
-    if odd_lags > 0 {
-        warnings.push(tr!("warn-msp-lags", n = odd_lags));
     }
     if dangling > 0 {
         warnings.push(tr!("warn-msp-dangling", n = dangling));
@@ -424,6 +514,8 @@ pub fn read(text: &str) -> Result<Read, MspError> {
     // Resources and their assignments: work in hours, units 1 for 100 %.
     let mut resources: Vec<Resource> = Vec::new();
     let mut resource_by_uid: HashMap<String, String> = HashMap::new();
+    let mut cost_resources: HashMap<String, (String, Accrual)> = HashMap::new();
+    let mut expenses: Vec<Expense> = Vec::new();
     for r in root.child("Resources").map(|r| r.all("Resource").collect::<Vec<_>>()).unwrap_or_default() {
         let (Some(uid), Some(name)) = (r.text_of("UID"), r.text_of("Name")) else { continue };
         if uid == "0" {
@@ -432,7 +524,13 @@ pub fn read(text: &str) -> Result<Read, MspError> {
         let kind = match int(r, "Type") {
             Some(0) => ResourceKind::Material,
             Some(2) => {
-                warnings.push(tr!("warn-msp-cost-resource", name = name));
+                // A cost resource: its assignments are expenses, accrued as it says.
+                let accrual = match int(r, "AccrueAt") {
+                    Some(1) => Accrual::Start,
+                    Some(2) => Accrual::End,
+                    _ => Accrual::Uniform,
+                };
+                cost_resources.insert(uid.to_string(), (name.to_string(), accrual));
                 continue;
             }
             _ => ResourceKind::Labor,
@@ -456,7 +554,20 @@ pub fn read(text: &str) -> Result<Read, MspError> {
     }
     let mut assignments = Vec::new();
     let hours = |e: &Element, name: &str| e.text_of(name).and_then(duration_of).map(|m| m * UNIT / 60);
+    let money = |e: &Element, name: &str| number(e, name).filter(|x| x.abs() < 1e13).map(|x| (x * 100.0).round() as i64);
     for x in root.child("Assignments").map(|a| a.all("Assignment").collect::<Vec<_>>()).unwrap_or_default() {
+        // A cost resource's: an expense on the task, named after the resource.
+        if let (Some(activity), Some((name, accrual))) =
+            (x.text_of("TaskUID").and_then(|u| by_uid.get(u)).cloned(), x.text_of("ResourceUID").and_then(|u| cost_resources.get(u)))
+        {
+            let planned = money(x, "Cost").unwrap_or(0);
+            let actual = money(x, "ActualCost").unwrap_or(0);
+            let remaining = money(x, "RemainingCost").filter(|r| *r != planned.saturating_sub(actual).max(0));
+            if !expenses.iter().any(|e| e.activity == activity && e.name == *name) {
+                expenses.push(Expense { activity, name: name.clone(), planned, actual, remaining, accrual: *accrual, ..Expense::default() });
+            }
+            continue;
+        }
         let (Some(activity), Some(resource)) =
             (x.text_of("TaskUID").and_then(|u| by_uid.get(u)).cloned(), x.text_of("ResourceUID").and_then(|u| resource_by_uid.get(u)).cloned())
         else {
@@ -500,7 +611,7 @@ pub fn read(text: &str) -> Result<Read, MspError> {
             levelling: Default::default(),
             baselines: Vec::new(),
             baseline_in_use: None,
-            expenses: Vec::new(),
+            expenses,
             cost_accounts: Vec::new(),
             currency: root.text_of("CurrencySymbol").unwrap_or_default().to_string(),
             budget: Default::default(),
@@ -613,7 +724,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     let mut warnings = Vec::new();
     // What MK Perth holds that this file doesn't carry.
     let left_out: Vec<String> = [
-        (!project.expenses.is_empty() || !project.cost_accounts.is_empty(), "msp-left-costs"),
+        (!project.cost_accounts.is_empty(), "msp-left-costs"),
         (!project.baselines.is_empty(), "msp-left-baselines"),
         (!project.comments.is_empty(), "msp-left-comments"),
         (!(project.bands.is_empty() && project.markers.is_empty() && project.month_marks.is_empty()), "msp-left-notes"),
@@ -727,18 +838,40 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         for r in project.relationships.iter().filter(|r| r.successor == a.id) {
             let Some(p) = uid.get(r.predecessor.as_str()) else { continue };
-            let minutes = r.lag_minutes.unwrap_or_else(|| r.lag.saturating_mul(per_day));
-            let format = if r.lag_minutes.is_none() {
-                7
-            } else if minutes % 60 == 0 {
-                5
-            } else {
-                3
+            // The lag in tenths of a minute (of a percent, for a share), and its format.
+            let (tenths, format) = match r.lag_kind {
+                LagKind::Percent(p) => (p / 10, 19),
+                LagKind::Elapsed => {
+                    let m = r.lag_minutes.unwrap_or_else(|| r.lag.saturating_mul(1440));
+                    (
+                        m.saturating_mul(10),
+                        if m % 1440 == 0 {
+                            8
+                        } else if m % 60 == 0 {
+                            6
+                        } else {
+                            4
+                        },
+                    )
+                }
+                LagKind::Working => {
+                    let m = r.lag_minutes.unwrap_or_else(|| r.lag.saturating_mul(per_day));
+                    (
+                        m.saturating_mul(10),
+                        if r.lag_minutes.is_none() {
+                            7
+                        } else if m % 60 == 0 {
+                            5
+                        } else {
+                            3
+                        },
+                    )
+                }
             };
             out.push_str(&format!(
                 "      <PredecessorLink>\n        <PredecessorUID>{p}</PredecessorUID>\n        <Type>{}</Type>\n        <CrossProject>0</CrossProject>\n        <LinkLag>{}</LinkLag>\n        <LagFormat>{format}</LagFormat>\n      </PredecessorLink>\n",
                 link_code(r.kind),
-                minutes.saturating_mul(10)
+                tenths
             ));
         }
         out.push_str("    </Task>\n");
@@ -782,6 +915,31 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         out.push_str("    </Resource>\n");
     }
+    // Expenses as cost resources, one for each name, after the others.
+    let mut cost_names: Vec<(&str, Accrual)> = Vec::new();
+    for e in project.expenses.iter().filter(|e| !summary(&e.activity)) {
+        if !cost_names.iter().any(|(n, _)| *n == e.name) {
+            cost_names.push((e.name.as_str(), e.accrual));
+        }
+    }
+    let first_cost = project.resources.len() + 1;
+    for (k, (name, accrual)) in cost_names.iter().enumerate() {
+        let accrue = match accrual {
+            Accrual::Start => 1,
+            Accrual::End => 2,
+            Accrual::Uniform => 3,
+        };
+        out.push_str(&format!(
+            "    <Resource>\n      <UID>{}</UID>\n      <ID>{}</ID>\n      <Name>{}</Name>\n      <Type>2</Type>\n      <AccrueAt>{accrue}</AccrueAt>\n    </Resource>\n",
+            first_cost + k,
+            first_cost + k,
+            esc(name)
+        ));
+    }
+    let on_summaries = project.expenses.iter().filter(|e| summary(&e.activity)).count();
+    if on_summaries > 0 {
+        warnings.push(tr!("warn-msp-summary-expenses", n = on_summaries));
+    }
     out.push_str("  </Resources>\n");
     let changing = project.resources.iter().filter(|r| r.prices.len() > 1).count();
     if changing > 0 {
@@ -802,6 +960,18 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             hours(x.planned),
             hours(x.actual),
             hours(x.remaining_units())
+        ));
+    }
+    for (k, e) in project.expenses.iter().enumerate() {
+        let (Some(t), Some(r)) = (uid.get(e.activity.as_str()), cost_names.iter().position(|(n, _)| *n == e.name).map(|n| first_cost + n)) else {
+            continue;
+        };
+        out.push_str(&format!(
+            "    <Assignment>\n      <UID>{}</UID>\n      <TaskUID>{t}</TaskUID>\n      <ResourceUID>{r}</ResourceUID>\n      <Cost>{}</Cost>\n      <ActualCost>{}</ActualCost>\n      <RemainingCost>{}</RemainingCost>\n    </Assignment>\n",
+            project.assignments.len() + k + 1,
+            e.planned as f64 / 100.0,
+            e.actual as f64 / 100.0,
+            e.remaining_cost() as f64 / 100.0
         ));
     }
     out.push_str("  </Assignments>\n</Project>\n");

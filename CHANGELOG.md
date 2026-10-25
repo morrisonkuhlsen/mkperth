@@ -24,6 +24,14 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Lags in elapsed time and as a share of the predecessor's duration (#35): a relationship's lag
+  counts in working time (as before), elapsed time (every hour of every day) or a percent of the
+  predecessor's duration. Read and written in Microsoft Project XML; P6 XML and Perth's JSON
+  have neither and write them as working time, with a warning.
+- Microsoft Project XML reads recurring calendar exceptions (daily, weekly on given days,
+  monthly or yearly on a day or at a position such as the last weekday or the fourth Thursday,
+  every few periods, to a date or for a number of times), and cost resources as expenses on
+  their tasks; expenses are written as cost resources.
 - MK Perth in a browser (#28): the whole app as WebAssembly (`apps/mkperth-web`, built with
   `cargo xtask web` into `target/web`). Files are opened with the browser's file picker and saved
   or exported as downloads; everything runs in the page and nothing is sent anywhere. A GitHub

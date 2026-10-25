@@ -1629,7 +1629,19 @@ impl PerthApp {
                     }
                 }
                 DetailsTab::Relationships => {
-                    let lag = |l: i64| if l == 0 { String::new() } else { format!(" {l:+}") };
+                    // The lag as it counts: working days, elapsed hours, or a share of the predecessor.
+                    let lag = |r: &mkperth_engine::core::Relationship| match r.lag_kind {
+                        mkperth_engine::core::LagKind::Percent(p) => format!(" {:+}%", p as f64 / 100.0),
+                        mkperth_engine::core::LagKind::Elapsed => {
+                            let m = r.lag_minutes.unwrap_or(r.lag * 1440);
+                            format!(" {:+}h {}", m / 60, tr!("lag-elapsed"))
+                        }
+                        mkperth_engine::core::LagKind::Working if r.lag == 0 && r.lag_minutes.is_none() => String::new(),
+                        mkperth_engine::core::LagKind::Working => match r.lag_minutes {
+                            Some(m) => format!(" {:+}min", m),
+                            None => format!(" {:+}", r.lag),
+                        },
+                    };
                     let mut remove = None;
                     for (title, predecessors) in [(tr!("detail-predecessors"), true), (tr!("detail-successors"), false)] {
                         theme::section(ui, &title);
@@ -1640,7 +1652,7 @@ impl PerthApp {
                         }
                         for r in list {
                             let other = if predecessors { &r.predecessor } else { &r.successor };
-                            if theme::list_item(ui, None, other, &format!("{}{}", r.kind.code(), lag(r.lag)), &tr!("relationship-remove")) {
+                            if theme::list_item(ui, None, other, &format!("{}{}", r.kind.code(), lag(r)), &tr!("relationship-remove")) {
                                 remove = Some((r.predecessor.clone(), r.successor.clone()));
                             }
                         }

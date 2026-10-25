@@ -439,7 +439,14 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
                 warnings.push(tr!("warn-perth-dangling", task = successor.as_str(), dependency = d.as_str()));
                 continue;
             }
-            relationships.push(Relationship { predecessor, successor: successor.clone(), kind, lag, lag_minutes: None });
+            relationships.push(Relationship {
+                predecessor,
+                successor: successor.clone(),
+                kind,
+                lag,
+                lag_minutes: None,
+                lag_kind: Default::default(),
+            });
         }
     }
     let start = activities.iter().filter_map(|a| match a.constraint {
@@ -984,6 +991,10 @@ fn kept(text: &str) -> Value {
 /// written (start-to-finish relationships, constraints Perth has no field for).
 pub fn write(project: &Project) -> (String, Vec<String>) {
     let mut warnings = Vec::new();
+    let odd_lags = project.relationships.iter().filter(|r| r.lag_kind != mkperth_core::LagKind::Working).count();
+    if odd_lags > 0 {
+        warnings.push(tr!("warn-lag-kinds", n = odd_lags));
+    }
     let mut tasks = Vec::with_capacity(project.activities.len());
     for a in &project.activities {
         let mut known = Map::new();

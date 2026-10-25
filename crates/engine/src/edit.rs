@@ -667,7 +667,14 @@ impl Session {
                         return Err(ScheduleError::SelfRelationship(a.clone()).into());
                     }
                     if !p.relationships.iter().any(|r| r.predecessor == *a && r.successor == *b) {
-                        p.relationships.push(Relationship { predecessor: a.clone(), successor: b.clone(), kind, lag, lag_minutes: None });
+                        p.relationships.push(Relationship {
+                            predecessor: a.clone(),
+                            successor: b.clone(),
+                            kind,
+                            lag,
+                            lag_minutes: None,
+                            lag_kind: Default::default(),
+                        });
                         added += 1;
                     }
                 }
@@ -690,7 +697,14 @@ impl Session {
             if p.relationships.iter().any(|r| r.predecessor == predecessor && r.successor == successor) {
                 return Err(EngineError::DuplicateRelationship(predecessor.clone(), successor.clone()));
             }
-            p.relationships.push(Relationship { predecessor: predecessor.clone(), successor: successor.clone(), kind, lag, lag_minutes: None });
+            p.relationships.push(Relationship {
+                predecessor: predecessor.clone(),
+                successor: successor.clone(),
+                kind,
+                lag,
+                lag_minutes: None,
+                lag_kind: Default::default(),
+            });
             Ok(())
         })
     }

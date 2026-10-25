@@ -119,6 +119,7 @@ pub fn schedule_together(projects: &[&Project], links: &[Link]) -> Result<Vec<Sc
                 kind: RelationshipType::StartToStart,
                 lag: 0,
                 lag_minutes: None,
+                lag_kind: Default::default(),
             });
         }
         merged.activities.push(Activity {
@@ -138,6 +139,7 @@ pub fn schedule_together(projects: &[&Project], links: &[Link]) -> Result<Vec<Sc
                 kind: l.kind,
                 lag: l.lag,
                 lag_minutes: l.lag_minutes,
+                lag_kind: Default::default(),
             });
         }
     }
@@ -210,6 +212,7 @@ mod tests {
                 kind: RelationshipType::FinishToStart,
                 lag: 0,
                 lag_minutes: None,
+                lag_kind: Default::default(),
             })
             .collect();
         p

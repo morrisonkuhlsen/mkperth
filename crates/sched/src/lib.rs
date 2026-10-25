@@ -49,7 +49,7 @@ pub use usage::{by_week, capacity, usage};
 use std::collections::{HashMap, VecDeque};
 
 use mkperth_core::{
-    ActivityKind, Calendar, CalendarError, Constraint, CriticalBy, Date, FloatKind, LagCalendar, MINUTES_PER_DAY, ProgressMode, Project,
+    ActivityKind, Calendar, CalendarError, Constraint, CriticalBy, Date, FloatKind, LagCalendar, LagKind, MINUTES_PER_DAY, ProgressMode, Project,
     RelationshipType, ResourceKind,
 };
 use mkperth_i18n::tr;
@@ -323,14 +323,32 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         if r.lag.abs() > MAX_SPAN || r.lag_minutes.is_some_and(|m| m.abs() > MAX_SPAN * MINUTES_PER_DAY) {
             return Err(ScheduleError::TooLong);
         }
-        let lag_calendar = match project.lag_calendar {
-            LagCalendar::Predecessor => cal_of(from),
-            LagCalendar::Successor => cal_of(to),
-            LagCalendar::TwentyFourHour => twenty_four,
-            LagCalendar::Project => 0,
+        let (lag_calendar, lag_minutes) = match r.lag_kind {
+            LagKind::Working => {
+                let lag_calendar = match project.lag_calendar {
+                    LagCalendar::Predecessor => cal_of(from),
+                    LagCalendar::Successor => cal_of(to),
+                    LagCalendar::TwentyFourHour => twenty_four,
+                    LagCalendar::Project => 0,
+                };
+                let day = calendars.get(lag_calendar).map_or(480, |c| c.day_minutes());
+                (lag_calendar, r.lag_minutes.unwrap_or(r.lag.saturating_mul(day)))
+            }
+            // Every hour of every day.
+            LagKind::Elapsed => (twenty_four, r.lag_minutes.unwrap_or(r.lag.saturating_mul(MINUTES_PER_DAY))),
+            // A share of the predecessor's duration, worked on its calendar.
+            LagKind::Percent(share) => {
+                let calendar = cal_of(from);
+                let day = calendars.get(calendar).map_or(480, |c| c.day_minutes());
+                let duration = acts.get(from).map_or(0, |a| a.working_minutes(day));
+                let minutes = i128::from(duration) * i128::from(share.clamp(-1_000_000, 1_000_000)) / 10_000;
+                (calendar, i64::try_from(minutes).map_err(|_| ScheduleError::TooLong)?)
+            }
         };
-        let day = calendars.get(lag_calendar).map_or(480, |c| c.day_minutes());
-        ties.push(Tie { from, to, kind: r.kind, lag: r.lag, lag_minutes: r.lag_minutes.unwrap_or(r.lag.saturating_mul(day)), lag_calendar });
+        if lag_minutes.abs() > MAX_SPAN * MINUTES_PER_DAY {
+            return Err(ScheduleError::TooLong);
+        }
+        ties.push(Tie { from, to, kind: r.kind, lag: r.lag, lag_minutes, lag_calendar });
     }
     let n = acts.len();
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new(); n];

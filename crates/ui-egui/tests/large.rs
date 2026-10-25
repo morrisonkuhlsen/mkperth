@@ -29,6 +29,7 @@ fn large(n: usize) -> Project {
                     kind: RelationshipType::FinishToStart,
                     lag: 0,
                     lag_minutes: None,
+                    lag_kind: Default::default(),
                 });
             }
             if w > 0 && k % 10 == 0 {
@@ -38,6 +39,7 @@ fn large(n: usize) -> Project {
                     kind: RelationshipType::FinishToStart,
                     lag: 0,
                     lag_minutes: None,
+                    lag_kind: Default::default(),
                 });
             }
         }

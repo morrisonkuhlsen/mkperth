@@ -126,9 +126,23 @@ fn dependency_strings() {
         assert_eq!((id.as_str(), kind, lag), expected, "{text}");
     }
     for r in [
-        Relationship { predecessor: "a".into(), successor: "b".into(), kind: StartToStart, lag: 2, lag_minutes: None },
-        Relationship { predecessor: "a".into(), successor: "b".into(), kind: FinishToStart, lag: -1, lag_minutes: None },
-        Relationship { predecessor: "a".into(), successor: "b".into(), kind: FinishToFinish, lag: 0, lag_minutes: None },
+        Relationship { predecessor: "a".into(), successor: "b".into(), kind: StartToStart, lag: 2, lag_minutes: None, lag_kind: Default::default() },
+        Relationship {
+            predecessor: "a".into(),
+            successor: "b".into(),
+            kind: FinishToStart,
+            lag: -1,
+            lag_minutes: None,
+            lag_kind: Default::default(),
+        },
+        Relationship {
+            predecessor: "a".into(),
+            successor: "b".into(),
+            kind: FinishToFinish,
+            lag: 0,
+            lag_minutes: None,
+            lag_kind: Default::default(),
+        },
     ] {
         let text = write_dependency(&r).unwrap();
         assert_eq!(parse_dependency(&text), (r.predecessor.clone(), r.kind, r.lag), "{text}");
@@ -177,6 +191,7 @@ fn what_perth_cannot_hold_is_reported_on_writing() {
         kind: RelationshipType::StartToFinish,
         lag: 0,
         lag_minutes: None,
+        lag_kind: Default::default(),
     });
     p.activities[0].constraint = Some(Constraint::MandatoryStart(day(2026, 8, 13)));
     let (text, warnings) = write(&p);

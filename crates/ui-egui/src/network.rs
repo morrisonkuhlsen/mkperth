@@ -321,6 +321,7 @@ mod tests {
                     kind: RelationshipType::FinishToStart,
                     lag: 0,
                     lag_minutes: None,
+                    lag_kind: Default::default(),
                 };
                 std::iter::once(tie(k - 1)).chain((k % 7 == 0).then(|| tie(k / 2)))
             })

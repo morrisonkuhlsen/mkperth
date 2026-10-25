@@ -84,6 +84,7 @@ pub(crate) fn project() -> Project {
         kind,
         lag,
         lag_minutes: None,
+        lag_kind: Default::default(),
     };
     Project {
         name: "Sample — a small building".into(),
