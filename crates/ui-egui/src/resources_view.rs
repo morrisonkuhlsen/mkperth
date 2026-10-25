@@ -229,6 +229,20 @@ fn histogram(ui: &mut egui::Ui, t: &Tokens, project: &Project, schedule: &Schedu
     }
 }
 
+/// The resources table's columns: a message id and a width; the delete buttons' after them.
+const COLUMNS: [(&str, f32); 8] = [
+    ("resource-id", 80.0),
+    ("resource-name", 180.0),
+    ("resource-kind", 120.0),
+    ("resource-unit", 80.0),
+    ("resource-max", 130.0),
+    ("resource-calendar", 140.0),
+    ("resource-roles", 150.0),
+    ("resource-assigned", 90.0),
+];
+const DELETE: f32 = 34.0;
+const ROW: f32 = 26.0;
+
 impl PerthApp {
     /// The view in the space the activities take in theirs.
     pub(crate) fn resources_view(&mut self, ui: &mut egui::Ui, height: f32) {
@@ -242,7 +256,8 @@ impl PerthApp {
         let form = &mut self.resource_form;
         let label = |ui: &mut egui::Ui, text: String| ui.label(egui::RichText::new(text).size(12.0).color(t.text_dim)).id;
         let mut open_levelling = false;
-        // The table of resources, then the roles.
+        // The table of resources, as the activities' is drawn: a header band, a row each, the
+        // columns at fixed widths; then the forms to add a resource and a role, lined up.
         let top = (height * 0.4).max(200.0);
         theme::card(&t).show(ui, |ui| {
             ui.set_min_size(egui::vec2(ui.available_width(), top));
@@ -251,73 +266,130 @@ impl PerthApp {
             }) {
                 open_levelling = true;
             }
-            egui::ScrollArea::vertical().id_salt("resources-table").max_height(top - 110.0).auto_shrink([false, true]).show(ui, |ui| {
-                egui::Grid::new("resources").striped(true).num_columns(9).spacing(egui::vec2(14.0, 6.0)).show(ui, |ui| {
-                    for head in [
-                        "resource-id",
-                        "resource-name",
-                        "resource-kind",
-                        "resource-unit",
-                        "resource-max",
-                        "resource-calendar",
-                        "resource-roles",
-                        "resource-assigned",
-                    ] {
-                        ui.label(egui::RichText::new(tr!(head)).size(12.0).color(t.header_text).strong());
-                    }
-                    ui.label("");
-                    ui.end_row();
-                    for (k, r) in p.resources.iter().enumerate() {
-                        if ui.selectable_label(selected == Some(k), &r.id).clicked() {
-                            self.resource_selected = Some(k);
-                        }
-                        ui.label(&r.name);
-                        ui.label(kind_name(r.kind));
-                        ui.label(if r.kind == ResourceKind::Material { r.unit.clone() } else { tr!("resource-hours") });
-                        ui.label(units_text(r.max_units));
-                        ui.label(r.calendar.clone().unwrap_or_else(|| p.calendar.name.clone()));
-                        ui.label(r.roles.join(", "));
-                        let assigned: i64 = p.assignments.iter().filter(|a| a.resource.as_deref() == Some(r.id.as_str())).map(|a| a.planned).sum();
-                        ui.label(units_text(assigned));
-                        if icon_button(ui, Icon::Close, &tr!("resource-delete", id = r.id.as_str())) {
-                            pending.push(("resource.delete", json!({"id": r.id})));
-                        }
-                        ui.end_row();
-                    }
-                });
-                if p.resources.is_empty() {
-                    ui.label(egui::RichText::new(tr!("resources-none")).size(12.0).color(t.text_dim));
-                }
-            });
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
+            let width = ui.available_width();
+            let table = egui::Frame::new().fill(t.grid_bg).stroke(egui::Stroke::new(1.0, t.border));
+            table.show(ui, |ui| {
+                ui.set_width(width - 2.0);
+                egui::ScrollArea::both().id_salt("resources-table").max_height((top - 150.0).max(ROW * 3.0)).auto_shrink([false, true]).show(
+                    ui,
+                    |ui| {
+                        let full = COLUMNS.iter().map(|(_, w)| w).sum::<f32>() + DELETE;
+                        let row_width = full.max(ui.available_width());
+                        let (header, _) = ui.allocate_exact_size(egui::vec2(row_width, ROW + 4.0), egui::Sense::hover());
+                        let painter = ui.painter();
+                        painter.rect_filled(header, 0.0, t.header_bg);
+                        painter.hline(header.x_range(), header.bottom(), egui::Stroke::new(1.0, t.header_line));
+                        let mut x = header.left();
+                        for (head, w) in COLUMNS {
+                            let cell = egui::Rect::from_min_size(egui::pos2(x, header.top()), egui::vec2(w, header.height()));
+                            painter.with_clip_rect(cell.shrink(2.0)).text(
+                                egui::pos2(x + 8.0, header.center().y),
+                                egui::Align2::LEFT_CENTER,
+                                tr!(head),
+                                egui::FontId::proportional(12.0),
+                                t.header_text,
+                            );
+                            x += w;
+                            painter.vline(x, header.y_range(), egui::Stroke::new(1.0, t.gridline));
+                        }
+                        for (k, r) in p.resources.iter().enumerate() {
+                            let (rect, response) = ui.allocate_exact_size(egui::vec2(row_width, ROW), egui::Sense::click());
+                            let on = selected == Some(k);
+                            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, &r.id));
+                            let painter = ui.painter();
+                            let fill = if on {
+                                t.accent_soft
+                            } else if response.hovered() {
+                                t.hover
+                            } else if k % 2 == 1 {
+                                t.grid_bg.lerp_to_gamma(t.header_bg, 0.6)
+                            } else {
+                                t.grid_bg
+                            };
+                            painter.rect_filled(rect, 0.0, fill);
+                            painter.hline(rect.x_range(), rect.bottom(), egui::Stroke::new(1.0, t.gridline));
+                            let assigned: i64 =
+                                p.assignments.iter().filter(|a| a.resource.as_deref() == Some(r.id.as_str())).map(|a| a.planned).sum();
+                            let cells = [
+                                r.id.clone(),
+                                r.name.clone(),
+                                kind_name(r.kind),
+                                if r.kind == ResourceKind::Material { r.unit.clone() } else { tr!("resource-hours") },
+                                units_text(r.max_units),
+                                r.calendar.clone().unwrap_or_else(|| p.calendar.name.clone()),
+                                r.roles.join(", "),
+                                units_text(assigned),
+                            ];
+                            let mut x = rect.left();
+                            for ((_, w), text) in COLUMNS.iter().zip(cells) {
+                                let cell = egui::Rect::from_min_size(egui::pos2(x, rect.top()), egui::vec2(*w, ROW));
+                                painter.with_clip_rect(cell.shrink(2.0)).text(
+                                    egui::pos2(x + 8.0, rect.center().y),
+                                    egui::Align2::LEFT_CENTER,
+                                    text,
+                                    egui::FontId::proportional(13.0),
+                                    t.text,
+                                );
+                                x += w;
+                            }
+                            if response.clicked() {
+                                self.resource_selected = Some(k);
+                            }
+                            // The row's delete button, in its own column at the end.
+                            let bin = egui::Rect::from_min_size(egui::pos2(x, rect.top()), egui::vec2(DELETE, ROW));
+                            let mut cell =
+                                ui.new_child(egui::UiBuilder::new().max_rect(bin).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                            if icon_button(&mut cell, Icon::Close, &tr!("resource-delete", id = r.id.as_str())) {
+                                pending.push(("resource.delete", json!({"id": r.id})));
+                            }
+                        }
+                        if p.resources.is_empty() {
+                            ui.add_space(14.0);
+                            ui.horizontal(|ui| {
+                                ui.add_space(8.0);
+                                ui.label(egui::RichText::new(tr!("resources-none")).size(12.5).color(t.text_dim));
+                            });
+                            ui.add_space(14.0);
+                        }
+                    },
+                );
+            });
+            ui.add_space(10.0);
+            // The forms in a grid: their labels in one column, their fields lined up after.
+            egui::Grid::new("resource-forms").striped(false).num_columns(2).spacing(egui::vec2(10.0, 8.0)).show(ui, |ui| {
                 let name = label(ui, tr!("resource-new"));
-                ui.add(egui::TextEdit::singleline(&mut form.name).desired_width(180.0).hint_text(tr!("resource-name"))).labelled_by(name);
-                let kind = egui::ComboBox::from_id_salt("resource-new-kind").selected_text(kind_name(form.kind)).width(120.0).show_ui(ui, |ui| {
-                    for k in [ResourceKind::Labor, ResourceKind::Nonlabor, ResourceKind::Material] {
-                        ui.selectable_value(&mut form.kind, k, kind_name(k));
+                ui.horizontal(|ui| {
+                    ui.add(egui::TextEdit::singleline(&mut form.name).desired_width(200.0).hint_text(tr!("resource-name"))).labelled_by(name);
+                    let kind = egui::ComboBox::from_id_salt("resource-new-kind").selected_text(kind_name(form.kind)).width(130.0).show_ui(ui, |ui| {
+                        for k in [ResourceKind::Labor, ResourceKind::Nonlabor, ResourceKind::Material] {
+                            ui.selectable_value(&mut form.kind, k, kind_name(k));
+                        }
+                    });
+                    kind.response.labelled_by(name);
+                    if ui.add_enabled(!form.name.trim().is_empty(), egui::Button::new(tr!("resource-add"))).clicked() {
+                        pending.push(("resource.add", json!({"name": form.name.trim(), "kind": form.kind.code()})));
+                        form.name.clear();
                     }
                 });
-                kind.response.labelled_by(name);
-                if ui.add_enabled(!form.name.trim().is_empty(), egui::Button::new(tr!("resource-add"))).clicked() {
-                    pending.push(("resource.add", json!({"name": form.name.trim(), "kind": form.kind.code()})));
-                    form.name.clear();
-                }
-            });
-            ui.add_space(4.0);
-            ui.horizontal_wrapped(|ui| {
+                ui.end_row();
                 let roles = label(ui, tr!("roles"));
-                for r in &p.roles {
-                    ui.label(egui::RichText::new(format!("{} · {}", r.id, r.name)).size(12.0));
-                    if icon_button(ui, Icon::Close, &tr!("role-delete", id = r.id.as_str())) {
-                        pending.push(("role.delete", json!({"id": r.id})));
+                ui.horizontal_wrapped(|ui| {
+                    ui.add(egui::TextEdit::singleline(&mut form.role).desired_width(200.0).hint_text(tr!("role-new"))).labelled_by(roles);
+                    if ui.add_enabled(!form.role.trim().is_empty(), egui::Button::new(tr!("role-add"))).clicked() {
+                        pending.push(("role.add", json!({"name": form.role.trim()})));
+                        form.role.clear();
                     }
-                }
-                ui.add(egui::TextEdit::singleline(&mut form.role).desired_width(140.0).hint_text(tr!("role-new"))).labelled_by(roles);
-                if ui.add_enabled(!form.role.trim().is_empty(), egui::Button::new(tr!("role-add"))).clicked() {
-                    pending.push(("role.add", json!({"name": form.role.trim()})));
-                    form.role.clear();
-                }
+                    // The roles so far, each with its button to delete it.
+                    for r in &p.roles {
+                        ui.add_space(6.0);
+                        ui.label(egui::RichText::new(format!("{} · {}", r.id, r.name)).size(12.5));
+                        if icon_button(ui, Icon::Close, &tr!("role-delete", id = r.id.as_str())) {
+                            pending.push(("role.delete", json!({"id": r.id})));
+                        }
+                    }
+                });
+                ui.end_row();
             });
         });
         ui.add_space(6.0);
