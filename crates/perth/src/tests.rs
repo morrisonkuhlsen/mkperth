@@ -477,3 +477,40 @@ fn earned_value_as_perth_jl_works_it() {
     let e = mkperth_sched::project_earned(&p, &s, day(2026, 10, 25));
     assert_eq!((e.planned, e.earned, e.budget), (325_000, 90_000, 400_000));
 }
+
+/// Codes and fields travel in fields of their own: the project's in `mkperth_classification`,
+/// each task's values beside its own fields, read back as they were; none, none written.
+#[test]
+fn codes_and_fields_in_their_own_fields() {
+    use mkperth_core::{ActivityCode, Classification, CodeValue, FieldKind, FieldValue, Indicator, UserField};
+    let p = read(&full().to_string()).unwrap().project;
+    assert!(!write(&p).0.contains("mkperth_classification"));
+    let mut q = p.clone();
+    q.classification = Classification {
+        codes: vec![ActivityCode {
+            name: "Phase".into(),
+            values: vec![
+                CodeValue { code: "DES".into(), description: "Design".into(), parent: None },
+                CodeValue { code: "DES.A".into(), description: String::new(), parent: Some("DES".into()) },
+            ],
+        }],
+        fields: FieldKind::ALL.iter().map(|k| UserField { name: k.code().into(), kind: *k }).collect(),
+    };
+    q.activities[0].codes.insert("Phase".into(), "DES.A".into());
+    for v in [
+        FieldValue::Text("note".into()),
+        FieldValue::Number(1_500_000),
+        FieldValue::Integer(3),
+        FieldValue::Cost(99_950),
+        FieldValue::Date(day(2026, 9, 3)),
+        FieldValue::Indicator(Indicator::Red),
+    ] {
+        q.activities[0].fields.insert(v.kind().code().into(), v);
+    }
+    let (text, _) = write(&q);
+    assert!(text.contains(r#""mkperth_fields":{"cost":{"cost":999.5}"#), "{text}");
+    let back = read(&text).unwrap().project;
+    assert_eq!(back.classification, q.classification);
+    assert_eq!((&back.activities[0].codes, &back.activities[0].fields), (&q.activities[0].codes, &q.activities[0].fields));
+    assert_eq!(write(&back).0, text, "and written again the same");
+}

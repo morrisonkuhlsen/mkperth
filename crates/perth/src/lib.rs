@@ -12,11 +12,13 @@
 //! (the user's own package, MIT).
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+use std::collections::BTreeMap;
+
 use mkperth_core::{
-    Accrual, Activity, ActivityKind, Assignment, Band, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus, Comment,
-    Constraint, CostAccount, Date, EarnedValue, EtcTechnique, EvTechnique, Expense, Extra, FinancialPeriod, Fund, FundingSource, LevelBy, Levelled,
-    LevellingOptions, LevellingPriority, Marker, MonthMark, PeriodRecord, Pert, Price, Project, Region, Relationship, RelationshipType, Resource,
-    SpendingMonth, UNIT, WbsBudget,
+    Accrual, Activity, ActivityCode, ActivityKind, Assignment, Band, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus,
+    Classification, CodeValue, Comment, Constraint, CostAccount, Date, EarnedValue, EtcTechnique, EvTechnique, Expense, Extra, FieldKind, FieldValue,
+    FinancialPeriod, Fund, FundingSource, Indicator, LevelBy, Levelled, LevellingOptions, LevellingPriority, Marker, MonthMark, PeriodRecord, Pert,
+    Price, Project, Region, Relationship, RelationshipType, Resource, SpendingMonth, UNIT, UserField, WbsBudget,
 };
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
@@ -96,8 +98,8 @@ const TASK_MAPPED: [&str; 14] = [
 ];
 /// The longest a PERT estimate may be, in days.
 const MAX_ESTIMATE: f64 = 1e6;
-const PROJECT_MAPPED: [&str; 12] =
-    ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING, BASELINES, COSTS, BUDGET, EARNED];
+const PROJECT_MAPPED: [&str; 13] =
+    ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING, BASELINES, COSTS, BUDGET, EARNED, CLASSIFICATION];
 /// MK Perth's earned value: its techniques, the financial periods and their stored closes;
 /// written only when they say something.
 const EARNED: &str = "mkperth_earned_value";
@@ -117,6 +119,11 @@ pub const PERTH_BASELINE: &str = "Perth.jl";
 /// held it, and the project's options; each written only when it says something.
 const PRIORITY: &str = "mkperth_levelling_priority";
 const LEVELLED: &str = "mkperth_levelled";
+/// MK Perth's classification: the project's activity codes and user-defined fields, and each
+/// task's values of them; written only when there are some.
+const CLASSIFICATION: &str = "mkperth_classification";
+const CODES: &str = "mkperth_codes";
+const FIELDS: &str = "mkperth_fields";
 const LEVELLING: &str = "mkperth_levelling";
 /// MK Perth's comments, which Perth has no field for: a field of their own, written only when
 /// there are some, so a file without them is written back as it was.
@@ -327,9 +334,29 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             }
             Some(_) => return Err(PerthError::Field(label.clone(), LEVELLED.into())),
         };
+        let codes = match t.get(CODES) {
+            None | Some(Value::Null) => BTreeMap::new(),
+            Some(Value::Object(o)) => o
+                .iter()
+                .take(MAX_TASKS)
+                .map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_string())))
+                .collect::<Option<BTreeMap<_, _>>>()
+                .ok_or_else(|| PerthError::Field(label.clone(), CODES.into()))?,
+            Some(_) => return Err(PerthError::Field(label.clone(), CODES.into())),
+        };
+        let fields = match t.get(FIELDS) {
+            None | Some(Value::Null) => BTreeMap::new(),
+            Some(Value::Object(o)) => o
+                .iter()
+                .take(MAX_TASKS)
+                .map(|(k, v)| field_of(v).map(|v| (k.clone(), v)))
+                .collect::<Option<BTreeMap<_, _>>>()
+                .ok_or_else(|| PerthError::Field(label.clone(), FIELDS.into()))?,
+            Some(_) => return Err(PerthError::Field(label.clone(), FIELDS.into())),
+        };
         let mut extra = Extra::new();
         for (key, value) in t {
-            if !TASK_MAPPED.contains(&key.as_str()) && key != PRIORITY && key != LEVELLED {
+            if !TASK_MAPPED.contains(&key.as_str()) && ![PRIORITY, LEVELLED, CODES, FIELDS].contains(&key.as_str()) {
                 extra.insert(format!("{PREFIX}{key}"), value.to_string());
             }
         }
@@ -369,8 +396,8 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             levelled,
             pert,
             percent_complete,
-            codes: Default::default(),
-            fields: Default::default(),
+            codes,
+            fields,
             extra,
         });
         dependencies.push((label, deps));
@@ -529,6 +556,11 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             r.prices = list;
         }
     }
+    let classification = match root.get(CLASSIFICATION) {
+        Some(v @ Value::Object(_)) => classification_of(v)?,
+        Some(Value::Null) | None => Classification::default(),
+        Some(_) => return Err(PerthError::Field(String::new(), CLASSIFICATION.into())),
+    };
     let earned_value = match root.get(EARNED) {
         Some(v @ Value::Object(_)) => earned_of(v)?,
         Some(Value::Null) | None => EarnedValue::default(),
@@ -566,7 +598,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             currency,
             budget,
             earned_value,
-            classification: Default::default(),
+            classification,
             activities,
             relationships,
             extra,
@@ -621,6 +653,78 @@ fn budget_of(v: &Value) -> Result<Budgeting, PerthError> {
         b.funds.push(Fund { source: text(f, "source").ok_or_else(bad)?, amount: money(f, "amount")? });
     }
     Ok(b)
+}
+
+/// A field's value as written: its kind and the value (`{"cost": 1250.5}`, `{"date": "2026-11-20"}`).
+fn field_of(v: &Value) -> Option<FieldValue> {
+    let (kind, value) = v.as_object().filter(|o| o.len() == 1)?.iter().next()?;
+    let number = || value.as_f64().filter(|x| x.is_finite() && x.abs() < 1e12);
+    Some(match FieldKind::from_code(kind)? {
+        FieldKind::Text => FieldValue::Text(value.as_str()?.to_string()),
+        FieldKind::Number => FieldValue::Number((number()? * 1e6).round() as i64),
+        FieldKind::Integer => FieldValue::Integer(value.as_i64()?),
+        FieldKind::Cost => FieldValue::Cost(money_of(value)?),
+        FieldKind::Date => FieldValue::Date(value.as_str().and_then(Date::parse)?),
+        FieldKind::Indicator => FieldValue::Indicator(value.as_str().and_then(Indicator::from_code)?),
+    })
+}
+
+/// A field's value as its kind and the value.
+fn field_value(v: &FieldValue) -> Value {
+    let value = match v {
+        FieldValue::Text(t) => Value::String(t.clone()),
+        FieldValue::Number(n) => Value::from(*n as f64 / 1e6),
+        FieldValue::Integer(n) => Value::from(*n),
+        FieldValue::Cost(c) => money_value(*c),
+        FieldValue::Date(d) => Value::String(d.to_string()),
+        FieldValue::Indicator(i) => Value::String(i.code().into()),
+    };
+    let mut o = Map::new();
+    o.insert(v.kind().code().into(), value);
+    Value::Object(o)
+}
+
+/// MK Perth's classification from its field.
+fn classification_of(v: &Value) -> Result<Classification, PerthError> {
+    let bad = || PerthError::Field(String::new(), CLASSIFICATION.into());
+    fn list<'a>(v: &'a Value, k: &str) -> Vec<&'a Value> {
+        v.get(k).and_then(Value::as_array).map(|a| a.iter().take(MAX_TASKS).collect()).unwrap_or_default()
+    }
+    let text = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
+    let mut c = Classification::default();
+    for code in list(v, "codes") {
+        let mut values = Vec::new();
+        for x in list(code, "values") {
+            values.push(CodeValue {
+                code: text(x, "code").ok_or_else(bad)?,
+                description: text(x, "description").unwrap_or_default(),
+                parent: text(x, "parent"),
+            });
+        }
+        c.codes.push(ActivityCode { name: text(code, "name").ok_or_else(bad)?, values });
+    }
+    for f in list(v, "fields") {
+        c.fields.push(UserField {
+            name: text(f, "name").ok_or_else(bad)?,
+            kind: text(f, "kind").and_then(|k| FieldKind::from_code(&k)).ok_or_else(bad)?,
+        });
+    }
+    Ok(c)
+}
+
+/// MK Perth's classification as its field.
+fn classification_value(c: &Classification) -> Value {
+    let codes: Vec<Value> = c
+        .codes
+        .iter()
+        .map(|code| {
+            let values: Vec<Value> =
+                code.values.iter().map(|v| serde_json::json!({"code": v.code, "description": v.description, "parent": v.parent})).collect();
+            serde_json::json!({"name": code.name, "values": values})
+        })
+        .collect();
+    let fields: Vec<Value> = c.fields.iter().map(|f| serde_json::json!({"name": f.name, "kind": f.kind.code()})).collect();
+    serde_json::json!({"codes": codes, "fields": fields})
 }
 
 /// MK Perth's earned value from its field.
@@ -854,6 +958,12 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         if let Some(l) = &a.levelled {
             fields.push((LEVELLED.into(), serde_json::json!({"start": l.start.to_string(), "resource": l.resource})));
         }
+        if !a.codes.is_empty() {
+            fields.push((CODES.into(), Value::Object(a.codes.iter().map(|(k, v)| (k.clone(), Value::String(v.clone()))).collect())));
+        }
+        if !a.fields.is_empty() {
+            fields.push((FIELDS.into(), Value::Object(a.fields.iter().map(|(k, v)| (k.clone(), field_value(v))).collect())));
+        }
         for (key, value) in &a.extra {
             if let Some(field) = key.strip_prefix(PREFIX)
                 && !field.starts_with('~')
@@ -922,6 +1032,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     }
     if !project.budget.is_empty() {
         fields.push((BUDGET.into(), budget_value(&project.budget)));
+    }
+    if !project.classification.is_empty() {
+        fields.push((CLASSIFICATION.into(), classification_value(&project.classification)));
     }
     if !project.earned_value.is_empty() {
         fields.push((EARNED.into(), earned_value_value(&project.earned_value)));

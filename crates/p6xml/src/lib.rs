@@ -18,9 +18,10 @@ mod tree;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use mkperth_core::{
-    Accrual, Activity, ActivityKind, Assignment, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus, Constraint,
-    CostAccount, Date, DurationType, EarnedValue, EtcTechnique, EvTechnique, Expense, FinancialPeriod, Fund, FundingSource, LevellingPriority,
-    Period, Price, Project, Relationship, RelationshipType, Resource, ResourceKind, Role, SpendingMonth, UNIT, WbsBudget, Weekday,
+    Accrual, Activity, ActivityCode, ActivityKind, Assignment, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus,
+    Classification, CodeValue, Constraint, CostAccount, Date, DurationType, EarnedValue, EtcTechnique, EvTechnique, Expense, FieldKind, FieldValue,
+    FinancialPeriod, Fund, FundingSource, Indicator, LevellingPriority, Period, Price, Project, Relationship, RelationshipType, Resource,
+    ResourceKind, Role, SpendingMonth, UNIT, UserField, WbsBudget, Weekday,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -607,8 +608,13 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         warnings.push(tr!("warn-p6-assignments", n = unplaced));
     }
 
+    let classification = classification_of(&root, p, &by_object, &mut activities, &mut warnings);
+
     // What else the project and the file hold, each kind named once.
-    const READ: [&str; 15] = [
+    const READ: [&str; 18] = [
+        "ActivityCodeType",
+        "ActivityCode",
+        "UDFType",
         "FinancialPeriod",
         "Project",
         "Calendar",
@@ -625,7 +631,12 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         "ActivityExpense",
         "FundingSource",
     ];
-    const PROJECT_FIELDS_READ: [&str; 18] = [
+    const PROJECT_FIELDS_READ: [&str; 23] = [
+        "ActivityCodeType",
+        "ActivityCode",
+        "ActivityCodeAssignment",
+        "UDFType",
+        "UDFValue",
         "ActivityExpense",
         "ProjectBudgetChangeLog",
         "ProjectSpendingPlan",
@@ -684,7 +695,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             currency: String::new(),
             budget,
             earned_value,
-            classification: Default::default(),
+            classification,
             activities,
             relationships,
             extra,
@@ -727,6 +738,144 @@ fn baselines_of(root: &Element, p: &Element) -> (Vec<Baseline>, Option<String>) 
     }
     let in_use = p.text_of("CurrentBaselineProjectObjectId").and_then(|o| by_object.get(o).cloned());
     (list, in_use)
+}
+
+/// P6's names for what a user-defined field holds.
+const FIELD_KINDS: [(&str, FieldKind); 6] = [
+    ("Text", FieldKind::Text),
+    ("Double", FieldKind::Number),
+    ("Integer", FieldKind::Integer),
+    ("Cost", FieldKind::Cost),
+    ("Start Date", FieldKind::Date),
+    ("Indicator", FieldKind::Indicator),
+];
+
+/// The activity codes and the activities' user-defined fields, with each activity's values:
+/// codes and their values by object number, assignments and values naming them. A field P6
+/// computes from a code (`Code`) or keeps for something other than activities is left out.
+fn classification_of(
+    root: &Element,
+    p: &Element,
+    by_object: &HashMap<String, String>,
+    activities: &mut [Activity],
+    warnings: &mut Vec<String>,
+) -> Classification {
+    let mut c = Classification::default();
+    let mut type_by_object: HashMap<&str, usize> = HashMap::new();
+    for e in root.all("ActivityCodeType").chain(p.all("ActivityCodeType")) {
+        let (Some(o), Some(name)) = (e.text_of("ObjectId"), e.text_of("Name")) else { continue };
+        let mut name = name.to_string();
+        while c.code(&name).is_some() {
+            name.push('*');
+        }
+        type_by_object.insert(o, c.codes.len());
+        c.codes.push(ActivityCode { name, values: Vec::new() });
+    }
+    // Values by object number: their code's place and their own short code.
+    let mut value_by_object: HashMap<&str, (usize, String)> = HashMap::new();
+    let codes: Vec<&Element> = root.all("ActivityCode").chain(p.all("ActivityCode")).collect();
+    for e in &codes {
+        let (Some(o), Some(&k), Some(value)) =
+            (e.text_of("ObjectId"), e.text_of("CodeTypeObjectId").and_then(|t| type_by_object.get(t)), e.text_of("CodeValue"))
+        else {
+            continue;
+        };
+        let Some(code) = c.codes.get_mut(k) else { continue };
+        if code.values.iter().any(|v| v.code == value) {
+            continue;
+        }
+        code.values.push(CodeValue { code: value.to_string(), description: e.text_of("Description").unwrap_or_default().to_string(), parent: None });
+        value_by_object.insert(o, (k, value.to_string()));
+    }
+    for e in &codes {
+        let (Some((k, value)), Some((pk, parent))) =
+            (e.text_of("ObjectId").and_then(|o| value_by_object.get(o)), e.text_of("ParentObjectId").and_then(|o| value_by_object.get(o)))
+        else {
+            continue;
+        };
+        if k == pk
+            && value != parent
+            && let Some(v) = c.codes.get_mut(*k).and_then(|code| code.values.iter_mut().find(|v| v.code == *value))
+        {
+            v.parent = Some(parent.clone());
+        }
+    }
+    let index: HashMap<&str, usize> = activities.iter().enumerate().map(|(i, a)| (a.id.as_str(), i)).collect();
+    let activity_of = |e: &Element, field: &str| e.text_of(field).and_then(|o| by_object.get(o)).and_then(|id| index.get(id.as_str()).copied());
+    let mut assigned: Vec<(usize, String, String)> = Vec::new();
+    for e in p.all("ActivityCodeAssignment").chain(root.all("ActivityCodeAssignment")) {
+        let (Some(i), Some((k, value))) =
+            (activity_of(e, "ActivityObjectId"), e.text_of("ActivityCodeObjectId").and_then(|o| value_by_object.get(o)))
+        else {
+            continue;
+        };
+        if let Some(code) = c.codes.get(*k) {
+            assigned.push((i, code.name.clone(), value.clone()));
+        }
+    }
+    let mut field_by_object: HashMap<&str, usize> = HashMap::new();
+    let mut left_out = 0usize;
+    for e in root.all("UDFType").chain(p.all("UDFType")) {
+        let (Some(o), Some(title)) = (e.text_of("ObjectId"), e.text_of("Title")) else { continue };
+        let kind = e.text_of("DataType").and_then(|d| FIELD_KINDS.iter().find(|(n, _)| *n == d)).map(|(_, k)| *k);
+        let kind = match (e.text_of("SubjectArea"), kind, e.text_of("DataType")) {
+            (Some("Activity") | None, Some(k), _) => k,
+            // A finish date is a date too.
+            (Some("Activity") | None, None, Some("Finish Date")) => FieldKind::Date,
+            _ => {
+                left_out += 1;
+                continue;
+            }
+        };
+        let mut name = title.to_string();
+        while c.field(&name).is_some() {
+            name.push('*');
+        }
+        field_by_object.insert(o, c.fields.len());
+        c.fields.push(UserField { name, kind });
+    }
+    if left_out > 0 {
+        warnings.push(tr!("warn-p6-fields", n = left_out));
+    }
+    let mut values: Vec<(usize, String, FieldValue)> = Vec::new();
+    for e in p.all("UDFValue").chain(root.all("UDFValue")) {
+        let (Some(i), Some(field)) =
+            (activity_of(e, "ForeignObjectId"), e.text_of("UDFTypeObjectId").and_then(|o| field_by_object.get(o)).and_then(|k| c.fields.get(*k)))
+        else {
+            continue;
+        };
+        let number = |name: &str| e.text_of(name).and_then(|x| x.trim().parse::<f64>().ok()).filter(|x| x.is_finite() && x.abs() < 1e12);
+        let value = match field.kind {
+            FieldKind::Text => e.text_of("Text").map(|t| FieldValue::Text(t.to_string())),
+            FieldKind::Number => number("Double").map(|x| FieldValue::Number((x * 1e6).round() as i64)),
+            FieldKind::Integer => e.text_of("Integer").and_then(|x| x.trim().parse::<i64>().ok()).map(FieldValue::Integer),
+            FieldKind::Cost => e.text_of("Cost").and_then(money_of).map(FieldValue::Cost),
+            FieldKind::Date => e.text_of("StartDate").or_else(|| e.text_of("FinishDate")).and_then(date_of).map(FieldValue::Date),
+            FieldKind::Indicator => e
+                .text_of("Indicator")
+                .and_then(|x| Indicator::ALL.into_iter().find(|i| i.code().eq_ignore_ascii_case(x.trim())))
+                .map(FieldValue::Indicator),
+        };
+        if let Some(v) = value {
+            values.push((i, field.name.clone(), v));
+        }
+    }
+    for (i, code, value) in assigned {
+        if let Some(a) = activities.get_mut(i) {
+            a.codes.insert(code, value);
+        }
+    }
+    for (i, field, value) in values {
+        if let Some(a) = activities.get_mut(i) {
+            a.fields.insert(field, value);
+        }
+    }
+    c
+}
+
+/// P6's name for a field's kind.
+fn field_kind_name(kind: FieldKind) -> &'static str {
+    FIELD_KINDS.iter().find(|(_, k)| *k == kind).map_or("Text", |(n, _)| n)
 }
 
 /// P6's names for the earned value techniques: how earned value is computed, and the
@@ -989,6 +1138,44 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         out.push_str("  </FundingSource>\n");
     }
+    // The activity codes, the project's own, and their values in their hierarchy; the fields.
+    let mut value_object: HashMap<(&str, &str), usize> = HashMap::new();
+    for (k, code) in project.classification.codes.iter().enumerate() {
+        out.push_str(&format!(
+            "  <ActivityCodeType>\n    <ObjectId>{}</ObjectId>\n    <Name>{}</Name>\n    <Scope>Project</Scope>\n    <ProjectObjectId>1</ProjectObjectId>\n    <SequenceNumber>{k}</SequenceNumber>\n  </ActivityCodeType>\n",
+            k + 1,
+            esc(&code.name)
+        ));
+    }
+    for code in &project.classification.codes {
+        for v in &code.values {
+            let n = value_object.len() + 1;
+            value_object.insert((code.name.as_str(), v.code.as_str()), n);
+        }
+    }
+    for (k, code) in project.classification.codes.iter().enumerate() {
+        for (seq, v) in code.values.iter().enumerate() {
+            let n = value_object.get(&(code.name.as_str(), v.code.as_str())).copied().unwrap_or(0);
+            out.push_str(&format!(
+                "  <ActivityCode>\n    <ObjectId>{n}</ObjectId>\n    <CodeTypeObjectId>{}</CodeTypeObjectId>\n    <CodeValue>{}</CodeValue>\n    <Description>{}</Description>\n    <SequenceNumber>{seq}</SequenceNumber>\n",
+                k + 1,
+                esc(&v.code),
+                esc(&v.description)
+            ));
+            if let Some(parent) = v.parent.as_deref().and_then(|p| value_object.get(&(code.name.as_str(), p))) {
+                out.push_str(&format!("    <ParentObjectId>{parent}</ParentObjectId>\n"));
+            }
+            out.push_str("  </ActivityCode>\n");
+        }
+    }
+    for (k, f) in project.classification.fields.iter().enumerate() {
+        out.push_str(&format!(
+            "  <UDFType>\n    <ObjectId>{}</ObjectId>\n    <Title>{}</Title>\n    <DataType>{}</DataType>\n    <SubjectArea>Activity</SubjectArea>\n  </UDFType>\n",
+            k + 1,
+            esc(&f.name),
+            field_kind_name(f.kind)
+        ));
+    }
     for (k, q) in project.earned_value.periods.iter().enumerate() {
         out.push_str(&format!(
             "  <FinancialPeriod>\n    <ObjectId>{}</ObjectId>\n    <Name>{}</Name>\n    <StartDate>{}T00:00:00</StartDate>\n    <EndDate>{}T23:59:59</EndDate>\n  </FinancialPeriod>\n",
@@ -1219,6 +1406,44 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             out.push_str(&format!("      <FundShare>{}</FundShare>\n", format!("{share:.2}").trim_end_matches('0').trim_end_matches('.')));
         }
         out.push_str("    </ProjectFunding>\n");
+    }
+    // Each activity's code values and field values; a summary is a WBS element and takes none.
+    for a in project.activities.iter().filter(|a| !summary(&a.id)) {
+        for (code, value) in &a.codes {
+            let (Some(t), Some(v)) =
+                (project.classification.codes.iter().position(|c| c.name == *code), value_object.get(&(code.as_str(), value.as_str())))
+            else {
+                continue;
+            };
+            out.push_str(&format!(
+                "    <ActivityCodeAssignment>\n      <ActivityObjectId>{}</ActivityObjectId>\n      <ActivityCodeTypeObjectId>{}</ActivityCodeTypeObjectId>\n      <ActivityCodeObjectId>{v}</ActivityCodeObjectId>\n      <ProjectObjectId>1</ProjectObjectId>\n    </ActivityCodeAssignment>\n",
+                object(&a.id),
+                t + 1
+            ));
+        }
+        for (field, value) in &a.fields {
+            let Some(t) = project.classification.fields.iter().position(|f| f.name == *field) else { continue };
+            let (tag, text) = match value {
+                FieldValue::Text(x) => ("Text", esc(x)),
+                FieldValue::Number(x) => ("Double", format!("{}", *x as f64 / 1e6)),
+                FieldValue::Integer(x) => ("Integer", x.to_string()),
+                FieldValue::Cost(x) => ("Cost", money(*x)),
+                FieldValue::Date(d) => ("StartDate", format!("{d}T00:00:00")),
+                FieldValue::Indicator(i) => ("Indicator", {
+                    let c = i.code();
+                    format!("{}{}", c.get(..1).unwrap_or_default().to_uppercase(), c.get(1..).unwrap_or_default())
+                }),
+            };
+            out.push_str(&format!(
+                "    <UDFValue>\n      <UDFTypeObjectId>{}</UDFTypeObjectId>\n      <ForeignObjectId>{}</ForeignObjectId>\n      <ProjectObjectId>1</ProjectObjectId>\n      <{tag}>{text}</{tag}>\n    </UDFValue>\n",
+                t + 1,
+                object(&a.id)
+            ));
+        }
+    }
+    let on_summaries = project.activities.iter().filter(|a| summary(&a.id)).map(|a| a.codes.len() + a.fields.len()).sum::<usize>();
+    if on_summaries > 0 {
+        warnings.push(tr!("warn-p6-summary-codes", n = on_summaries));
     }
     // Assignments to activities; a summary is a WBS element in P6 and takes none.
     let mut on_summaries = 0usize;

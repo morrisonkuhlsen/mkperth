@@ -436,3 +436,48 @@ fn names_as_oracle_documents_them() {
     let back = read(&before).unwrap().project;
     assert_eq!((back.budget, back.earned_value.etc), (p.budget, EtcTechnique::CpiSpi));
 }
+
+/// Activity codes and user-defined fields as P6 keeps them: a code with a value under another,
+/// fields of every kind, each activity's values, written and read back; a field for resources
+/// left out with a warning.
+#[test]
+fn codes_and_fields_read_back() {
+    use mkperth_core::{ActivityCode, Classification, CodeValue, FieldKind, FieldValue, Indicator, UserField};
+    let mut p = read(&file()).unwrap().project;
+    let leaves: Vec<usize> =
+        (0..p.activities.len()).filter(|&i| !p.activities.iter().any(|b| b.parent.as_deref() == Some(p.activities[i].id.as_str()))).collect();
+    p.classification = Classification {
+        codes: vec![ActivityCode {
+            name: "Phase & stage".into(),
+            values: vec![
+                CodeValue { code: "DES".into(), description: "Design".into(), parent: None },
+                CodeValue { code: "DES.A".into(), description: "Architecture".into(), parent: Some("DES".into()) },
+            ],
+        }],
+        fields: FieldKind::ALL.iter().map(|k| UserField { name: format!("F {}", k.code()), kind: *k }).collect(),
+    };
+    let a = &mut p.activities[leaves[0]];
+    a.codes.insert("Phase & stage".into(), "DES.A".into());
+    for v in [
+        FieldValue::Text("<risky>".into()),
+        FieldValue::Number(2_500_000),
+        FieldValue::Integer(-7),
+        FieldValue::Cost(125_050),
+        FieldValue::Date(day(2026, 11, 20)),
+        FieldValue::Indicator(Indicator::Yellow),
+    ] {
+        a.fields.insert(format!("F {}", v.kind().code()), v);
+    }
+    let (text, warnings) = write(&p);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(text.contains("<DataType>Double</DataType>") && text.contains("<Indicator>Yellow</Indicator>"), "{text}");
+    let back = read(&text).unwrap();
+    assert!(!back.warnings.iter().any(|w| w.starts_with("Left out")), "{:?}", back.warnings);
+    assert_eq!(back.project.classification, p.classification);
+    assert_eq!(back.project.activities[leaves[0]].codes, p.activities[leaves[0]].codes);
+    assert_eq!(back.project.activities[leaves[0]].fields, p.activities[leaves[0]].fields);
+    // A field P6 keeps for resources isn't an activity's.
+    let other = text
+        .replace("<SubjectArea>Activity</SubjectArea>\n  </UDFType>\n  <UDFType>", "<SubjectArea>Resource</SubjectArea>\n  </UDFType>\n  <UDFType>");
+    assert_eq!(read(&other).unwrap().warnings.len(), 1);
+}

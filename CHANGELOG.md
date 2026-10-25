@@ -28,6 +28,10 @@ Read it before re-scheduling a plan with a new version.
   (`code.add`, `.delete`, `code-value.add`, `.delete`), fields of a kind each (text, number,
   integer, cost, date or a red, yellow, green or blue indicator; `field.add`, `.delete`), and
   each activity's values, set or cleared on one activity or many at once (`activity.classify`).
+  In P6 XML (`ActivityCodeType`, `ActivityCode`, `ActivityCodeAssignment`, `UDFType`,
+  `UDFValue`; a field P6 keeps for something other than activities, or works out from a code,
+  is left out with a warning) and in Perth's JSON (`mkperth_classification`, and each task's
+  `mkperth_codes` and `mkperth_fields`).
 - Earned value (#25): each activity's percent complete as judged (`activity.edit`
   `percent_complete`); the budget at completion, planned value (spread over the baseline's
   working days when one is in use), earned value and actual cost, by the technique the project
