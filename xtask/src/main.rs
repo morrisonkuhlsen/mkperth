@@ -15,7 +15,7 @@ use std::process::{Command, ExitCode};
 
 /// Each internal crate's layer: L0 `i18n`/`core` → L1 `sched`/`perth` → L2 `engine` → L3 `ui-egui`/`mcp`
 /// → L4 `apps/*`. A crate added without a row here fails the gate.
-const LAYERS: [(&str, u8); 11] = [
+const LAYERS: [(&str, u8); 12] = [
     ("mkperth-i18n", 0),
     ("mkperth-core", 0),
     ("mkperth-sched", 1),
@@ -27,6 +27,7 @@ const LAYERS: [(&str, u8); 11] = [
     ("mkperth", 4),
     ("mkperth-cli", 4),
     ("mkperth-mcp", 4),
+    ("mkperth-web", 4),
 ];
 
 /// Crates only the UI layer and above may use.
@@ -154,10 +155,34 @@ fn wasm() -> Result<(), String> {
         "mkperth-mspxml",
         "--package",
         "mkperth-engine",
+        "--package",
+        "mkperth-web",
         "--target",
         "wasm32-unknown-unknown",
         "--release",
     ])
+}
+
+/// The app for a browser, in `target/web`: the WebAssembly, its JavaScript glue (from
+/// `wasm-bindgen`, the version in Cargo.lock: `cargo install wasm-bindgen-cli --version …`)
+/// and the page. Serve the folder over HTTP to try it.
+fn web() -> Result<(), String> {
+    cargo(&["build", "--quiet", "--package", "mkperth-web", "--target", "wasm32-unknown-unknown", "--release"])?;
+    let root = root();
+    let out = root.join("target/web");
+    let wasm = root.join("target/wasm32-unknown-unknown/release/mkperth_web.wasm");
+    let status = Command::new("wasm-bindgen")
+        .args(["--target", "web", "--no-typescript", "--out-dir"])
+        .arg(&out)
+        .arg(&wasm)
+        .status()
+        .map_err(|e| format!("wasm-bindgen: {e} (cargo install wasm-bindgen-cli at Cargo.lock's version)"))?;
+    if !status.success() {
+        return Err("wasm-bindgen failed".into());
+    }
+    std::fs::copy(root.join("apps/mkperth-web/static/index.html"), out.join("index.html")).map_err(|e| format!("index.html: {e}"))?;
+    eprintln!("xtask web: {}", out.display());
+    Ok(())
 }
 
 fn ci() -> Result<(), String> {
@@ -186,7 +211,8 @@ fn main() -> ExitCode {
         "assets" => assets(),
         "panics" => panics(),
         "wasm" => wasm(),
-        _ => Err("usage: cargo xtask <ci|layers|assets|panics|wasm>".to_string()),
+        "web" => web(),
+        _ => Err("usage: cargo xtask <ci|layers|assets|panics|wasm|web>".to_string()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

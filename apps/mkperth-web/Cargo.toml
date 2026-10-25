@@ -1,0 +1,31 @@
+[package]
+name = "mkperth-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "MK Perth in a browser: the whole app as WebAssembly"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Not the workspace's lints: `#[wasm_bindgen(start)]` exports its function with
+# `#[unsafe(no_mangle)]`, which `forbid` can't allow. `deny`, and an `allow` on that one function;
+# there is no unsafe block in this crate.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+
+[dependencies]
+mkperth-ui-egui = { workspace = true }
+egui = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+eframe = { workspace = true, features = ["default_fonts", "glow"] }
+rfd = { workspace = true }
+wasm-bindgen = "=0.2.129"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Navigator"] }

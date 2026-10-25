@@ -206,6 +206,13 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   several projects open side by side in the window; P6 XML files that hold several projects
   with relationships between them.
 
+## The web app
+- *Done (#28):* the whole app in a browser as WebAssembly (`apps/mkperth-web`, eframe on
+  WebGL2): files opened with the browser's picker, saved and exported as downloads, the
+  language and the theme the browser's; `cargo xtask web` builds the page, a GitHub Pages
+  workflow publishes it when run by hand. Opened the sample and scheduled it in Chrome.
+- **Next:** a smaller download (`wasm-opt`); recent files kept in the browser's storage.
+
 ## Beyond P6 — billing (the user's to schedule)
 P6 has no billing: measurements and invoices are left to other products. MK Perth could close
 the loop: progress measurements per activity from percent complete and budgeted cost, the

@@ -136,6 +136,13 @@ cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] 
 
 The wasm gate needs the target once: `rustup target add wasm32-unknown-unknown`.
 
+The whole app in a browser, in `target/web` (serve the folder, e.g. `python3 -m http.server`):
+
+```sh
+cargo install wasm-bindgen-cli --version 0.2.129   # once, at Cargo.lock's version
+cargo xtask web
+```
+
 ## Perth.jl
 
 [Perth.jl](https://github.com/dantebertuzzi/Perth.jl) is the Julia package MK Perth grew from. It

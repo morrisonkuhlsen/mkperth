@@ -24,6 +24,10 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- MK Perth in a browser (#28): the whole app as WebAssembly (`apps/mkperth-web`, built with
+  `cargo xtask web` into `target/web`). Files are opened with the browser's file picker and saved
+  or exported as downloads; everything runs in the page and nothing is sent anywhere. A GitHub
+  Pages workflow publishes it, run by hand.
 - The network view (#17; View ▸ Network, or the rail): the precedence diagram, activities as
   boxes (ID, name, early dates, total float) in columns by the topological order, relationships
   as arrows from the side each kind ties, the critical path in red; drag to move it, Ctrl and

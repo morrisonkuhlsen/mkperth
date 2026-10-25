@@ -186,6 +186,10 @@ fn main() -> eframe::Result {
             let d = chrono::Local::now().date_naive();
             mkperth_ui_egui::Date::from_ymd(d.year(), d.month(), d.day())
         })),
+        // Files have paths here: no browser's picker or downloads.
+        start_open: None,
+        take_opened: None,
+        download: None,
     };
     let mut app = PerthApp::new(services);
     app.recent = load_recent();

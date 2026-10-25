@@ -59,6 +59,12 @@ pub type SaveFont = Box<dyn Fn(&fonts::FontChoice)>;
 pub type Who = Box<dyn Fn() -> String>;
 /// Keeps the recent projects, newest first, for the next run.
 pub type SaveRecent = Box<dyn Fn(&[PathBuf])>;
+/// In a browser: shows its file picker; the file chosen arrives later, through `TakeOpened`.
+pub type StartOpen = Box<dyn Fn()>;
+/// In a browser: a file picked, once it has arrived: its name and its text.
+pub type TakeOpened = Box<dyn Fn() -> Option<(String, String)>>;
+/// In a browser: hands the person a file to keep, by its name.
+pub type Download = Box<dyn Fn(&str, &[u8])>;
 
 /// What the platform provides: dialogs come in from the app, so the UI stays testable.
 #[derive(Default)]
@@ -75,6 +81,11 @@ pub struct Services {
     pub fonts: Option<ListFonts>,
     pub load_font: Option<LoadFont>,
     pub save_font: Option<SaveFont>,
+    /// In a browser, where there are no paths: files are picked and arrive later, and are
+    /// downloaded to be kept.
+    pub start_open: Option<StartOpen>,
+    pub take_opened: Option<TakeOpened>,
+    pub download: Option<Download>,
 }
 
 /// The views the rail switches between.
@@ -515,6 +526,12 @@ impl PerthApp {
     pub fn export(&mut self, format: mkperth_engine::Format) {
         let extension = if format == mkperth_engine::Format::Perth { "json" } else { "xml" };
         let suggested = format!("{}.{extension}", self.session.project.name.replace(['/', '\\'], "-"));
+        if let (None, Some(download)) = (&self.services.pick_save, &self.services.download) {
+            let (text, warnings) = self.session.text(Some(format));
+            download(&suggested, text.as_bytes());
+            self.session.warnings = warnings;
+            return;
+        }
         if let Some(path) = self.services.pick_save.as_ref().and_then(|pick| pick(&suggested)) {
             self.run("project.export", json!({"path": path.display().to_string(), "format": format.code()}));
         }
@@ -572,19 +589,41 @@ impl PerthApp {
     fn pick_and_open(&mut self) {
         if let Some(path) = self.services.pick_open.as_ref().and_then(|pick| pick()) {
             self.open(&path);
+        } else if let Some(start) = &self.services.start_open {
+            // In a browser: the file arrives later (see `ui`).
+            start();
         }
     }
 
+    /// In a browser: the project downloaded as `name` in `format`; it counts as saved.
+    fn deliver(&mut self, name: &str, format: mkperth_engine::Format) {
+        let Some(download) = &self.services.download else { return };
+        let (text, warnings) = self.session.text(Some(format));
+        download(name, text.as_bytes());
+        self.session.mark_saved(name, format, warnings);
+        self.status = Some(Status::Info(tr!("status-downloaded", name = name)));
+    }
+
     pub fn save(&mut self) {
-        if self.session.path.is_some() {
+        if self.services.download.is_some() {
+            let name = self.session.path.as_deref().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned());
+            let format = self.session.format.unwrap_or(mkperth_engine::Format::Perth);
+            let name = name.unwrap_or_else(|| format!("{}.json", self.session.project.name.replace(['/', '\\'], "-")));
+            self.deliver(&name, format);
+        } else if self.session.path.is_some() {
             self.run("project.save", json!(null));
         } else {
             self.save_as();
         }
     }
 
-    /// AutoSave on or off; it needs a file, so switching it on asks for one first.
+    /// AutoSave on or off; it needs a file, so switching it on asks for one first. In a browser
+    /// there is none to save to: saving is a download.
     pub fn toggle_autosave(&mut self) {
+        if self.services.download.is_some() {
+            self.status = Some(Status::Info(tr!("status-no-autosave-web")));
+            return;
+        }
         if self.autosave {
             self.autosave = false;
         } else {
@@ -597,6 +636,10 @@ impl PerthApp {
 
     pub fn save_as(&mut self) {
         let suggested = format!("{}.json", self.session.project.name.replace(['/', '\\'], "-"));
+        if self.services.pick_save.is_none() && self.services.download.is_some() {
+            self.deliver(&suggested, mkperth_engine::Format::Perth);
+            return;
+        }
         if let Some(path) = self.services.pick_save.as_ref().and_then(|pick| pick(&suggested)) {
             self.run("project.save", json!({"path": path.display().to_string()}));
         }
@@ -864,6 +907,10 @@ impl PerthApp {
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        // A file picked in a browser, arrived.
+        if let Some((name, text)) = self.services.take_opened.as_ref().and_then(|take| take()) {
+            self.run("project.open-text", json!({"name": name, "text": text}));
+        }
         if !self.themed {
             theme::apply(ui.ctx());
             self.themed = true;
@@ -1362,6 +1409,13 @@ impl PerthApp {
     pub fn export_latex(&mut self) {
         let Some(id) = self.selected.and_then(|i| self.session.project.activities.get(i)).map(|a| a.id.clone()) else { return };
         let suggested = format!("{}.tex", id.replace(['/', '\\'], "-"));
+        if let (None, Some(download)) = (&self.services.pick_save, &self.services.download) {
+            match self.session.latex(&id, &show_date) {
+                Ok(tex) => download(&suggested, tex.as_bytes()),
+                Err(e) => self.status = Some(Status::Error(e.to_string())),
+            }
+            return;
+        }
         if let Some(path) = self.services.pick_save.as_ref().and_then(|pick| pick(&suggested)) {
             self.status = Some(match self.session.export_latex(&id, &path, &show_date) {
                 Ok(()) => Status::Info(tr!("status-exported", name = path.display().to_string().as_str())),

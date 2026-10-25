@@ -88,9 +88,10 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 69] = [
+pub const COMMANDS: [&str; 70] = [
     "project.new",
     "project.open",
+    "project.open-text",
     "project.save",
     "project.export",
     "project.sample",
@@ -326,6 +327,12 @@ impl Session {
         }
         match id {
             "project.open" => self.open(Path::new(param("path")?)),
+            // A file's text, as a browser hands it: its name says (with its text) the format.
+            "project.open-text" => {
+                let name = param("name")?.to_string();
+                let text = param("text")?.to_string();
+                self.open_text(&name, &text)
+            }
             // Without a path, where it was opened from.
             "project.save" => {
                 let path = match params.get("path").and_then(Value::as_str) {
@@ -411,6 +418,58 @@ impl Session {
         self.load_others();
         self.reschedule();
         Ok(())
+    }
+
+    /// Opens a project from a file's text, as a browser hands it over: `name` is the file's name
+    /// (its extension and the text say the format), and becomes the project's path.
+    pub fn open_text(&mut self, name: &str, text: &str) -> Result<(), EngineError> {
+        let path = PathBuf::from(name);
+        let format = Format::of_text(&path, text);
+        let (project, warnings) = match format {
+            Format::P6 => {
+                let r = mkperth_p6xml::read(text)?;
+                (r.project, r.warnings)
+            }
+            Format::Msp => {
+                let r = mkperth_mspxml::read(text)?;
+                (r.project, r.warnings)
+            }
+            Format::Perth => {
+                let r = mkperth_perth::read(text)?;
+                (r.project, r.warnings)
+            }
+        };
+        self.project = project;
+        self.warnings = warnings;
+        self.path = Some(path);
+        self.format = Some(format);
+        self.modified = false;
+        self.undo.clear();
+        self.redo.clear();
+        self.others.clear();
+        self.reschedule();
+        Ok(())
+    }
+
+    /// The project as a file's text in `format` (else the one it came in, else Perth's), and
+    /// what the format couldn't hold; nothing is written.
+    pub fn text(&self, format: Option<Format>) -> (String, Vec<String>) {
+        write_text(&self.project, format.or(self.format).unwrap_or(Format::Perth))
+    }
+
+    /// The project was handed over as the file `name` in `format` (a browser's download): it is
+    /// saved, under that name.
+    pub fn mark_saved(&mut self, name: &str, format: Format, warnings: Vec<String>) {
+        self.path = Some(PathBuf::from(name));
+        self.format = Some(format);
+        self.modified = false;
+        self.warnings = warnings;
+    }
+
+    /// The calculation of the activity `id` as a LaTeX document, dates as `date` writes them.
+    pub fn latex(&self, id: &str, date: &dyn Fn(mkperth_core::Date) -> String) -> Result<String, EngineError> {
+        let name = self.project.activities.iter().find(|a| a.id == id).map_or("", |a| a.name.as_str());
+        Ok(self.explain(id)?.to_latex(&self.project.name, name, date))
     }
 
     /// Writes the project as P6 XML (`.xml`) or Perth.jl's JSON, all or nothing; it becomes the project's path.
