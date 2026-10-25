@@ -433,6 +433,7 @@ warn-p6-dangling = { $n } vínculos citam atividades que não estão no projeto;
 warn-p6-comments = { $n } comentários não são gravados: o P6 XML não tem lugar para eles (salve como Perth JSON para mantê-los).
 warn-p6-assignments = { $n } alocações de recurso citam uma atividade, ou um recurso ou função, que o arquivo não tem: deixadas de fora.
 warn-p6-summary-assignments = { $n } alocações em resumos não são gravadas: no P6 um resumo é um elemento da EAP, que não recebe alocações.
+warn-p6-budget-not-wbs = { $n } orçamentos ou mudanças de orçamento em atividades que não são resumos não são gravados: o P6 só guarda orçamentos no projeto e na sua EAP.
 warn-p6-skipped = Deixados de fora, ainda não lidos: { $kinds }.
 undo-options = alterar as opções de agendamento
 undo-edit-calendar = editar o calendário { $name }

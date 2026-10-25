@@ -318,3 +318,53 @@ fn costs_read_back() {
     assert_eq!(back.cost_accounts, p.cost_accounts);
     assert_eq!(back.expenses, p.expenses);
 }
+
+/// The budget as P6 keeps it: the project's and its WBS's original budgets, the change log, the
+/// project's and a WBS's spending plans, funding sources in a hierarchy and the project's funds;
+/// written and read back as they were. A budget on an activity that isn't a summary is left out
+/// with a warning; nothing MK Perth writes comes back as "left out, not read".
+#[test]
+fn the_budget_read_back() {
+    use mkperth_core::{BudgetChange, ChangeStatus, Fund, FundingSource, SpendingMonth, WbsBudget};
+    let mut p = read(&file()).unwrap().project;
+    let parents: Vec<String> = p.activities.iter().filter_map(|a| a.parent.clone()).collect();
+    let wbs = parents.first().unwrap().clone();
+    let leaf = p.activities.iter().find(|a| !parents.contains(&a.id)).unwrap().id.clone();
+    let month = |y, m, amount| SpendingMonth { month: day(y, m, 1), amount };
+    p.budget.budgets = vec![
+        WbsBudget { wbs: None, original: 100_000_000, plan: vec![month(2026, 11, 40_000_000), month(2026, 12, 60_000_050)] },
+        WbsBudget { wbs: Some(wbs.clone()), original: 30_000_000, plan: vec![month(2026, 11, 30_000_000)] },
+    ];
+    let change = |number, wbs: Option<&str>, amount, status| BudgetChange {
+        number,
+        wbs: wbs.map(str::to_string),
+        date: day(2026, 11, 10),
+        amount,
+        status,
+        responsible: "PM & co".into(),
+        reason: "<scope>".into(),
+    };
+    p.budget.log = vec![
+        change(1, None, 5_000_000, ChangeStatus::Approved),
+        change(3, Some(&wbs), -2_000_000, ChangeStatus::Pending),
+        change(4, None, 100, ChangeStatus::NotApproved),
+    ];
+    p.budget.sources = vec![
+        FundingSource { id: "BANK".into(), name: "Bank loan".into(), parent: None },
+        FundingSource { id: "BNDES".into(), name: "Development bank".into(), parent: Some("BANK".into()) },
+    ];
+    p.budget.funds = vec![Fund { source: "BNDES".into(), amount: 70_000_000 }];
+    let (text, warnings) = write(&p);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(text.contains("<Status>Not Approved</Status>") && text.contains("<FundShare>66.67</FundShare>"), "{text}");
+    let read_back = read(&text).unwrap();
+    assert!(!read_back.warnings.iter().any(|w| w.starts_with("Left out")), "{:?}", read_back.warnings);
+    assert_eq!(read_back.project.budget, p.budget);
+    // On a leaf it can't be written.
+    p.budget.budgets.push(WbsBudget { wbs: Some(leaf.clone()), original: 1, plan: Vec::new() });
+    p.budget.log.push(change(5, Some(&leaf), 1, ChangeStatus::Approved));
+    let (text, warnings) = write(&p);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].starts_with("2 budgets"));
+    assert_eq!(read(&text).unwrap().project.budget.budgets.len(), 2);
+}

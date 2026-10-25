@@ -31,6 +31,11 @@ Read it before re-scheduling a plan with a new version.
   (`funding-source.add`, `.delete`, `fund.set`). Each budget shows what its WBS take and leave
   undistributed, what its plan leaves unplanned, what the funds leave unfunded, and beside it
   the activities' budgeted cost.
+- P6 XML reads and writes the budget: the project's and the WBS's original budgets
+  (`OriginalBudget`), the change log (`ProjectBudgetChangeLog`), the spending plans
+  (`ProjectSpendingPlan`, `WBSSpendingPlan`), funding sources (`FundingSource`) and the
+  project's funds with their share (`ProjectFunding`). A budget on an activity that isn't a
+  summary is left out, with a warning.
 - Resource levelling (#21): Project > Level resources…, or the Levelling pane on the right
   strip, delays activities so that no resource (but a material) is asked, on any day, for more
   units an hour than its max units. Day by day from the first over-allocation, the activities on
@@ -241,6 +246,8 @@ Read it before re-scheduling a plan with a new version.
 
 ### Fixed
 
+- A P6 XML file with resource rates, cost accounts or expenses no longer says they were left
+  out: they have been read since costs came (#23).
 - The app no longer crashes at start on Windows with some Intel graphics drivers (igvk64.dll,
   Vulkan): it tries DirectX 12, then OpenGL, as MK aeGIS does; `WGPU_BACKEND` still chooses.
 - A project read from P6 XML was written to Perth.jl's JSON with its calendar's P6 name

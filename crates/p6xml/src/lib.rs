@@ -18,8 +18,9 @@ mod tree;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use mkperth_core::{
-    Accrual, Activity, ActivityKind, Assignment, Baseline, BaselineActivity, Calendar, Constraint, CostAccount, Date, DurationType, Expense,
-    LevellingPriority, Period, Price, Project, Relationship, RelationshipType, Resource, ResourceKind, Role, UNIT, Weekday,
+    Accrual, Activity, ActivityKind, Assignment, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus, Constraint,
+    CostAccount, Date, DurationType, Expense, Fund, FundingSource, LevellingPriority, Period, Price, Project, Relationship, RelationshipType,
+    Resource, ResourceKind, Role, SpendingMonth, UNIT, WbsBudget, Weekday,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -462,6 +463,101 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             accrual,
         });
     }
+    // The budget: the project's and its WBS's first approved, the log of changes, the spending
+    // plans month by month, the funding sources and what each gives.
+    let mut budget = Budgeting::default();
+    let budget_of = |b: &mut Budgeting, wbs: Option<String>| -> usize {
+        match b.budgets.iter().position(|x| x.wbs == wbs) {
+            Some(k) => k,
+            None => {
+                b.budgets.push(WbsBudget { wbs, ..WbsBudget::default() });
+                b.budgets.len() - 1
+            }
+        }
+    };
+    if let Some(m) = p.text_of("OriginalBudget").and_then(money_of) {
+        let k = budget_of(&mut budget, None);
+        if let Some(b) = budget.budgets.get_mut(k) {
+            b.original = m;
+        }
+    }
+    for w in &wbs {
+        let (Some(m), Some(id)) = (w.text_of("OriginalBudget").and_then(money_of), w.text_of("ObjectId").and_then(|o| wbs_id.get(o))) else {
+            continue;
+        };
+        let k = budget_of(&mut budget, Some(id.clone()));
+        if let Some(b) = budget.budgets.get_mut(k) {
+            b.original = m;
+        }
+    }
+    let wbs_of = |e: &Element| e.text_of("WBSObjectId").and_then(|o| wbs_id.get(o)).cloned();
+    for e in p.all("ProjectBudgetChangeLog").chain(root.all("ProjectBudgetChangeLog")) {
+        let Some(date) = e.text_of("Date").and_then(date_of) else { continue };
+        let status = match e.text_of("Status") {
+            Some("Approved") => ChangeStatus::Approved,
+            Some("Not Approved") => ChangeStatus::NotApproved,
+            _ => ChangeStatus::Pending,
+        };
+        // Its number, unless another change has it: then after the highest.
+        let given = e.text_of("ChangeNumber").and_then(|n| n.trim().parse::<u32>().ok()).filter(|n| !budget.log.iter().any(|c| c.number == *n));
+        let Some(number) = given.or_else(|| budget.log.iter().map(|c| c.number).max().unwrap_or(0).checked_add(1)) else { continue };
+        budget.log.push(BudgetChange {
+            number,
+            wbs: wbs_of(e),
+            date,
+            amount: e.text_of("Amount").and_then(money_of).unwrap_or(0),
+            status,
+            responsible: e.text_of("Responsible").unwrap_or_default().to_string(),
+            reason: e.text_of("Reason").unwrap_or_default().to_string(),
+        });
+    }
+    let plans = p.all("ProjectSpendingPlan").chain(root.all("ProjectSpendingPlan")).map(|e| (e, None));
+    let wbs_plans = p.all("WBSSpendingPlan").chain(root.all("WBSSpendingPlan")).filter_map(|e| Some((e, Some(wbs_of(e)?))));
+    for (e, wbs) in plans.chain(wbs_plans) {
+        let (Some((y, m, _)), Some(amount)) = (e.text_of("Date").and_then(date_of).map(|d| d.ymd()), e.text_of("SpendingPlan").and_then(money_of))
+        else {
+            continue;
+        };
+        let Some(month) = Date::from_ymd(y, m, 1) else { continue };
+        let k = budget_of(&mut budget, wbs);
+        let Some(b) = budget.budgets.get_mut(k) else { continue };
+        // Two entries in one month add up.
+        match b.plan.iter_mut().find(|x| x.month == month) {
+            Some(x) => x.amount = x.amount.saturating_add(amount),
+            None => b.plan.push(SpendingMonth { month, amount }),
+        }
+        b.plan.sort_by_key(|x| x.month);
+    }
+    let mut source_by_object: HashMap<&str, String> = HashMap::new();
+    for e in root.all("FundingSource").chain(p.all("FundingSource")) {
+        let (Some(o), Some(name)) = (e.text_of("ObjectId"), e.text_of("Name")) else { continue };
+        let mut id = name.to_string();
+        while budget.sources.iter().any(|f| f.id == id) {
+            id.push('*');
+        }
+        let description = e.text_of("Description").filter(|d| !d.trim().is_empty()).unwrap_or(name);
+        budget.sources.push(FundingSource { id: id.clone(), name: description.to_string(), parent: None });
+        source_by_object.insert(o, id);
+    }
+    for (k, e) in
+        root.all("FundingSource").chain(p.all("FundingSource")).filter(|e| e.text_of("ObjectId").is_some() && e.text_of("Name").is_some()).enumerate()
+    {
+        let parent = e.text_of("ParentObjectId").and_then(|o| source_by_object.get(o)).cloned();
+        if let Some(f) = budget.sources.get_mut(k) {
+            f.parent = parent.filter(|x| *x != f.id);
+        }
+    }
+    for e in p.all("ProjectFunding").chain(root.all("ProjectFunding")) {
+        let (Some(source), Some(amount)) =
+            (e.text_of("FundingSourceObjectId").and_then(|o| source_by_object.get(o)), e.text_of("Amount").and_then(money_of))
+        else {
+            continue;
+        };
+        match budget.funds.iter_mut().find(|f| f.source == *source) {
+            Some(f) => f.amount = f.amount.saturating_add(amount),
+            None => budget.funds.push(Fund { source: source.clone(), amount }),
+        }
+    }
     for e in root.all("ResourceRole") {
         let resource = e.text_of("ResourceObjectId").and_then(|r| resource_by_object.get(r));
         let role = e.text_of("RoleObjectId").and_then(|r| role_by_object.get(r));
@@ -498,9 +594,29 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
     }
 
     // What else the project and the file hold, each kind named once.
-    const READ: [&str; 10] =
-        ["Project", "Calendar", "WBS", "Activity", "Relationship", "ProjectCodeType", "Resource", "Role", "ResourceRole", "UnitOfMeasure"];
-    const PROJECT_FIELDS_READ: [&str; 12] = [
+    const READ: [&str; 14] = [
+        "Project",
+        "Calendar",
+        "WBS",
+        "Activity",
+        "Relationship",
+        "ProjectCodeType",
+        "Resource",
+        "Role",
+        "ResourceRole",
+        "UnitOfMeasure",
+        "ResourceRate",
+        "CostAccount",
+        "ActivityExpense",
+        "FundingSource",
+    ];
+    const PROJECT_FIELDS_READ: [&str; 18] = [
+        "ActivityExpense",
+        "ProjectBudgetChangeLog",
+        "ProjectSpendingPlan",
+        "WBSSpendingPlan",
+        "ProjectFunding",
+        "BaselineProject",
         "ObjectId",
         "Id",
         "Name",
@@ -550,7 +666,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             expenses,
             cost_accounts,
             currency: String::new(),
-            budget: Default::default(),
+            budget,
             activities,
             relationships,
             extra,
@@ -776,6 +892,20 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         out.push_str("  </CostAccount>\n");
     }
+    // Funding sources: P6 names them and describes them; their IDs go in the name.
+    let source_object = |id: &str| project.budget.sources.iter().position(|f| f.id == id).map(|k| k + 1);
+    for (k, f) in project.budget.sources.iter().enumerate() {
+        out.push_str(&format!(
+            "  <FundingSource>\n    <ObjectId>{}</ObjectId>\n    <Name>{}</Name>\n    <Description>{}</Description>\n",
+            k + 1,
+            esc(&f.id),
+            esc(&f.name)
+        ));
+        if let Some(parent) = f.parent.as_deref().and_then(source_object) {
+            out.push_str(&format!("    <ParentObjectId>{parent}</ParentObjectId>\n"));
+        }
+        out.push_str("  </FundingSource>\n");
+    }
     let mut pairs = 0usize;
     for r in &project.resources {
         for role in r.roles.iter().filter_map(|id| role_object(id)) {
@@ -798,6 +928,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     if let Some(d) = project.data_date {
         out.push_str(&format!("    <DataDate>{}</DataDate>\n", timestamp(d, false)));
     }
+    if let Some(b) = project.budget.of(None) {
+        out.push_str(&format!("    <OriginalBudget>{}</OriginalBudget>\n", money(b.original)));
+    }
     // A baseline's object number: 2 and on, after the project's 1.
     let baseline_object = |name: &str| project.baselines.iter().position(|b| b.name == name).map(|k| k + 2);
     if let Some(k) = project.baseline_in_use.as_deref().and_then(baseline_object) {
@@ -816,6 +949,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         ));
         if let Some(p) = &a.parent {
             out.push_str(&format!("      <ParentObjectId>{}</ParentObjectId>\n", object(p)));
+        }
+        if let Some(b) = project.budget.of(Some(a.id.as_str())) {
+            out.push_str(&format!("      <OriginalBudget>{}</OriginalBudget>\n", money(b.original)));
         }
         out.push_str("      <ProjectObjectId>1</ProjectObjectId>\n    </WBS>\n");
     }
@@ -906,6 +1042,69 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             out.push_str(&format!("      <CostAccountObjectId>{a}</CostAccountObjectId>\n"));
         }
         out.push_str("    </ActivityExpense>\n");
+    }
+    // The budget: its log of changes, the spending plans month by month, the funds. P6 keeps a
+    // budget on the project and its WBS only: one on another activity is left out.
+    let budgeted = |wbs: Option<&str>| wbs.is_none_or(summary);
+    let left_out = project.budget.budgets.iter().filter(|b| !budgeted(b.wbs.as_deref())).count()
+        + project.budget.log.iter().filter(|c| !budgeted(c.wbs.as_deref())).count();
+    if left_out > 0 {
+        warnings.push(tr!("warn-p6-budget-not-wbs", n = left_out));
+    }
+    for (k, c) in project.budget.log.iter().enumerate().filter(|(_, c)| budgeted(c.wbs.as_deref())) {
+        let status = match c.status {
+            ChangeStatus::Pending => "Pending",
+            ChangeStatus::Approved => "Approved",
+            ChangeStatus::NotApproved => "Not Approved",
+        };
+        out.push_str(&format!("    <ProjectBudgetChangeLog>\n      <ObjectId>{}</ObjectId>\n      <ProjectObjectId>1</ProjectObjectId>\n", k + 1));
+        if let Some(w) = &c.wbs {
+            out.push_str(&format!("      <WBSObjectId>{}</WBSObjectId>\n", object(w)));
+        }
+        out.push_str(&format!(
+            "      <ChangeNumber>{}</ChangeNumber>\n      <Date>{}T00:00:00</Date>\n      <Amount>{}</Amount>\n      <Status>{status}</Status>\n      <Responsible>{}</Responsible>\n      <Reason>{}</Reason>\n    </ProjectBudgetChangeLog>\n",
+            c.number,
+            c.date,
+            money(c.amount),
+            esc(&c.responsible),
+            esc(&c.reason)
+        ));
+    }
+    let mut plans = 0usize;
+    for b in project.budget.budgets.iter().filter(|b| budgeted(b.wbs.as_deref())) {
+        for m in &b.plan {
+            plans += 1;
+            match &b.wbs {
+                None => out.push_str(&format!(
+                    "    <ProjectSpendingPlan>\n      <ObjectId>{plans}</ObjectId>\n      <ProjectObjectId>1</ProjectObjectId>\n      <Date>{}T00:00:00</Date>\n      <SpendingPlan>{}</SpendingPlan>\n    </ProjectSpendingPlan>\n",
+                    m.month,
+                    money(m.amount)
+                )),
+                Some(w) => out.push_str(&format!(
+                    "    <WBSSpendingPlan>\n      <ObjectId>{plans}</ObjectId>\n      <ProjectObjectId>1</ProjectObjectId>\n      <WBSObjectId>{}</WBSObjectId>\n      <Date>{}T00:00:00</Date>\n      <SpendingPlan>{}</SpendingPlan>\n    </WBSSpendingPlan>\n",
+                    object(w),
+                    m.month,
+                    money(m.amount)
+                )),
+            }
+        }
+    }
+    // Each fund's share of the project's current budget, in percent, as P6 shows it.
+    let current = project.budget.of(None).map_or(0, |b| b.original).saturating_add(
+        project.budget.log.iter().filter(|c| c.wbs.is_none() && c.status == ChangeStatus::Approved).fold(0i64, |s, c| s.saturating_add(c.amount)),
+    );
+    for (k, f) in project.budget.funds.iter().enumerate() {
+        let Some(source) = source_object(&f.source) else { continue };
+        out.push_str(&format!(
+            "    <ProjectFunding>\n      <ObjectId>{}</ObjectId>\n      <ProjectObjectId>1</ProjectObjectId>\n      <FundingSourceObjectId>{source}</FundingSourceObjectId>\n      <Amount>{}</Amount>\n",
+            k + 1,
+            money(f.amount)
+        ));
+        if current > 0 {
+            let share = f.amount as f64 / current as f64 * 100.0;
+            out.push_str(&format!("      <FundShare>{}</FundShare>\n", format!("{share:.2}").trim_end_matches('0').trim_end_matches('.')));
+        }
+        out.push_str("    </ProjectFunding>\n");
     }
     // Assignments to activities; a summary is a WBS element in P6 and takes none.
     let mut on_summaries = 0usize;
