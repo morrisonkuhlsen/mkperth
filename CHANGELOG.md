@@ -205,6 +205,11 @@ Read it before re-scheduling a plan with a new version.
 
 ### Changed
 
+- The window's header works as its title bar, as in MK Sigma: a double click maximizes or
+  restores the window, a drag moves it; the project's name sits in its middle, and an AutoSave
+  switch at its top left saves every change to the file (asking for one first when there is none).
+- A column title wider than its column wraps onto a second line instead of being cut off
+  ("ID da atividade").
 - The top of the window is quieter, as in an online spreadsheet: the project's name with whether
   it is saved, the File, Edit, Project and View menus under it (each item with its shortcut),
   Schedule as one button on the right, and one slim toolbar of small icons in place of the

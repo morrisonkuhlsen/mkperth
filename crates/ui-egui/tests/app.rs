@@ -322,6 +322,23 @@ fn resources_are_added_and_assigned_in_their_view() {
     assert!(h.query_by_label("Work by week (hours)").is_some());
 }
 
+/// The header's AutoSave switch: on for a project with a file, off again.
+#[test]
+fn the_header_switches_autosave() {
+    let dir = std::env::temp_dir().join("mkperth-header-autosave");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("p.json");
+    let mut app = PerthApp::default();
+    app.session.path = Some(path);
+    let mut h = harness(app);
+    h.get_by_label("AutoSave").click();
+    h.run_steps(2);
+    assert!(h.state().autosave);
+    h.get_by_label("AutoSave").click();
+    h.run_steps(2);
+    assert!(!h.state().autosave);
+}
+
 /// The backstage: its pages from the column, Esc back to the project; Back too.
 #[test]
 fn the_backstage_opens_its_pages_and_closes() {
@@ -332,7 +349,8 @@ fn the_backstage_opens_its_pages_and_closes() {
     h.get_by_label("Info").click();
     h.run_steps(2);
     assert_eq!(h.state().backstage, Some(Page::Info));
-    assert!(h.query_by_label("AutoSave").is_some(), "AutoSave lives on Info");
+    // The header's switch, and Info's own.
+    assert_eq!(h.query_all_by_label("AutoSave").count(), 2, "AutoSave lives on Info too");
     h.key_press(egui::Key::Escape);
     h.run_steps(2);
     assert_eq!(h.state().backstage, None);

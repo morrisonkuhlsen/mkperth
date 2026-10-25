@@ -65,6 +65,8 @@ pub(crate) enum Action {
     /// The interface's typeface, size and style.
     Font(crate::fonts::FontChoice),
     Language(Lang),
+    /// Every change saved to the project's file as it happens, or not.
+    ToggleAutoSave,
 }
 
 /// What the header, the menus and the toolbar show.
@@ -216,35 +218,55 @@ fn quiet(ui: &mut egui::Ui) {
     widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
 }
 
-/// The header: the mark, the name and its saved state over the menus, and on the right search,
-/// theme and Schedule.
+/// An on/off switch: its name, then a pill with a knob; a click on either turns it.
+fn switch(ui: &mut egui::Ui, on: bool, name: &str) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let galley = ui.painter().layout_no_wrap(name.to_string(), egui::FontId::proportional(12.5), t.text_dim);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(galley.size().x + 8.0 + 30.0, 18.0), egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, name));
+    let painter = ui.painter();
+    painter.galley(egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0), galley, t.text_dim);
+    let r = egui::Rect::from_min_size(egui::pos2(rect.right() - 30.0, rect.center().y - 8.0), egui::vec2(30.0, 16.0));
+    // A switch reads as a switch by its pill and round knob.
+    painter.rect_filled(r, 8.0, if on { t.accent } else { egui::Color32::TRANSPARENT });
+    painter.rect_stroke(r, 8.0, egui::Stroke::new(1.0, if on { t.accent } else { t.text_dim }), egui::StrokeKind::Inside);
+    let knob = if on { egui::pos2(r.right() - 8.0, r.center().y) } else { egui::pos2(r.left() + 8.0, r.center().y) };
+    painter.circle_filled(knob, 5.0, if on { egui::Color32::WHITE } else { t.text_dim });
+    response
+}
+
+/// The header: the mark, the AutoSave switch over the menus, the project's name and its saved
+/// state in the middle, and on the right search, theme and Schedule. It is the window's title
+/// bar too: drag it to move the window, double-click it to maximize or restore.
 pub(crate) fn header(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     let t = Tokens::get(ui.ctx());
     let mut action = None;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), HEADER_HEIGHT), egui::Sense::hover());
+    let (rect, background) = ui.allocate_exact_size(egui::vec2(ui.available_width(), HEADER_HEIGHT), egui::Sense::click_and_drag());
+    if background.drag_started() {
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+    }
+    if background.double_clicked() {
+        let maximized = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+    }
     let mut row =
         ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(egui::vec2(14.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
     quiet(&mut row);
     icons::show(&mut row, Icon::Mark, 30.0).on_hover_text("MK Perth");
     row.add_space(6.0);
+    let mut line = rect.center().y;
     row.vertical(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 1.0);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 10.0;
+        let top = ui.horizontal(|ui| {
+            ui.set_min_height(22.0);
             // In line with the menus' text, which sits inside their padding.
             ui.add_space(7.0);
-            ui.label(egui::RichText::new(state.name).size(17.0).color(t.text));
-            let status = if state.modified {
-                Some(tr!("doc-unsaved"))
-            } else if state.has_file {
-                Some(if state.autosave { tr!("doc-autosaved") } else { tr!("doc-saved") })
-            } else {
-                None
-            };
-            if let Some(status) = status {
-                ui.label(egui::RichText::new(status).size(12.0).color(t.text_dim));
+            let tip = if state.autosave { tr!("autosave-on-tip") } else { tr!("autosave-off-tip") };
+            if switch(ui, state.autosave, &tr!("autosave")).on_hover_text(tip).clicked() {
+                action = Some(Action::ToggleAutoSave);
             }
         });
+        line = top.response.rect.center().y;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.spacing_mut().button_padding = egui::vec2(7.0, 3.0);
@@ -253,6 +275,22 @@ pub(crate) fn header(ui: &mut egui::Ui, state: &State) -> Option<Action> {
             }
         });
     });
+    // The name in the middle of the window, its saved state after it in a quieter grey.
+    let status = if state.modified {
+        Some(tr!("doc-unsaved"))
+    } else if state.has_file {
+        Some(if state.autosave { tr!("doc-autosaved") } else { tr!("doc-saved") })
+    } else {
+        None
+    };
+    let painter = ui.painter();
+    let name = painter.layout_no_wrap(state.name.to_string(), egui::FontId::proportional(15.0), t.text);
+    let name_pos = egui::pos2(rect.center().x - name.size().x / 2.0, line - name.size().y / 2.0);
+    let name_right = name_pos.x + name.size().x;
+    painter.galley(name_pos, name, t.text);
+    if let Some(status) = status {
+        painter.text(egui::pos2(name_right + 10.0, line), egui::Align2::LEFT_CENTER, status, egui::FontId::proportional(12.0), t.text_dim);
+    }
     row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         if outlined(ui, Icon::Run, &tr!("schedule")).on_hover_text(tr!("schedule-tip")).clicked() {

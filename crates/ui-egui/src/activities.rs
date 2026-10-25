@@ -347,13 +347,10 @@ pub(crate) fn show(
     let mut x = header.left();
     for &(_, id, w) in &columns {
         let cell = Rect::from_min_size(pos2(x, header.top()), vec2(w, HEADER));
-        painter.with_clip_rect(cell.shrink(2.0)).text(
-            pos2(x + 6.0, header.center().y),
-            Align2::LEFT_CENTER,
-            tr!(id),
-            FontId::proportional(12.0),
-            t.header_text,
-        );
+        // A title wider than its column wraps onto a second line rather than being cut.
+        let title = painter.layout(tr!(id), FontId::proportional(12.0), t.header_text, (w - 12.0).max(1.0));
+        let at = pos2(x + 6.0, header.center().y - title.size().y / 2.0);
+        painter.with_clip_rect(cell.shrink(2.0)).galley(at, title, t.header_text);
         x += w;
         painter.vline(x, header.y_range(), Stroke::new(1.0, t.gridline));
     }

@@ -523,7 +523,7 @@ impl PerthApp {
             Action::SaveAs => self.save_as(),
             Action::Export(extension) => self.export(extension),
             Action::Latex => self.export_latex(),
-            Action::ToggleAutoSave => self.autosave = !self.autosave,
+            Action::ToggleAutoSave => self.toggle_autosave(),
             Action::Exit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         }
     }
@@ -549,6 +549,18 @@ impl PerthApp {
             self.run("project.save", json!(null));
         } else {
             self.save_as();
+        }
+    }
+
+    /// AutoSave on or off; it needs a file, so switching it on asks for one first.
+    pub fn toggle_autosave(&mut self) {
+        if self.autosave {
+            self.autosave = false;
+        } else {
+            if self.session.path.is_none() {
+                self.save_as();
+            }
+            self.autosave = self.session.path.is_some();
         }
     }
 
@@ -586,6 +598,7 @@ impl PerthApp {
             Action::Levelling => self.side = Some(Side::Levelling),
             Action::Pert => self.side = Some(Side::Pert),
             Action::Zoom(z) => self.zoom = z.clamp(50, 200),
+            Action::ToggleAutoSave => self.toggle_autosave(),
             Action::Link | Action::Unlink => {
                 let ids = self.chosen_ids();
                 if ids.len() >= 2 {
