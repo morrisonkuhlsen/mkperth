@@ -667,6 +667,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             cost_accounts,
             currency: String::new(),
             budget,
+            earned_value: Default::default(),
             activities,
             relationships,
             extra,

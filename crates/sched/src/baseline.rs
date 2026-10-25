@@ -105,6 +105,7 @@ mod tests {
             cost_accounts: Vec::new(),
             currency: String::new(),
             budget: Default::default(),
+            earned_value: Default::default(),
             extra: Default::default(),
         };
         assert_eq!(variances(&p, &crate::schedule(&p).unwrap()), [None, None], "no baseline in use");

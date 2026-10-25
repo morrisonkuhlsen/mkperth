@@ -120,6 +120,7 @@ mod tests {
             cost_accounts: Vec::new(),
             currency: String::new(),
             budget: Default::default(),
+            earned_value: Default::default(),
             extra: Default::default(),
         };
         let s = crate::schedule(&p).unwrap();

@@ -40,7 +40,7 @@ impl Cost {
 }
 
 /// `amount` shared evenly over `days`, the hundredths that don't divide to the first days.
-fn spread(amount: i64, days: &[Date]) -> Vec<(Date, i64)> {
+pub(crate) fn spread(amount: i64, days: &[Date]) -> Vec<(Date, i64)> {
     let n = days.len() as i64;
     if n == 0 {
         return Vec::new();
@@ -231,6 +231,7 @@ mod tests {
             cost_accounts: Vec::new(),
             currency: String::new(),
             budget: Default::default(),
+            earned_value: Default::default(),
             extra: Default::default(),
         }
     }

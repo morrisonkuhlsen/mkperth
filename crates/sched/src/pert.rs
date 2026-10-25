@@ -193,6 +193,7 @@ mod tests {
             cost_accounts: Vec::new(),
             currency: String::new(),
             budget: Default::default(),
+            earned_value: Default::default(),
             extra: Default::default(),
         };
         let a = pert(&project).unwrap();

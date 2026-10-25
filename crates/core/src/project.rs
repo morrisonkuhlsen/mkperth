@@ -356,6 +356,9 @@ pub struct Activity {
     pub levelled: Option<Levelled>,
     /// Its three estimates for PERT's analysis, when it has them.
     pub pert: Option<Pert>,
+    /// How much of its work is done, as those doing it judge it (P6's physical percent
+    /// complete), in hundredths of a percent: 0 to 10 000.
+    pub percent_complete: Option<i64>,
     pub extra: Extra,
 }
 
@@ -614,6 +617,114 @@ impl Budgeting {
     }
 }
 
+/// How an activity's earned value is measured: by its percent complete judged (physical), by
+/// its duration or its units spent, or by fixed shares: nothing until it finishes (0/100), half
+/// when it starts (50/50), or a given share when it starts (in hundredths of a percent).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EvTechnique {
+    #[default]
+    Physical,
+    Duration,
+    Units,
+    ZeroHundred,
+    FiftyFifty,
+    Custom(i64),
+}
+
+impl EvTechnique {
+    /// The commands' word for it; a custom share is given beside it.
+    pub fn code(self) -> &'static str {
+        match self {
+            EvTechnique::Physical => "physical",
+            EvTechnique::Duration => "duration",
+            EvTechnique::Units => "units",
+            EvTechnique::ZeroHundred => "0-100",
+            EvTechnique::FiftyFifty => "50-50",
+            EvTechnique::Custom(_) => "custom",
+        }
+    }
+
+    /// The technique for `code`; a custom one starts with `share`.
+    pub fn from_code(code: &str, share: i64) -> Option<EvTechnique> {
+        Some(match code {
+            "physical" => EvTechnique::Physical,
+            "duration" => EvTechnique::Duration,
+            "units" => EvTechnique::Units,
+            "0-100" => EvTechnique::ZeroHundred,
+            "50-50" => EvTechnique::FiftyFifty,
+            "custom" => EvTechnique::Custom(share.clamp(0, 10_000)),
+            _ => return None,
+        })
+    }
+}
+
+/// How the cost to complete is estimated: what is left as the schedule prices it, or the budget
+/// still to earn at the performance so far: as planned (a factor of 1), at the cost performance
+/// (1/CPI), or at cost and schedule performance together (1/(CPI × SPI)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum EtcTechnique {
+    #[default]
+    Remaining,
+    Planned,
+    Cpi,
+    CpiSpi,
+}
+
+impl EtcTechnique {
+    pub const ALL: [EtcTechnique; 4] = [EtcTechnique::Remaining, EtcTechnique::Planned, EtcTechnique::Cpi, EtcTechnique::CpiSpi];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            EtcTechnique::Remaining => "remaining",
+            EtcTechnique::Planned => "pf-1",
+            EtcTechnique::Cpi => "cpi",
+            EtcTechnique::CpiSpi => "cpi-spi",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<EtcTechnique> {
+        EtcTechnique::ALL.into_iter().find(|t| t.code() == code)
+    }
+}
+
+/// A financial period: the stretch of days performance is stored for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinancialPeriod {
+    /// Unique among the periods.
+    pub name: String,
+    pub start: Date,
+    pub finish: Date,
+}
+
+/// An activity's performance stored at a period's close, each to date, in hundredths of the
+/// currency: its planned value by the period's end, its earned value and its actual cost.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeriodRecord {
+    pub period: String,
+    pub activity: String,
+    pub planned: i64,
+    pub earned: i64,
+    pub actual: i64,
+}
+
+/// Earned value: how it is measured and estimated, the financial periods and what was stored
+/// for each.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EarnedValue {
+    pub technique: EvTechnique,
+    pub etc: EtcTechnique,
+    /// In date order.
+    pub periods: Vec<FinancialPeriod>,
+    pub records: Vec<PeriodRecord>,
+}
+
+impl EarnedValue {
+    /// Nothing set, no period, nothing stored.
+    pub fn is_empty(&self) -> bool {
+        self == &EarnedValue::default()
+    }
+}
+
 impl Default for Resource {
     fn default() -> Self {
         Resource {
@@ -787,6 +898,8 @@ pub struct Project {
     pub currency: String,
     /// The money approved and planned for the project and its WBS.
     pub budget: Budgeting,
+    /// How earned value is measured, and the performance stored period by period.
+    pub earned_value: EarnedValue,
     pub extra: Extra,
 }
 

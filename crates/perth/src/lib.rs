@@ -351,6 +351,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             levelling_priority,
             levelled,
             pert,
+            percent_complete: None,
             extra,
         });
         dependencies.push((label, deps));
@@ -540,6 +541,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             cost_accounts,
             currency,
             budget,
+            earned_value: Default::default(),
             activities,
             relationships,
             extra,

@@ -24,6 +24,15 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Earned value (#25): each activity's percent complete as judged (`activity.edit`
+  `percent_complete`); the budget at completion, planned value (spread over the baseline's
+  working days when one is in use), earned value and actual cost, by the technique the project
+  chooses (physical, duration, units, 0/100, 50/50 or a custom share, `project.options`
+  `ev_technique`); the cost and schedule variances and indices, the estimate to complete by
+  what is left or by the budget still to earn at a factor of 1, 1/CPI or 1/(CPI × SPI)
+  (`etc_technique`), the estimate and variance at completion and the TCPI. Financial periods
+  (`period.add`, `period.generate` by the week or the month, `period.delete`) and their closes
+  stored (`period.store`): the S-curve's points.
 - The budget (#24): the project's and each WBS's original budget (`budget.set`); a log of
   changes, pending, approved or not approved (`budget-change.add`, `.edit`, `.delete`), from
   which the current budget (the approved ones) and the proposed (the pending too); the spending

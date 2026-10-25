@@ -3,7 +3,8 @@
 //! it goes on the undo stack.
 
 use mkperth_core::{
-    Activity, ActivityKind, Calendar, Constraint, CriticalBy, Date, FloatKind, Period, ProgressMode, Project, Region, Relationship, RelationshipType,
+    Activity, ActivityKind, Calendar, Constraint, CriticalBy, Date, EtcTechnique, EvTechnique, FloatKind, Period, ProgressMode, Project, Region,
+    Relationship, RelationshipType,
 };
 use mkperth_i18n::tr;
 use mkperth_sched::ScheduleError;
@@ -245,6 +246,17 @@ impl Session {
             Some(Value::String(c)) if c.chars().count() <= 8 => Some(c.trim().to_string()),
             Some(_) => return Err(bad("currency")),
         };
+        // Earned value: its technique (with a custom share in percent), and the estimate to complete's.
+        let share = match params.get("ev_share") {
+            None | Some(Value::Null) => 0,
+            Some(v) => v
+                .as_f64()
+                .filter(|x| x.is_finite() && (0.0..=100.0).contains(x))
+                .map(|x| (x * 100.0).round() as i64)
+                .ok_or_else(|| bad("ev_share"))?,
+        };
+        let technique = text(params, C, "ev_technique")?.map(|t| EvTechnique::from_code(&t, share).ok_or_else(|| bad("ev_technique"))).transpose()?;
+        let etc = text(params, C, "etc_technique")?.map(|t| EtcTechnique::from_code(&t).ok_or_else(|| bad("etc_technique"))).transpose()?;
         let progress = text(params, C, "progress")?
             .map(|m| match m.as_str() {
                 "retained-logic" => Ok(ProgressMode::RetainedLogic),
@@ -264,6 +276,12 @@ impl Session {
             }
             if let Some(m) = progress {
                 p.progress_mode = m;
+            }
+            if let Some(t) = technique {
+                p.earned_value.technique = t;
+            }
+            if let Some(t) = etc {
+                p.earned_value.etc = t;
             }
             match (critical, threshold) {
                 (Some(c), _) => p.critical_by = c,
@@ -430,6 +448,17 @@ impl Session {
         let actual_finish = date(params, C, "actual_finish")?;
         let remaining = clearable(params, C, "remaining", 0..=mkperth_sched::MAX_SPAN)?;
         let remaining_minutes = clearable(params, C, "remaining_minutes", 0..=mkperth_sched::MAX_SPAN * 1440)?;
+        // How much is done, judged: a percent (`70`, `33.5`), or `null` for none.
+        let percent = match params.get("percent_complete") {
+            None => None,
+            Some(Value::Null) => Some(None),
+            Some(v) => Some(Some(
+                v.as_f64()
+                    .filter(|x| x.is_finite() && (0.0..=100.0).contains(x))
+                    .map(|x| (x * 100.0).round() as i64)
+                    .ok_or_else(|| EngineError::Value(C.into(), "percent_complete".into()))?,
+            )),
+        };
         let label = tr!("undo-edit-activity", id = id.as_str());
         self.change(label, |p| {
             let k = find(p, &id)?;
@@ -472,6 +501,9 @@ impl Session {
                 }
                 for c in p.budget.log.iter_mut().filter(|c| c.wbs.as_deref() == Some(id.as_str())) {
                     c.wbs = Some(new.to_string());
+                }
+                for r in p.earned_value.records.iter_mut().filter(|r| r.activity == id) {
+                    r.activity = new.to_string();
                 }
             }
             if let Some(par) = parent.as_deref().filter(|s| !s.is_empty()) {
@@ -565,6 +597,9 @@ impl Session {
             if let Some(m) = remaining_minutes {
                 a.remaining_minutes = m;
             }
+            if let Some(x) = percent {
+                a.percent_complete = x;
+            }
             // Its assignments by its duration type: their units follow, or their units an hour.
             if resized {
                 crate::resources::after_duration(p, k);
@@ -600,6 +635,7 @@ impl Session {
                 p.expenses.retain(|e| e.activity != *id);
                 p.budget.budgets.retain(|b| b.wbs.as_deref() != Some(id.as_str()));
                 p.budget.log.retain(|c| c.wbs.as_deref() != Some(id.as_str()));
+                p.earned_value.records.retain(|r| r.activity != *id);
                 for a in &mut p.activities {
                     if a.parent.as_deref() == Some(id.as_str()) {
                         a.parent = removed.parent.clone();
