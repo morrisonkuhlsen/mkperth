@@ -359,6 +359,10 @@ pub struct Activity {
     /// How much of its work is done, as those doing it judge it (P6's physical percent
     /// complete), in hundredths of a percent: 0 to 10 000.
     pub percent_complete: Option<i64>,
+    /// Its value of each activity code, by the code's name: one value per code.
+    pub codes: BTreeMap<String, String>,
+    /// Its value of each user-defined field, by the field's name.
+    pub fields: BTreeMap<String, FieldValue>,
     pub extra: Extra,
 }
 
@@ -725,6 +729,140 @@ impl EarnedValue {
     }
 }
 
+/// An activity code: a way to classify activities (a phase, an area, a responsible), with the
+/// values it can take, in a hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ActivityCode {
+    /// Unique among the codes.
+    pub name: String,
+    pub values: Vec<CodeValue>,
+}
+
+/// A value of an activity code: its short code, what it means, and the value it sits under.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CodeValue {
+    /// Unique within its code.
+    pub code: String,
+    pub description: String,
+    pub parent: Option<String>,
+}
+
+/// What a user-defined field holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum FieldKind {
+    #[default]
+    Text,
+    /// A number, kept in millionths.
+    Number,
+    Integer,
+    /// Money, in hundredths of the currency.
+    Cost,
+    Date,
+    /// A traffic light: red, yellow, green or blue.
+    Indicator,
+}
+
+impl FieldKind {
+    pub const ALL: [FieldKind; 6] = [FieldKind::Text, FieldKind::Number, FieldKind::Integer, FieldKind::Cost, FieldKind::Date, FieldKind::Indicator];
+
+    /// The commands' word for it.
+    pub fn code(self) -> &'static str {
+        match self {
+            FieldKind::Text => "text",
+            FieldKind::Number => "number",
+            FieldKind::Integer => "integer",
+            FieldKind::Cost => "cost",
+            FieldKind::Date => "date",
+            FieldKind::Indicator => "indicator",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<FieldKind> {
+        FieldKind::ALL.into_iter().find(|k| k.code() == code)
+    }
+}
+
+/// A traffic light's colour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Indicator {
+    Red,
+    Yellow,
+    Green,
+    Blue,
+}
+
+impl Indicator {
+    pub const ALL: [Indicator; 4] = [Indicator::Red, Indicator::Yellow, Indicator::Green, Indicator::Blue];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            Indicator::Red => "red",
+            Indicator::Yellow => "yellow",
+            Indicator::Green => "green",
+            Indicator::Blue => "blue",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<Indicator> {
+        Indicator::ALL.into_iter().find(|i| i.code() == code)
+    }
+}
+
+/// A user-defined field: its name and what it holds.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct UserField {
+    /// Unique among the fields.
+    pub name: String,
+    pub kind: FieldKind,
+}
+
+/// An activity's value of a user-defined field, of the field's kind.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FieldValue {
+    Text(String),
+    /// Millionths.
+    Number(i64),
+    Integer(i64),
+    /// Hundredths of the currency.
+    Cost(i64),
+    Date(Date),
+    Indicator(Indicator),
+}
+
+impl FieldValue {
+    pub fn kind(&self) -> FieldKind {
+        match self {
+            FieldValue::Text(_) => FieldKind::Text,
+            FieldValue::Number(_) => FieldKind::Number,
+            FieldValue::Integer(_) => FieldKind::Integer,
+            FieldValue::Cost(_) => FieldKind::Cost,
+            FieldValue::Date(_) => FieldKind::Date,
+            FieldValue::Indicator(_) => FieldKind::Indicator,
+        }
+    }
+}
+
+/// How the project classifies its activities: its activity codes and its user-defined fields.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Classification {
+    pub codes: Vec<ActivityCode>,
+    pub fields: Vec<UserField>,
+}
+
+impl Classification {
+    pub fn is_empty(&self) -> bool {
+        self.codes.is_empty() && self.fields.is_empty()
+    }
+
+    pub fn code(&self, name: &str) -> Option<&ActivityCode> {
+        self.codes.iter().find(|c| c.name == name)
+    }
+
+    pub fn field(&self, name: &str) -> Option<&UserField> {
+        self.fields.iter().find(|f| f.name == name)
+    }
+}
+
 impl Default for Resource {
     fn default() -> Self {
         Resource {
@@ -900,6 +1038,8 @@ pub struct Project {
     pub budget: Budgeting,
     /// How earned value is measured, and the performance stored period by period.
     pub earned_value: EarnedValue,
+    /// The activity codes and user-defined fields activities are classified by.
+    pub classification: Classification,
     pub extra: Extra,
 }
 

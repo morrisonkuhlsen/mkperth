@@ -11,8 +11,9 @@ pub use calendar::{Calendar, CalendarError, DEFAULT_PERIODS, MINUTES_PER_DAY, Pe
 pub use date::{Date, Weekday};
 pub use holidays::{Region, easter};
 pub use project::{
-    Accrual, Activity, ActivityKind, Assignment, Band, Baseline, BaselineActivity, BudgetChange, Budgeting, ChangeStatus, Comment, Constraint,
-    CostAccount, CriticalBy, DurationType, EarnedValue, EtcTechnique, EvTechnique, Expense, Extra, FinancialPeriod, FloatKind, Fund, FundingSource,
-    LagCalendar, LevelBy, Levelled, LevellingOptions, LevellingPriority, Marker, MonthMark, PeriodRecord, Pert, Price, ProgressMode, Project,
-    Relationship, RelationshipType, Resource, ResourceKind, Role, SpendingMonth, UNIT, WbsBudget,
+    Accrual, Activity, ActivityCode, ActivityKind, Assignment, Band, Baseline, BaselineActivity, BudgetChange, Budgeting, ChangeStatus,
+    Classification, CodeValue, Comment, Constraint, CostAccount, CriticalBy, DurationType, EarnedValue, EtcTechnique, EvTechnique, Expense, Extra,
+    FieldKind, FieldValue, FinancialPeriod, FloatKind, Fund, FundingSource, Indicator, LagCalendar, LevelBy, Levelled, LevellingOptions,
+    LevellingPriority, Marker, MonthMark, PeriodRecord, Pert, Price, ProgressMode, Project, Relationship, RelationshipType, Resource, ResourceKind,
+    Role, SpendingMonth, UNIT, UserField, WbsBudget,
 };

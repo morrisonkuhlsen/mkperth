@@ -194,6 +194,7 @@ mod tests {
             currency: String::new(),
             budget: Default::default(),
             earned_value: Default::default(),
+            classification: Default::default(),
             extra: Default::default(),
         };
         let a = pert(&project).unwrap();

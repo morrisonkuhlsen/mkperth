@@ -210,6 +210,7 @@ mod tests {
                 funds: vec![Fund { source: "BANK".into(), amount: money(7_000) }, Fund { source: "OWN".into(), amount: money(4_000) }],
             },
             earned_value: Default::default(),
+            classification: Default::default(),
             extra: Default::default(),
         }
     }

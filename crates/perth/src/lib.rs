@@ -369,6 +369,8 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             levelled,
             pert,
             percent_complete,
+            codes: Default::default(),
+            fields: Default::default(),
             extra,
         });
         dependencies.push((label, deps));
@@ -564,6 +566,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             currency,
             budget,
             earned_value,
+            classification: Default::default(),
             activities,
             relationships,
             extra,

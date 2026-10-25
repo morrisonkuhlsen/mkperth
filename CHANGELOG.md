@@ -24,6 +24,10 @@ Read it before re-scheduling a plan with a new version.
 
 ### Added
 
+- Activity codes and user-defined fields (#26): codes with their values in a hierarchy
+  (`code.add`, `.delete`, `code-value.add`, `.delete`), fields of a kind each (text, number,
+  integer, cost, date or a red, yellow, green or blue indicator; `field.add`, `.delete`), and
+  each activity's values, set or cleared on one activity or many at once (`activity.classify`).
 - Earned value (#25): each activity's percent complete as judged (`activity.edit`
   `percent_complete`); the budget at completion, planned value (spread over the baseline's
   working days when one is in use), earned value and actual cost, by the technique the project

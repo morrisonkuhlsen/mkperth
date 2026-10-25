@@ -5,6 +5,7 @@
 
 mod baselines;
 mod budget;
+mod classify;
 mod comments;
 mod costs;
 mod earned;
@@ -84,7 +85,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 57] = [
+pub const COMMANDS: [&str; 64] = [
     "project.new",
     "project.open",
     "project.save",
@@ -129,6 +130,13 @@ pub const COMMANDS: [&str; 57] = [
     "period.generate",
     "period.delete",
     "period.store",
+    "code.add",
+    "code.delete",
+    "code-value.add",
+    "code-value.delete",
+    "field.add",
+    "field.delete",
+    "activity.classify",
     "comment.add",
     "comment.reply",
     "comment.edit",
@@ -206,6 +214,7 @@ impl Session {
             .or_else(|| self.cost_command(id, params))
             .or_else(|| self.budget_command(id, params))
             .or_else(|| self.earned_command(id, params))
+            .or_else(|| self.classify_command(id, params))
         {
             return result;
         }
