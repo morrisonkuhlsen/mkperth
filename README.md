@@ -28,6 +28,10 @@
 <br>
 
 <p align="center">
+  <b><a href="https://morrisonkuhlsen.github.io/mkperth/">Try it in your browser</a></b> — the whole app as WebAssembly; your files never leave the page.
+</p>
+
+<p align="center">
   <a href="#why-mk-perth">Why MK Perth</a> ·
   <a href="#what-it-does-today">What it does today</a> ·
   <a href="#roadmap">Roadmap</a> ·
