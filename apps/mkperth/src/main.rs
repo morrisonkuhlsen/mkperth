@@ -140,9 +140,10 @@ fn main() -> eframe::Result {
     let services = Services {
         pick_open: Some(Box::new(|| {
             rfd::FileDialog::new()
-                .add_filter("Projects (.json, .xml)", &["json", "xml"])
+                .add_filter("Projects (.json, .xml, .xer)", &["json", "xml", "xer"])
                 .add_filter("Perth.jl project (.json)", &["json"])
                 .add_filter("Primavera P6 or Microsoft Project XML (.xml)", &["xml"])
+                .add_filter("Primavera P6 XER (.xer)", &["xer"])
                 .add_filter("All files", &["*"])
                 .pick_file()
         })),
@@ -153,6 +154,7 @@ fn main() -> eframe::Result {
                 rfd::FileDialog::new()
                     .add_filter("Perth.jl project (.json)", &["json"])
                     .add_filter("Primavera P6 or Microsoft Project XML (.xml)", &["xml"])
+                    .add_filter("Primavera P6 XER (.xer)", &["xer"])
             };
             dialog.set_file_name(suggested).save_file()
         })),

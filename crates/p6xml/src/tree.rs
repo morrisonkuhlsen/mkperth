@@ -12,7 +12,7 @@ pub const MAX_DEPTH: usize = 64;
 pub const MAX_ELEMENTS: usize = 5_000_000;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct Element {
+pub struct Element {
     pub name: String,
     pub text: String,
     pub children: Vec<Element>,
@@ -41,7 +41,7 @@ fn local(name: &str) -> String {
 }
 
 /// Parses a whole document into its root element.
-pub(crate) fn parse(text: &str) -> Result<Element, P6Error> {
+pub fn parse(text: &str) -> Result<Element, P6Error> {
     let mut reader = Reader::from_str(text);
     let bad = |e: &dyn std::fmt::Display| P6Error::Xml(e.to_string());
     let mut stack: Vec<Element> = vec![Element::default()];

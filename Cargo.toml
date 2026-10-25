@@ -16,6 +16,7 @@ mkperth-sched = { path = "crates/sched" }
 mkperth-perth = { path = "crates/perth" }
 mkperth-p6xml = { path = "crates/p6xml" }
 mkperth-mspxml = { path = "crates/mspxml" }
+mkperth-xer = { path = "crates/xer" }
 mkperth-engine = { path = "crates/engine" }
 mkperth-ui-egui = { path = "crates/ui-egui" }
 

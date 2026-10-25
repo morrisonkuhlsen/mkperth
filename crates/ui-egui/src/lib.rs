@@ -39,6 +39,7 @@ pub use activities::{Column, Editing, Options};
 pub use calendars::{CalendarForm, periods_text, read_periods};
 pub use comments_ui::CommentForm;
 pub use mkperth_engine::core::Date;
+pub use mkperth_engine::file_text;
 pub use mkperth_engine::i18n;
 pub use resources_view::ResourceForm;
 pub use theme::Tokens;
@@ -524,11 +525,11 @@ impl PerthApp {
 
     /// A copy of the project in `format`, where the person picks; the open project stays as it was.
     pub fn export(&mut self, format: mkperth_engine::Format) {
-        let extension = if format == mkperth_engine::Format::Perth { "json" } else { "xml" };
+        let extension = format.extension();
         let suggested = format!("{}.{extension}", self.session.project.name.replace(['/', '\\'], "-"));
         if let (None, Some(download)) = (&self.services.pick_save, &self.services.download) {
             let (text, warnings) = self.session.text(Some(format));
-            download(&suggested, text.as_bytes());
+            download(&suggested, &mkperth_engine::file_bytes(&text, format));
             self.session.warnings = warnings;
             return;
         }
@@ -599,7 +600,7 @@ impl PerthApp {
     fn deliver(&mut self, name: &str, format: mkperth_engine::Format) {
         let Some(download) = &self.services.download else { return };
         let (text, warnings) = self.session.text(Some(format));
-        download(name, text.as_bytes());
+        download(name, &mkperth_engine::file_bytes(&text, format));
         self.session.mark_saved(name, format, warnings);
         self.status = Some(Status::Info(tr!("status-downloaded", name = name)));
     }

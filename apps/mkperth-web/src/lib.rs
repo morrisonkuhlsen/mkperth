@@ -60,10 +60,10 @@ mod web {
             start_open: Some(Box::new(move || {
                 let slot = slot.clone();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let picked = rfd::AsyncFileDialog::new().add_filter("Projects (.json, .xml)", &["json", "xml"]).pick_file().await;
+                    let picked = rfd::AsyncFileDialog::new().add_filter("Projects (.json, .xml, .xer)", &["json", "xml", "xer"]).pick_file().await;
                     if let Some(file) = picked {
                         let bytes = file.read().await;
-                        *slot.borrow_mut() = Some((file.file_name(), String::from_utf8_lossy(&bytes).into_owned()));
+                        *slot.borrow_mut() = Some((file.file_name(), mkperth_ui_egui::file_text(&bytes)));
                     }
                 });
             })),

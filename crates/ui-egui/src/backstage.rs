@@ -241,6 +241,9 @@ fn pages(ui: &mut Ui, view: &View) -> Option<Action> {
                 if card(ui, Icon::Share, &tr!("backstage-export-p6"), &tr!("backstage-export-p6-line")) {
                     action = Some(Action::Export(mkperth_engine::Format::P6));
                 }
+                if card(ui, Icon::Share, &tr!("backstage-export-xer"), &tr!("backstage-export-xer-line")) {
+                    action = Some(Action::Export(mkperth_engine::Format::Xer));
+                }
                 if card(ui, Icon::Share, &tr!("backstage-export-msp"), &tr!("backstage-export-msp-line")) {
                     action = Some(Action::Export(mkperth_engine::Format::Msp));
                 }

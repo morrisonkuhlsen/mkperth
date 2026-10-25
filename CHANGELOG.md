@@ -10,6 +10,14 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- Primavera P6's XER files (#10): opened (in UTF-8 or Windows' code page, told by their header
+  whatever the extension), saved and exported (File ▸ Export ▸ Primavera P6 XER, the `xer`
+  format of `project.save` and `project.export`), in the browser too. They carry what P6 XML
+  does: the project, its WBS, calendars, activities, relationships, resources and prices, roles,
+  assignments, cost accounts, expenses, activity codes, user-defined fields (read only), the OBS,
+  the budget, financial periods and each period's actuals; what isn't carried is said in a
+  warning. Built from Oracle's published XER and Prime data map guides and public descriptions
+  of the format.
 - A stored close keeps each period's own amounts, not the total to date: planned and earned
   value and the actual cost by kind (labour, non-labour, material, expenses) and actual units
   (labour, non-labour) for each activity, as P6's `ActivityPeriodActual` holds them; P6 XML

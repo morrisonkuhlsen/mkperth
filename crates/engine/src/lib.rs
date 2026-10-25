@@ -84,6 +84,8 @@ pub enum EngineError {
     #[error(transparent)]
     Msp(#[from] mkperth_mspxml::MspError),
     #[error(transparent)]
+    Xer(#[from] mkperth_xer::XerError),
+    #[error(transparent)]
     Schedule(#[from] ScheduleError),
 }
 
@@ -210,6 +212,8 @@ pub enum Format {
     P6,
     /// Microsoft Project's XML (MSPDI).
     Msp,
+    /// Primavera P6's XER.
+    Xer,
 }
 
 impl Format {
@@ -219,22 +223,42 @@ impl Format {
             Format::Perth => "perth",
             Format::P6 => "p6",
             Format::Msp => "msp",
+            Format::Xer => "xer",
         }
     }
 
     pub fn from_code(code: &str) -> Option<Format> {
-        [Format::Perth, Format::P6, Format::Msp].into_iter().find(|f| f.code() == code)
+        [Format::Perth, Format::P6, Format::Msp, Format::Xer].into_iter().find(|f| f.code() == code)
     }
 
-    /// The format a path's extension says when nothing else does: `.xml` P6's, else Perth's.
+    /// The format a path's extension says when nothing else does: `.xml` P6's, `.xer` XER, else
+    /// Perth's.
     pub fn of_path(path: &Path) -> Format {
-        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xml")) { Format::P6 } else { Format::Perth }
+        match path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref() {
+            Some("xml") => Format::P6,
+            Some("xer") => Format::Xer,
+            _ => Format::Perth,
+        }
     }
 
-    /// The format of a file's text: XML by what its root is, else Perth's JSON.
+    /// The extension a file in this format takes.
+    pub fn extension(self) -> &'static str {
+        match self {
+            Format::Perth => "json",
+            Format::P6 | Format::Msp => "xml",
+            Format::Xer => "xer",
+        }
+    }
+
+    /// The format of a file's text: XER by its header, XML by what its root is, else Perth's
+    /// JSON.
     pub fn of_text(path: &Path, text: &str) -> Format {
+        if text.trim_start_matches('\u{feff}').starts_with("ERMHDR") {
+            return Format::Xer;
+        }
         match Format::of_path(path) {
             Format::Perth => Format::Perth,
+            Format::Xer => Format::Xer,
             _ => {
                 let head = text.get(..text.len().min(4096)).unwrap_or_default();
                 let p6 = head.find("<APIBusinessObjects");
@@ -249,7 +273,7 @@ impl Format {
     }
 }
 
-/// A command's `format` (`perth`, `p6`, `msp`), if given.
+/// A command's `format` (`perth`, `p6`, `msp`, `xer`), if given.
 fn format_param(params: &Value, command: &str) -> Result<Option<Format>, EngineError> {
     match params.get("format") {
         None | Some(Value::Null) => Ok(None),
@@ -260,7 +284,13 @@ fn format_param(params: &Value, command: &str) -> Result<Option<Format>, EngineE
 /// Reads a project file in the format its text is in: the project, what reading it said, and
 /// the format.
 pub(crate) fn read_file(path: &Path) -> Result<(Project, Vec<String>, Format), EngineError> {
-    let text = std::fs::read_to_string(path).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
+    let bytes = std::fs::read(path).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
+    // XER is usually in Windows' code page; every other format is UTF-8.
+    let text = match String::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(e) if Format::of_path(path) == Format::Xer || e.as_bytes().starts_with(b"ERMHDR") => mkperth_xer::decode(e.as_bytes()),
+        Err(e) => return Err(EngineError::File(path.display().to_string(), e.to_string())),
+    };
     let format = Format::of_text(path, &text);
     let (project, warnings) = match format {
         Format::P6 => {
@@ -269,6 +299,10 @@ pub(crate) fn read_file(path: &Path) -> Result<(Project, Vec<String>, Format), E
         }
         Format::Msp => {
             let r = mkperth_mspxml::read(&text)?;
+            (r.project, r.warnings)
+        }
+        Format::Xer => {
+            let r = mkperth_xer::read(&text)?;
             (r.project, r.warnings)
         }
         Format::Perth => {
@@ -285,7 +319,19 @@ pub(crate) fn write_text(project: &Project, format: Format) -> (String, Vec<Stri
         Format::Perth => mkperth_perth::write(project),
         Format::P6 => mkperth_p6xml::write(project),
         Format::Msp => mkperth_mspxml::write(project),
+        Format::Xer => mkperth_xer::write(project),
     }
+}
+
+/// A file's text as the bytes written: XER in Windows' code page, as P6 writes it; every other
+/// format in UTF-8.
+pub fn file_bytes(text: &str, format: Format) -> Vec<u8> {
+    if format == Format::Xer { mkperth_xer::encode(text) } else { text.as_bytes().to_vec() }
+}
+
+/// A file's bytes as text: UTF-8 when they are, else Windows' code page (an XER file's).
+pub fn file_text(bytes: &[u8]) -> String {
+    mkperth_xer::decode(bytes)
 }
 
 impl Session {
@@ -348,7 +394,7 @@ impl Session {
                 let path = Path::new(param("path")?);
                 let format = format_param(params, id)?.unwrap_or_else(|| Format::of_path(path));
                 let (text, warnings) = write_text(&self.project, format);
-                write_atomic(path, text.as_bytes()).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
+                write_atomic(path, &file_bytes(&text, format)).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
                 self.warnings = warnings;
                 Ok(())
             }
@@ -434,6 +480,10 @@ impl Session {
                 let r = mkperth_mspxml::read(text)?;
                 (r.project, r.warnings)
             }
+            Format::Xer => {
+                let r = mkperth_xer::read(text)?;
+                (r.project, r.warnings)
+            }
             Format::Perth => {
                 let r = mkperth_perth::read(text)?;
                 (r.project, r.warnings)
@@ -472,7 +522,7 @@ impl Session {
         Ok(self.explain(id)?.to_latex(&self.project.name, name, date))
     }
 
-    /// Writes the project as P6 XML (`.xml`) or Perth.jl's JSON, all or nothing; it becomes the project's path.
+    /// Writes the project as P6 XML (`.xml`), XER (`.xer`) or Perth.jl's JSON, all or nothing; it becomes the project's path.
     /// Returns what Perth's format couldn't hold.
     pub fn save(&mut self, path: &Path) -> Result<(), EngineError> {
         self.save_as(path, None)
@@ -485,7 +535,7 @@ impl Session {
         let format = format.or(self.format.filter(|_| same)).unwrap_or_else(|| Format::of_path(path));
         let (text, warnings) = write_text(&self.project, format);
         self.format = Some(format);
-        write_atomic(path, text.as_bytes()).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
+        write_atomic(path, &file_bytes(&text, format)).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
         self.path = Some(path.to_path_buf());
         self.modified = false;
         self.warnings = warnings;
@@ -891,6 +941,38 @@ mod tests {
         assert!(schedule.activities.iter().any(|a| a.critical));
         assert!(schedule.activities.iter().any(|a| !a.critical));
         assert!(s.project.activities.iter().any(|a| a.parent.is_some()), "a WBS");
+    }
+
+    /// XER, saved and opened: in Windows' code page on the disk, its accents kept; the format
+    /// told by the header whatever the extension.
+    #[test]
+    fn xer_files() {
+        let dir = std::env::temp_dir().join(format!("mkperth-engine-xer-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut s = Session::default();
+        let id = s.project.activities.iter().rev().find(|a| a.parent.is_some()).unwrap().id.clone();
+        s.run("activity.edit", &serde_json::json!({"id": id, "name": "Fundações"})).unwrap();
+        let path = dir.join("obra.xer");
+        s.run("project.export", &serde_json::json!({"path": path.display().to_string()})).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(bytes.starts_with(b"ERMHDR\t") && std::str::from_utf8(&bytes).is_err(), "Windows-1252");
+        let mut opened = Session::default();
+        opened.open(&path).unwrap();
+        assert_eq!(opened.format, Some(Format::Xer));
+        assert!(opened.project.activities.iter().any(|a| a.name == "Fundações"));
+        assert_eq!(opened.schedule.as_ref().unwrap().finish, s.schedule.as_ref().unwrap().finish);
+        let renamed = dir.join("obra.txt");
+        std::fs::copy(&path, &renamed).unwrap();
+        let mut again = Session::default();
+        again.open(&renamed).unwrap();
+        assert_eq!(again.format, Some(Format::Xer));
+        assert_eq!(Format::from_code("xer"), Some(Format::Xer));
+        assert_eq!(Format::of_path(Path::new("a.XER")), Format::Xer);
+        // Opened from a browser's text, as the web app hands it over.
+        let mut web = Session::default();
+        web.open_text("obra.xer", &file_text(&bytes)).unwrap();
+        assert!(web.project.activities.iter().any(|a| a.name == "Fundações"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

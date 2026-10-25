@@ -111,7 +111,7 @@
 | Milestone | What | Issues |
 |-----------|------|--------|
 | M0 the scheduler | durations in hours, float options, every date explained | #2, #3, #4, #5 |
-| M1 data in and out | holidays of business calendars, P6 XML, Microsoft Project XML, XER (a decision) | #29, #8, #9, #10 |
+| M1 data in and out | holidays of business calendars, P6 XML, Microsoft Project XML, XER | #29, #8, #9, #10 |
 | M2 the engine | commands and undo, the command line, the MCP server, the Perth.jl bridge | #12, #13, #14, #15 |
 | M3 the interface | the Activities window (table and Gantt), the network view, the brand | #16, #17, #18 |
 | M4 resources | resources and roles, levelling | #20, #21 |
@@ -161,7 +161,7 @@ An engine-first Cargo workspace with enforced layering (`cargo xtask layers`):
 | Layer | Crates |
 |-------|--------|
 | L0    | `i18n` (message catalogs) · `core` (dates, calendars, the project) |
-| L1    | `sched` (the critical path method) · `perth` (Perth.jl's JSON) · `p6xml` (Primavera P6's XML) · `mspxml` (Microsoft Project's XML) |
+| L1    | `sched` (the critical path method) · `perth` (Perth.jl's JSON) · `p6xml` (Primavera P6's XML) · `mspxml` (Microsoft Project's XML) · `xer` (Primavera P6's XER) |
 | L2    | `engine` (the session and its commands) |
 | L3    | `ui-egui` (the Activities window) |
 | L4    | `apps/mkperth` (desktop) · `apps/mkperth-cli` (command line) · `apps/mkperth-mcp` (MCP server) |

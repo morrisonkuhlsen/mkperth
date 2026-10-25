@@ -1,0 +1,18 @@
+[package]
+name = "mkperth-xer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Primavera P6's XER files, read into MK Perth's model and written from it, through P6 XML's objects"
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+mkperth-core = { workspace = true }
+mkperth-i18n = { workspace = true }
+mkperth-p6xml = { workspace = true }
+
+[dev-dependencies]
+mkperth-sched = { workspace = true }

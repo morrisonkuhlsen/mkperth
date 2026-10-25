@@ -83,7 +83,19 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
 - *Done (#35):* MSPDI's recurring calendar exceptions expanded into their days, lags in elapsed
   time and as a share of the predecessor's duration (scheduled as such), cost resources as
   expenses and back.
-- **Next:** XER is the user's decision (#10: no specification from Oracle).
+- *Done (#10):* XER (`mkperth-xer`), decided October 2026: its tables and columns from Oracle's
+  published XER Import/Export Data Map Guide, its codes from the Prime Import/Export Data Map
+  Guide, its lines and the calendars' `clndr_data` from public third-party descriptions. The
+  tables are translated to P6 XML's objects and back, so XER carries what P6 XML does: the
+  project and its WBS, calendars with their work periods and exceptions, activities with their
+  constraints and progress, relationships, resources with their prices, roles, assignments,
+  cost accounts, expenses, activity codes, user-defined fields (read), the OBS, the budget, the
+  financial periods and each period's actuals. Read in UTF-8 or Windows-1252, written in
+  Windows-1252; told by its header. Written files aren't checked against P6 itself (no licence
+  is held, #11).
+- **Next:** XER's codes Oracle doesn't publish (an expense's accrual, a user-defined field's
+  data type, an activity code's scope) are read by their sense and left out of what is written;
+  baselines, notebooks and the budget's log aren't in XER yet (#36).
 
 ## M2 — the engine and the command line
 - *Started:* `mkperth-engine`: the session (the project, its schedule, what opening it said) and

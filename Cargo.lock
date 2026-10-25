@@ -1786,6 +1786,7 @@ dependencies = [
  "mkperth-p6xml",
  "mkperth-perth",
  "mkperth-sched",
+ "mkperth-xer",
  "serde_json",
  "thiserror 2.0.21",
 ]
@@ -1867,6 +1868,17 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "mkperth-xer"
+version = "0.1.0"
+dependencies = [
+ "mkperth-core",
+ "mkperth-i18n",
+ "mkperth-p6xml",
+ "mkperth-sched",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

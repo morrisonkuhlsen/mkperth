@@ -8,6 +8,8 @@ A Cargo workspace; `cargo xtask layers` holds each crate to its layer.
 | L0 | `mkperth-core` | `Date` (days from 1970, civil arithmetic), `Calendar`, `Project`, `Activity`, `Relationship` |
 | L1 | `mkperth-sched` | `schedule(&Project) -> Result<Schedule, ScheduleError>`: the critical path method |
 | L1 | `mkperth-p6xml` | Primavera P6's XML: `read` and `write` (calendars, WBS, activities, relationships) |
+| L1 | `mkperth-mspxml` | Microsoft Project's XML (MSPDI): `read` and `write` |
+| L1 | `mkperth-xer` | Primavera P6's XER: its tables translated to and from P6 XML's objects, `read` and `write` through `mkperth-p6xml`; Windows-1252 |
 | L1 | `mkperth-perth` | Perth.jl's project JSON: `read` and `write`, lossless through `extra` |
 | L2 | `mkperth-engine` | the session: the project, its schedule, `run(command, params)`; the sample project |
 | L3 | `mkperth-ui-egui` | the window: the header and toolbar, the table beside the Gantt chart, the splash screen |

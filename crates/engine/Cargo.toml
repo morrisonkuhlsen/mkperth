@@ -17,3 +17,4 @@ mkperth-sched = { workspace = true }
 mkperth-perth = { workspace = true }
 mkperth-p6xml = { workspace = true }
 mkperth-mspxml = { workspace = true }
+mkperth-xer = { workspace = true }
