@@ -133,10 +133,8 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, t: &Tokens) {
     };
     match icon {
         Icon::Mark => {
-            painter.rect_filled(r(1.0, 1.0, 15.0, 15.0), 3.0 * s, t.accent);
-            for (x0, x1, y) in [(3.5, 8.5, 4.5), (6.5, 11.0, 7.5), (9.0, 12.5, 10.5)] {
-                painter.rect_filled(r(x0, y, x1, y + 1.8), 0.0, Color32::WHITE);
-            }
+            let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+            painter.image(crate::mark::texture(painter.ctx()).id(), r(0.0, 0.0, 16.0, 16.0), uv, Color32::WHITE);
         }
         Icon::Gantt => {
             line((1.5, 1.5), (1.5, 14.5), Stroke::new(w, t.text_dim));

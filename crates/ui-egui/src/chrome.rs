@@ -252,7 +252,7 @@ pub(crate) fn header(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     let mut row =
         ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(egui::vec2(14.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
     quiet(&mut row);
-    icons::show(&mut row, Icon::Mark, 30.0).on_hover_text("MK Perth");
+    icons::show(&mut row, Icon::Mark, 36.0).on_hover_text("MK Perth");
     row.add_space(6.0);
     let mut line = rect.center().y;
     row.vertical(|ui| {

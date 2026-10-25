@@ -16,6 +16,7 @@ mod datepick;
 pub mod fonts;
 pub mod icons;
 mod levelling_ui;
+pub mod mark;
 mod pert_ui;
 mod resources_view;
 pub mod splash;

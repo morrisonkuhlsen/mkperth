@@ -207,6 +207,7 @@ fn main() -> eframe::Result {
         .with_title("MK Perth")
         .with_app_id("mkperth")
         .with_inner_size([1360.0, 820.0])
-        .with_min_inner_size([800.0, 480.0]);
+        .with_min_inner_size([800.0, 480.0])
+        .with_icon(mkperth_ui_egui::mark::icon());
     eframe::run_native("MK Perth", options(viewport, backends), Box::new(|_cc| Ok(Box::new(App(app)))))
 }

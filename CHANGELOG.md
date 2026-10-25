@@ -215,6 +215,8 @@ Read it before re-scheduling a plan with a new version.
 - The window's header works as its title bar, as in MK Sigma: a double click maximizes or
   restores the window, a drag moves it; the project's name sits in its middle, and an AutoSave
   switch at its top left saves every change to the file (asking for one first when there is none).
+- A new mark, drawn in code: a dark gear holding a violet globe, its meridians in white and a
+  schedule's bars across it; in the header, the splash screen and as the window's icon.
 - The splash screen's foot reads "Powered by" and the Morrison Kühlsen wordmark, instead of the
   wordmark beside a line repeating its name.
 - The panes keep their places: a wide pane (Calendars' working week) no longer pushes the strip
