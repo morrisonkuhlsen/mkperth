@@ -35,6 +35,7 @@ pub(crate) fn empty(name: String, start: Date) -> Project {
         budget: Default::default(),
         earned_value: Default::default(),
         classification: Default::default(),
+        external: Vec::new(),
         extra: Default::default(),
     }
 }
@@ -121,6 +122,7 @@ pub(crate) fn project() -> Project {
         budget: Default::default(),
         earned_value: Default::default(),
         classification: Default::default(),
+        external: Vec::new(),
         activities,
         relationships: vec![
             tie("M0", "A10", FinishToStart, 0),

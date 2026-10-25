@@ -37,6 +37,12 @@ Read it before re-scheduling a plan with a new version.
   sorted by a click on a column's title (upwards, downwards, then as they were) among each
   summary's children; codes and fields as columns; the Codes and fields pane (Project ▸ Codes
   and fields…) and Details' codes and fields.
+- Projects scheduled together (#26): an activity tied to another project's activity
+  (`relationship.add-external`, `.delete-external`; Details ▸ Relationships ▸ Other projects),
+  the other project read from its file (beside this one's, or anywhere) and scheduled with this
+  one in one network, each project kept after its own start; a file that can't be read is left
+  out with a warning. Kept in Perth's JSON (`mkperth_external`); P6 XML holds one project and
+  says it leaves them out.
 - Earned value (#25): each activity's percent complete as judged (`activity.edit`
   `percent_complete`); the budget at completion, planned value (spread over the baseline's
   working days when one is in use), earned value and actual cost, by the technique the project
@@ -288,6 +294,8 @@ Read it before re-scheduling a plan with a new version.
 
 ### Fixed
 
+- A Perth file whose tasks have no start of their own keeps the project's start
+  (`mkperth_start`): it came back as 1970, and its activities were scheduled then.
 - P6 XML as Oracle documents it (#31): the estimate to complete's techniques are written
   `Performance Factor = 1` (and `… / Cost Performance Index`, `… / (Cost Performance Index *
   Schedule Performance Index)`), not `PF = …`; a WBS's spending plan is a `ProjectSpendingPlan`

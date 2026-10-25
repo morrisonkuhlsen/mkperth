@@ -16,9 +16,9 @@ use std::collections::BTreeMap;
 
 use mkperth_core::{
     Accrual, Activity, ActivityCode, ActivityKind, Assignment, Band, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus,
-    Classification, CodeValue, Comment, Constraint, CostAccount, Date, EarnedValue, EtcTechnique, EvTechnique, Expense, Extra, FieldKind, FieldValue,
-    FinancialPeriod, Fund, FundingSource, Indicator, LevelBy, Levelled, LevellingOptions, LevellingPriority, Marker, MonthMark, PeriodRecord, Pert,
-    Price, Project, Region, Relationship, RelationshipType, Resource, SpendingMonth, UNIT, UserField, WbsBudget,
+    Classification, CodeValue, Comment, Constraint, CostAccount, Date, EarnedValue, EtcTechnique, EvTechnique, Expense, ExternalRelationship, Extra,
+    FieldKind, FieldValue, FinancialPeriod, Fund, FundingSource, Indicator, LevelBy, Levelled, LevellingOptions, LevellingPriority, Marker,
+    MonthMark, PeriodRecord, Pert, Price, Project, Region, Relationship, RelationshipType, Resource, SpendingMonth, UNIT, UserField, WbsBudget,
 };
 use mkperth_i18n::tr;
 use serde_json::{Map, Value};
@@ -98,8 +98,23 @@ const TASK_MAPPED: [&str; 14] = [
 ];
 /// The longest a PERT estimate may be, in days.
 const MAX_ESTIMATE: f64 = 1e6;
-const PROJECT_MAPPED: [&str; 13] =
-    ["name", "tasks", "calendar", "bands", "markers", "month_marks", COMMENTS, LEVELLING, BASELINES, COSTS, BUDGET, EARNED, CLASSIFICATION];
+const PROJECT_MAPPED: [&str; 15] = [
+    "name",
+    "tasks",
+    "calendar",
+    "bands",
+    "markers",
+    "month_marks",
+    COMMENTS,
+    LEVELLING,
+    BASELINES,
+    COSTS,
+    BUDGET,
+    EARNED,
+    CLASSIFICATION,
+    START,
+    EXTERNAL,
+];
 /// MK Perth's earned value: its techniques, the financial periods and their stored closes;
 /// written only when they say something.
 const EARNED: &str = "mkperth_earned_value";
@@ -122,6 +137,10 @@ const LEVELLED: &str = "mkperth_levelled";
 /// MK Perth's classification: the project's activity codes and user-defined fields, and each
 /// task's values of them; written only when there are some.
 const CLASSIFICATION: &str = "mkperth_classification";
+/// MK Perth's start for the project, written when its tasks' starts don't give it.
+const START: &str = "mkperth_start";
+/// MK Perth's relationships with other projects' activities.
+const EXTERNAL: &str = "mkperth_external";
 const CODES: &str = "mkperth_codes";
 const FIELDS: &str = "mkperth_fields";
 const LEVELLING: &str = "mkperth_levelling";
@@ -420,7 +439,11 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         Some(Constraint::StartOnOrAfter(d)) => Some(d),
         _ => None,
     });
-    let start = start.min().or_else(|| Date::from_ymd(1970, 1, 1)).ok_or(PerthError::NotAProject)?;
+    // MK Perth's start when the tasks don't say it: their earliest start on or after, else 1970.
+    let start = match root.get(START).and_then(Value::as_str).and_then(Date::parse) {
+        Some(d) => d,
+        None => start.min().or_else(|| Date::from_ymd(1970, 1, 1)).ok_or(PerthError::NotAProject)?,
+    };
     let date = |t: &dyn Fn(&str) -> Option<String>, k: &str| t(k).as_deref().and_then(Date::parse);
     let bands = notes(&root, "bands", |t| Some(Band { name: t("name")?, from: date(t, "from")?, to: date(t, "to")?, color: t("color")? }))?;
     let markers = notes(&root, "markers", |t| {
@@ -556,6 +579,16 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             r.prices = list;
         }
     }
+    let external = match root.get(EXTERNAL) {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .take(MAX_TASKS)
+            .map(external_of)
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| PerthError::Field(String::new(), EXTERNAL.into()))?,
+        Some(_) => return Err(PerthError::Field(String::new(), EXTERNAL.into())),
+    };
     let classification = match root.get(CLASSIFICATION) {
         Some(v @ Value::Object(_)) => classification_of(v)?,
         Some(Value::Null) | None => Classification::default(),
@@ -599,6 +632,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             budget,
             earned_value,
             classification,
+            external,
             activities,
             relationships,
             extra,
@@ -682,6 +716,43 @@ fn field_value(v: &FieldValue) -> Value {
     let mut o = Map::new();
     o.insert(v.kind().code().into(), value);
     Value::Object(o)
+}
+
+/// A relationship with another project's activity, as written: the file, the activity here and
+/// there, which way it runs (`in`, the other's driving this one), its type and lag in days.
+fn external_of(v: &Value) -> Option<ExternalRelationship> {
+    let text = |k: &str| v.get(k).and_then(Value::as_str);
+    let kind = match text("type")? {
+        "FS" => RelationshipType::FinishToStart,
+        "SS" => RelationshipType::StartToStart,
+        "FF" => RelationshipType::FinishToFinish,
+        "SF" => RelationshipType::StartToFinish,
+        _ => return None,
+    };
+    Some(ExternalRelationship {
+        project: text("project")?.to_string(),
+        here: text("activity")?.to_string(),
+        there: text("other")?.to_string(),
+        incoming: match text("direction")? {
+            "in" => true,
+            "out" => false,
+            _ => return None,
+        },
+        kind,
+        lag: v.get("lag").and_then(Value::as_i64).filter(|l| l.abs() <= 1_000_000)?,
+        lag_minutes: None,
+    })
+}
+
+fn external_value(x: &ExternalRelationship) -> Value {
+    let kind = match x.kind {
+        RelationshipType::FinishToStart => "FS",
+        RelationshipType::StartToStart => "SS",
+        RelationshipType::FinishToFinish => "FF",
+        RelationshipType::StartToFinish => "SF",
+    };
+    serde_json::json!({"project": x.project, "activity": x.here, "other": x.there,
+        "direction": if x.incoming { "in" } else { "out" }, "type": kind, "lag": x.lag})
 }
 
 /// MK Perth's classification from its field.
@@ -1035,6 +1106,22 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     }
     if !project.classification.is_empty() {
         fields.push((CLASSIFICATION.into(), classification_value(&project.classification)));
+    }
+    if !project.external.is_empty() {
+        fields.push((EXTERNAL.into(), Value::Array(project.external.iter().map(external_value).collect())));
+    }
+    // The start, when reading the tasks wouldn't give it back.
+    let implied = project
+        .activities
+        .iter()
+        .filter_map(|a| match a.constraint {
+            Some(Constraint::StartOnOrAfter(d)) => Some(d),
+            _ => None,
+        })
+        .min()
+        .or_else(|| Date::from_ymd(1970, 1, 1));
+    if implied != Some(project.start) {
+        fields.push((START.into(), Value::String(project.start.to_string())));
     }
     if !project.earned_value.is_empty() {
         fields.push((EARNED.into(), earned_value_value(&project.earned_value)));

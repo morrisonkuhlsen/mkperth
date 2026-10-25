@@ -16,6 +16,7 @@ mod comments_ui;
 mod costs_ui;
 mod datepick;
 mod earned_ui;
+mod external_ui;
 pub mod fonts;
 pub mod icons;
 mod levelling_ui;
@@ -226,6 +227,8 @@ pub struct PerthApp {
     pub budget_form: budget_ui::BudgetForm,
     /// What the Codes and fields pane is typing.
     pub codes_form: codes_ui::CodesForm,
+    /// What Details' ties to other projects are typing.
+    pub external_form: external_ui::ExternalForm,
     /// The resource selected in the Resources view, by index, and what that view is typing.
     pub resource_selected: Option<usize>,
     pub resource_form: ResourceForm,
@@ -337,6 +340,7 @@ impl PerthApp {
             costs_form: Default::default(),
             budget_form: Default::default(),
             codes_form: Default::default(),
+            external_form: Default::default(),
             resource_selected: None,
             resource_form: ResourceForm::default(),
             comment_form: CommentForm::default(),
@@ -1534,26 +1538,21 @@ impl PerthApp {
                     let lag = |l: i64| if l == 0 { String::new() } else { format!(" {l:+}") };
                     let mut remove = None;
                     for (title, predecessors) in [(tr!("detail-predecessors"), true), (tr!("detail-successors"), false)] {
-                        ui.add_space(8.0);
-                        ui.label(egui::RichText::new(title).size(12.5).color(t.text).strong());
+                        theme::section(ui, &title);
                         let list: Vec<&mkperth_engine::core::Relationship> =
                             project.relationships.iter().filter(|r| if predecessors { r.successor == a.id } else { r.predecessor == a.id }).collect();
                         if list.is_empty() {
-                            ui.label(egui::RichText::new(tr!("detail-none")).size(12.0).color(t.text_dim));
+                            theme::hint(ui, &tr!("detail-none"));
                         }
                         for r in list {
                             let other = if predecessors { &r.predecessor } else { &r.successor };
-                            ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new(format!("{other}  {}{}", r.kind.code(), lag(r.lag))).size(12.5).color(t.text));
-                                if icon_button(ui, Icon::Close, &tr!("relationship-remove")) {
-                                    remove = Some((r.predecessor.clone(), r.successor.clone()));
-                                }
-                            });
+                            if theme::list_item(ui, None, other, &format!("{}{}", r.kind.code(), lag(r.lag)), &tr!("relationship-remove")) {
+                                remove = Some((r.predecessor.clone(), r.successor.clone()));
+                            }
                         }
                     }
                     // A new predecessor: its ID, the kind and the lag.
-                    ui.add_space(10.0);
-                    ui.label(egui::RichText::new(tr!("relationship-add-title")).size(12.0).color(t.text_dim));
+                    theme::section(ui, &tr!("relationship-add-title"));
                     let mut add = false;
                     ui.horizontal(|ui| {
                         ui.add(egui::TextEdit::singleline(&mut self.link.0).hint_text(tr!("relationship-id-hint")).desired_width(90.0));
@@ -1576,6 +1575,11 @@ impl PerthApp {
                     }
                     if let Some((p, s)) = remove {
                         pending = Some(("relationship.delete", json!({"predecessor": p, "successor": s})));
+                    }
+                    // Ties to other projects' activities.
+                    let pick = self.services.pick_open.as_deref();
+                    if let Some(p) = external_ui::section(ui, &self.session, a, &mut self.external_form, pick) {
+                        pending = Some(p);
                     }
                 }
                 DetailsTab::Costs => {

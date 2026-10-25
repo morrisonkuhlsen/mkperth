@@ -10,6 +10,7 @@ mod comments;
 mod costs;
 mod earned;
 mod edit;
+mod external;
 mod notes;
 mod report;
 mod resources;
@@ -85,7 +86,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 64] = [
+pub const COMMANDS: [&str; 66] = [
     "project.new",
     "project.open",
     "project.save",
@@ -137,6 +138,8 @@ pub const COMMANDS: [&str; 64] = [
     "field.add",
     "field.delete",
     "activity.classify",
+    "relationship.add-external",
+    "relationship.delete-external",
     "comment.add",
     "comment.reply",
     "comment.edit",
@@ -166,6 +169,9 @@ pub struct Session {
     /// Each change's label and the project before it, oldest first.
     undo: Vec<(String, Project)>,
     redo: Vec<(String, Project)>,
+    /// The other projects its external relationships name, as written there, read from their
+    /// files to be scheduled with it.
+    others: Vec<(String, Project)>,
 }
 
 impl Default for Session {
@@ -173,12 +179,12 @@ impl Default for Session {
     fn default() -> Self {
         let project = sample::project();
         let schedule = mkperth_sched::schedule(&project);
-        Session { project, path: None, schedule, warnings: Vec::new(), modified: false, undo: Vec::new(), redo: Vec::new() }
+        Session { project, path: None, schedule, warnings: Vec::new(), modified: false, undo: Vec::new(), redo: Vec::new(), others: Vec::new() }
     }
 }
 
 /// Whether a path names a P6 XML file.
-fn is_p6(path: &Path) -> bool {
+pub(crate) fn is_p6(path: &Path) -> bool {
     path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xml"))
 }
 
@@ -215,6 +221,7 @@ impl Session {
             .or_else(|| self.budget_command(id, params))
             .or_else(|| self.earned_command(id, params))
             .or_else(|| self.classify_command(id, params))
+            .or_else(|| self.external_command(id, params))
         {
             return result;
         }
@@ -252,10 +259,21 @@ impl Session {
                 };
                 let project = sample::empty(name, start);
                 let schedule = mkperth_sched::schedule(&project);
-                *self = Session { project, path: None, schedule, warnings: Vec::new(), modified: false, undo: Vec::new(), redo: Vec::new() };
+                *self = Session {
+                    project,
+                    path: None,
+                    schedule,
+                    warnings: Vec::new(),
+                    modified: false,
+                    undo: Vec::new(),
+                    redo: Vec::new(),
+                    others: Vec::new(),
+                };
                 Ok(())
             }
             "project.schedule" => {
+                // The other projects as their files are now.
+                self.load_others();
                 self.reschedule();
                 Ok(())
             }
@@ -293,6 +311,7 @@ impl Session {
         self.modified = false;
         self.undo.clear();
         self.redo.clear();
+        self.load_others();
         self.reschedule();
         Ok(())
     }
@@ -321,9 +340,9 @@ impl Session {
         write_atomic(path, tex.as_bytes()).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))
     }
 
-    /// Schedules the project again.
+    /// Schedules the project again, with the other projects it is tied to as last read.
     pub fn reschedule(&mut self) {
-        self.schedule = mkperth_sched::schedule(&self.project);
+        self.schedule = self.compute(&self.project);
     }
 }
 

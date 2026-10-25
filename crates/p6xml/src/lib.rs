@@ -696,6 +696,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
             budget,
             earned_value,
             classification,
+            external: Vec::new(),
             activities,
             relationships,
             extra,
@@ -996,6 +997,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     }
     if !(project.bands.is_empty() && project.markers.is_empty() && project.month_marks.is_empty()) {
         warnings.push(tr!("warn-p6-chart-notes"));
+    }
+    if !project.external.is_empty() {
+        warnings.push(tr!("warn-p6-external", n = project.external.len()));
     }
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str(&format!("<APIBusinessObjects xmlns=\"{NAMESPACE}\">\n"));

@@ -34,6 +34,7 @@ mod explain;
 mod latex;
 mod level;
 mod pert;
+mod together;
 mod usage;
 
 pub use baseline::{Variance, variances, working_days_between};
@@ -42,6 +43,7 @@ pub use costs::{Cost, costs, project_cost, spending};
 pub use earned::{Earned, PeriodPoint, earned_value, performance, period_points, planned_curve, project_earned};
 pub use level::{Levelling, MAX_ROUNDS, Overload, level, overloads};
 pub use pert::{PertActivity, PertAnalysis, normal, pert};
+pub use together::{Link, schedule_together};
 pub use usage::{by_week, capacity, usage};
 
 use std::collections::{HashMap, VecDeque};

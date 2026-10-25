@@ -514,3 +514,19 @@ fn codes_and_fields_in_their_own_fields() {
     assert_eq!((&back.activities[0].codes, &back.activities[0].fields), (&q.activities[0].codes, &q.activities[0].fields));
     assert_eq!(write(&back).0, text, "and written again the same");
 }
+
+/// A project whose tasks have no start of their own keeps its start through the file: before,
+/// it came back as 1970 and its activities were scheduled then.
+#[test]
+fn the_start_kept_when_the_tasks_dont_give_it() {
+    let mut p = read(&full().to_string()).unwrap().project;
+    for a in &mut p.activities {
+        a.constraint = None;
+    }
+    p.start = day(2026, 11, 2);
+    let (text, _) = write(&p);
+    assert!(text.contains(r#""mkperth_start":"2026-11-02""#), "{text}");
+    assert_eq!(read(&text).unwrap().project.start, day(2026, 11, 2));
+    // Given by the tasks, nothing more is written.
+    assert!(!write(&read(&full().to_string()).unwrap().project).0.contains("mkperth_start"));
+}

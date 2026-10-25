@@ -195,6 +195,7 @@ mod tests {
             budget: Default::default(),
             earned_value: Default::default(),
             classification: Default::default(),
+            external: Vec::new(),
             extra: Default::default(),
         };
         let a = pert(&project).unwrap();

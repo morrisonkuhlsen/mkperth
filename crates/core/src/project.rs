@@ -863,6 +863,23 @@ impl Classification {
     }
 }
 
+/// A relationship between an activity here and one in another project, kept in this one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalRelationship {
+    /// The other project's file, as written: relative to this project's folder, or absolute.
+    pub project: String,
+    /// The activity here, and the one in the other project.
+    pub here: String,
+    pub there: String,
+    /// The other project's activity drives this one's (it is the predecessor); else this one's
+    /// drives the other's.
+    pub incoming: bool,
+    pub kind: RelationshipType,
+    /// Working days; `lag_minutes` takes its place when set.
+    pub lag: i64,
+    pub lag_minutes: Option<i64>,
+}
+
 impl Default for Resource {
     fn default() -> Self {
         Resource {
@@ -1040,6 +1057,9 @@ pub struct Project {
     pub earned_value: EarnedValue,
     /// The activity codes and user-defined fields activities are classified by.
     pub classification: Classification,
+    /// Relationships to and from other projects' activities: those projects are scheduled with
+    /// this one.
+    pub external: Vec<ExternalRelationship>,
     pub extra: Extra,
 }
 

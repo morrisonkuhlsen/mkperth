@@ -167,7 +167,7 @@ impl Session {
     pub(crate) fn change(&mut self, label: String, change: impl FnOnce(&mut Project) -> Result<(), EngineError>) -> Result<(), EngineError> {
         let mut project = self.project.clone();
         change(&mut project)?;
-        let schedule = mkperth_sched::schedule(&project);
+        let schedule = self.compute(&project);
         if let Err(e @ (ScheduleError::Loop(_) | ScheduleError::ParentLoop(_) | ScheduleError::MilestoneParent(_))) = schedule {
             return Err(e.into());
         }
