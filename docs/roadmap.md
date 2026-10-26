@@ -251,6 +251,12 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   workflow publishes it when run by hand. Opened the sample and scheduled it in Chrome.
 - **Next:** a smaller download (`wasm-opt`); recent files kept in the browser's storage.
 
+## Releases
+- *Done:* a pushed tag `vX.Y.Z` builds the desktop app, the CLI and the MCP server for Linux,
+  Windows and macOS and publishes them with `SHA256SUMS.txt`, the archives MK Launcher installs
+  (`.github/workflows/release.yml`, [`releasing.md`](releasing.md)). 0.1.0 on 2026-10-26.
+- **Next:** code signing; installers (`.msi`, `.dmg`, AppImage, Flatpak).
+
 ## Beyond P6 — billing (the user's to schedule)
 P6 has no billing: measurements and invoices are left to other products. MK Perth could close
 the loop: progress measurements per activity from percent complete and budgeted cost, the

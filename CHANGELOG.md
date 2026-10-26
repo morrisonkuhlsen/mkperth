@@ -10,6 +10,11 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-26
+
+- Releases: each version published on GitHub for Linux, Windows and macOS (the desktop app,
+  `mkperth-cli` and `mkperth-mcp`) with its SHA-256 checksums, which MK Launcher installs and
+  updates.
 - A resource's limit over time: from a day on, a different number of units at once (the
   Resources view's Max units over time; `limits` in `resource.add` and `resource.edit`).
   Levelling keeps to each day's limit, an activity waiting at most until the limit changes; the
