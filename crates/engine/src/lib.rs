@@ -551,8 +551,10 @@ impl Session {
         let same = self.path.as_deref() == Some(path);
         let format = format.or(self.format.filter(|_| same)).unwrap_or_else(|| Format::of_path(path));
         let (text, warnings) = write_text(&self.project, format);
-        self.format = Some(format);
         write_atomic(path, &file_bytes(&text, format)).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))?;
+        // The path and its format change together, once the file is written: a failed Save As
+        // leaves the next Save writing the file it came from as it was (#40).
+        self.format = Some(format);
         self.path = Some(path.to_path_buf());
         self.modified = false;
         self.warnings = warnings;
@@ -1057,6 +1059,27 @@ mod tests {
         let mut web = Session::default();
         web.open_text("obra.xer", &file_text(&bytes)).unwrap();
         assert!(web.project.activities.iter().any(|a| a.name == "Fundações"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A Save As that fails leaves the project's file and format as they were, so the next Save
+    /// writes the file it came from in its own format (#40): it used to take the failed one's,
+    /// and an XER file was overwritten with Perth JSON.
+    #[test]
+    fn a_failed_save_as_keeps_the_format() {
+        let dir = std::env::temp_dir().join(format!("mkperth-engine-save-as-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("plan.xer");
+        let mut s = Session::default();
+        s.run("project.save", &serde_json::json!({"path": path.display().to_string()})).unwrap();
+        let mut opened = Session::default();
+        opened.run("project.open", &serde_json::json!({"path": path.display().to_string()})).unwrap();
+        let nowhere = dir.join("no such folder").join("copy.json");
+        assert!(matches!(opened.run("project.save", &serde_json::json!({"path": nowhere.display().to_string()})), Err(EngineError::File(..))));
+        assert_eq!((opened.format, opened.path.as_deref()), (Some(Format::Xer), Some(path.as_path())), "as before the Save As");
+        opened.run("project.save", &Value::Null).unwrap();
+        assert!(std::fs::read(&path).unwrap().starts_with(b"ERMHDR\t"), "still XER");
+        Session::default().open(&path).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -350,6 +350,9 @@ Read it before re-scheduling a plan with a new version.
 
 ### Fixed
 
+- A Save As that fails (a folder that isn't there, a file that can't be written) no longer
+  changes the project's format (#40): the next Save wrote the file the project came from in the
+  failed one's format, so an XER or P6 XML file was overwritten with Perth JSON and lost.
 - A Perth file whose tasks have no start of their own keeps the project's start
   (`mkperth_start`): it came back as 1970, and its activities were scheduled then.
 - P6 XML as Oracle documents it (#31): the estimate to complete's techniques are written
