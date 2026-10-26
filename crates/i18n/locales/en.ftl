@@ -616,6 +616,7 @@ err-p6-not-p6 = This XML isn't a P6 project: it has no APIBusinessObjects with a
 err-p6-too-big = The file nests deeper or holds more elements than MK Perth reads.
 err-p6-field = { $what }: the field { $field } is missing or not what P6 writes there.
 warn-p6-projects = The file holds { $n } projects; the first was read.
+warn-p6-wbs-renamed = { $n } WBS codes are also an activity's ID or another WBS element's code: their summaries take the code with * added.
 warn-p6-dangling = { $n } relationships name activities that aren't in the project; left out.
 warn-p6-comments = { $n } comments aren't written: P6 XML has no place for them (save as Perth JSON to keep them).
 warn-p6-assignments = { $n } resource assignments name an activity, or a resource or role, the file doesn't have: left out.

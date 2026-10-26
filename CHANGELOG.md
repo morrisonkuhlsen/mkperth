@@ -350,6 +350,9 @@ Read it before re-scheduling a plan with a new version.
 
 ### Fixed
 
+- A P6 XML or XER file opens when a WBS code is also an activity's ID (#57): P6 keeps the two
+  apart, and the file was refused ("the field Id is missing…"). The WBS element's summary takes
+  the code with `*` added, as two WBS elements with one code already did, and a warning says so.
 - A Perth file whose tasks have no start of their own keeps the project's start
   (`mkperth_start`): it came back as 1970, and its activities were scheduled then.
 - P6 XML as Oracle documents it (#31): the estimate to complete's techniques are written

@@ -122,6 +122,25 @@ fn reads_a_project() {
 }
 
 #[test]
+fn a_wbs_code_that_is_an_activity_id_gives_way() {
+    // P6 keeps WBS codes and activity IDs apart; the summary takes another ID, the activity
+    // keeps its own, and the file opens (#57).
+    let clash = file().replace("<Code>PLANT.1.1</Code>", "<Code>A100</Code>");
+    let read = read(&clash).unwrap();
+    let p = &read.project;
+    let a = |id: &str| p.activities.iter().find(|a| a.id == id).unwrap();
+    assert_eq!((a("A100").name.as_str(), a("A100").parent.as_deref()), ("Survey", Some("A100*")));
+    assert_eq!((a("A100*").name.as_str(), a("A100*").parent.as_deref()), ("Civil", Some("PLANT.1")));
+    assert_eq!(a("A110").parent.as_deref(), Some("A100*"));
+    assert!(read.warnings.iter().any(|w| w.contains("WBS")), "{:?}", read.warnings);
+    assert_eq!(read.warnings.len(), 2, "the dangling relationship and the renamed code: {:?}", read.warnings);
+    // What is written opens again.
+    let (xml, _) = write(p);
+    let again = super::read(&xml).unwrap().project;
+    assert_eq!(again.activities.iter().filter(|a| a.id.starts_with("A100")).count(), 2);
+}
+
+#[test]
 fn what_is_written_reads_back_the_same() {
     let p = read(&file()).unwrap().project;
     let (text, _) = write(&p);
