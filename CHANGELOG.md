@@ -41,6 +41,12 @@ Read it before re-scheduling a plan with a new version.
   expenses).
 ### Changed results
 
+- **A started activity's start constraint** (on or before, on, mandatory) no longer bounds its
+  late dates, as it already didn't bound its early ones (#63): its late finish was the
+  constraint's date plus the work left, so an activity started on time showed a false negative
+  float and was critical. A 10-day activity started on its constraint's day, with five days left
+  at the data date, had a late finish five working days before its early finish (float -5); its
+  late finish is now its successors', float 0. A finish constraint still bounds the work left.
 - **A resource-dependent activity** (P6 XML's "Resource Dependent", or the box in Details)
   schedules on its resources' calendars and finishes when the last of them does, instead of
   working its duration on its own calendar: a resource on a shorter week (or with more work)
