@@ -10,6 +10,10 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- The network printed: File ▸ Export ▸ Network (SVG), the network's corner button, or the
+  `network.export-svg` command write it as an SVG drawing (the project's name and finish, the
+  boxes and arrows as on screen, the critical path in red) that a browser or viewer prints at
+  any size.
 - Relationships drawn in the network view: drag from a box's start or finish (the dots at its
   sides) onto another box, its left half for its start, its right half for its finish; the
   kind (FS, FF, SS, SF) is shown before letting go, and the tie is one undo.

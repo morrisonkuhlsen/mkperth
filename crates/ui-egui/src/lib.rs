@@ -572,6 +572,7 @@ impl PerthApp {
             Action::SaveAs => self.save_as(),
             Action::Export(extension) => self.export(extension),
             Action::Latex => self.export_latex(),
+            Action::NetworkSvg => self.export_network(),
             Action::ToggleAutoSave => self.toggle_autosave(),
             Action::Exit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         }
@@ -1230,6 +1231,9 @@ impl PerthApp {
         }
         // A relationship drawn: tied as a command, undoable; a loop or a tie already there is
         // refused in the status bar.
+        if events.print {
+            self.export_network();
+        }
         if let Some((a, b, kind)) = events.tie {
             let ids = |i: usize| self.session.project.activities.get(i).map(|x| x.id.clone());
             if let (Some(a), Some(b)) = (ids(a), ids(b)) {
@@ -1427,6 +1431,25 @@ impl PerthApp {
         }
         if let Some(path) = self.services.pick_save.as_ref().and_then(|pick| pick(&suggested)) {
             self.status = Some(match self.session.export_latex(&id, &path, &show_date) {
+                Ok(()) => Status::Info(tr!("status-exported", name = path.display().to_string().as_str())),
+                Err(e) => Status::Error(e.to_string()),
+            });
+        }
+    }
+
+    /// The network as an SVG drawing to print, where the person picks (in a browser, downloaded).
+    pub fn export_network(&mut self) {
+        let base = self.session.path.as_deref().and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().into_owned());
+        let suggested = format!("{}-network.svg", base.unwrap_or_else(|| tr!("network-view")));
+        if let (None, Some(download)) = (&self.services.pick_save, &self.services.download) {
+            match self.session.network_svg(&show_date) {
+                Ok(svg) => download(&suggested, svg.as_bytes()),
+                Err(e) => self.status = Some(Status::Error(e.to_string())),
+            }
+            return;
+        }
+        if let Some(path) = self.services.pick_save.as_ref().and_then(|pick| pick(&suggested)) {
+            self.status = Some(match self.session.export_network(&path, &show_date) {
                 Ok(()) => Status::Info(tr!("status-exported", name = path.display().to_string().as_str())),
                 Err(e) => Status::Error(e.to_string()),
             });

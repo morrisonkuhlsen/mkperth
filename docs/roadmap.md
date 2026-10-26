@@ -174,7 +174,9 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   left) or finish (at its right) onto another box's left half (its start) or right half (its
   finish), FS, FF, SS or SF, the kind shown before it is let go; a loop or a tie already there
   refused in the status bar; one undo.
-- **Next:** printing the network.
+- *Done:* the network printed: drawn as SVG by the engine (`network.export-svg`, the layout
+  moved there from the window so both draw the same), from the network's corner and File ▸
+  Export; any browser or viewer prints it at any size, and in a browser it is downloaded.
 
 ## M4 — resources
 - *Started (#20):* resources (labor, nonlabor, material, with a unit, a calendar and units an

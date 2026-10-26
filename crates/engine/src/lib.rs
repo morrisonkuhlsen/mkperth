@@ -11,6 +11,7 @@ mod costs;
 mod earned;
 mod edit;
 mod external;
+pub mod network;
 mod notes;
 mod report;
 mod resources;
@@ -97,7 +98,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 73] = [
+pub const COMMANDS: [&str; 74] = [
     "project.new",
     "project.open",
     "project.open-text",
@@ -106,6 +107,7 @@ pub const COMMANDS: [&str; 73] = [
     "project.sample",
     "project.schedule",
     "activity.export-tex",
+    "network.export-svg",
     "activity.add",
     "activity.edit",
     "activity.delete",
@@ -449,6 +451,11 @@ impl Session {
                 let (activity, path) = (param("id")?, param("path")?);
                 self.export_latex(activity, Path::new(path), &|d| d.to_string())
             }
+            // The network as SVG to print, dates as 2026-11-02.
+            "network.export-svg" => {
+                let path = params.get("path").and_then(Value::as_str).ok_or_else(|| EngineError::Param(id.to_string(), "path".to_string()))?;
+                self.export_network(Path::new(path), &|d| d.to_string())
+            }
             // A command that panics, to prove the guard above.
             #[cfg(test)]
             "test.panic" => {
@@ -565,6 +572,12 @@ impl Session {
         write_atomic(path, tex.as_bytes()).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))
     }
 
+    /// Writes the network as an SVG drawing at `path`, dates written by `date`.
+    pub fn export_network(&self, path: &Path, date: &dyn Fn(mkperth_core::Date) -> String) -> Result<(), EngineError> {
+        let svg = self.network_svg(date)?;
+        write_atomic(path, svg.as_bytes()).map_err(|e| EngineError::File(path.display().to_string(), e.to_string()))
+    }
+
     /// Schedules the project again, with the other projects it is tied to as last read.
     pub fn reschedule(&mut self) {
         self.schedule = self.compute(&self.project);
@@ -643,6 +656,11 @@ mod tests {
         assert!(tex.contains("\\documentclass") && tex.contains("A10") && tex.contains("2026-11-"));
         assert!(matches!(s.run("activity.export-tex", &json!({"id": "nope", "path": path.display().to_string()})), Err(EngineError::Schedule(_))));
         assert!(matches!(s.run("activity.export-tex", &json!({"id": "A10"})), Err(EngineError::Param(..))));
+        // The network, the same way.
+        let svg = path.with_extension("svg");
+        s.run("network.export-svg", &json!({"path": svg.display().to_string()})).unwrap();
+        assert!(std::fs::read_to_string(&svg).unwrap().contains("<polyline"));
+        assert!(matches!(s.run("network.export-svg", &json!({})), Err(EngineError::Param(..))));
         std::fs::remove_dir_all(&dir).ok();
     }
 

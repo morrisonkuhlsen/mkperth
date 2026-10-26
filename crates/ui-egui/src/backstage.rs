@@ -47,6 +47,8 @@ pub(crate) enum Action {
     Export(mkperth_engine::Format),
     /// The selected activity's calculation as LaTeX.
     Latex,
+    /// The network as a drawing to print.
+    NetworkSvg,
     ToggleAutoSave,
     Exit,
 }
@@ -253,6 +255,9 @@ fn pages(ui: &mut Ui, view: &View) -> Option<Action> {
                 let line = view.selected.map_or_else(|| tr!("backstage-export-tex-none"), |id| tr!("backstage-export-tex-line", id = id));
                 if ui.add_enabled_ui(view.selected.is_some(), |ui| card(ui, Icon::Latex, &tr!("export-tex"), &line)).inner {
                     action = Some(Action::Latex);
+                }
+                if card(ui, Icon::Network, &tr!("backstage-export-network"), &tr!("backstage-export-network-line")) {
+                    action = Some(Action::NetworkSvg);
                 }
             });
         }

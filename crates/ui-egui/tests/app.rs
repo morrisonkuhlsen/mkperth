@@ -157,6 +157,39 @@ fn the_calculation_saves_as_latex() {
     assert!(matches!(h.state().status, Some(mkperth_ui_egui::Status::Info(_))));
 }
 
+/// The network's print button saves it as SVG where the person picks; in a browser it is
+/// downloaded.
+#[test]
+fn the_network_saves_to_print() {
+    let dir = std::env::temp_dir().join(format!("mkperth-ui-svg-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let target = dir.join("network.svg");
+    let picked = target.clone();
+    let services = Services {
+        pick_save: Some(Box::new(move |suggested: &str| (suggested == "Network-network.svg").then(|| picked.clone()))),
+        ..Services::default()
+    };
+    let mut h = harness(PerthApp::new(services));
+    h.get_by_label("Network").click();
+    h.run_steps(3);
+    h.get_by_label("Export the network to print (SVG)").click();
+    h.run_steps(2);
+    let svg = std::fs::read_to_string(&target).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(svg.contains("<svg") && svg.contains("M0"), "{svg}");
+    assert!(matches!(h.state().status, Some(mkperth_ui_egui::Status::Info(_))));
+
+    let got = std::rc::Rc::new(std::cell::RefCell::new(Vec::<(String, usize)>::new()));
+    let kept = got.clone();
+    let services = Services {
+        download: Some(Box::new(move |name: &str, bytes: &[u8]| kept.borrow_mut().push((name.to_string(), bytes.len())))),
+        ..Services::default()
+    };
+    let mut h = harness(PerthApp::new(services));
+    h.state_mut().export_network();
+    assert!(got.borrow().first().is_some_and(|(name, n)| name == "Network-network.svg" && *n > 1000), "{:?}", got.borrow());
+}
+
 #[test]
 fn notes_are_typed_on_their_tab() {
     use egui::accesskit::Role;
