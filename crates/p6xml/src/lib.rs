@@ -247,20 +247,29 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         (minutes / day + i64::from(minutes > 0 && minutes % day != 0), Some(minutes))
     };
 
-    // The WBS as summaries, IDs from their codes, kept unique.
+    // The WBS as summaries, IDs from their codes, kept unique: a code an activity has as ID, or
+    // another WBS element has, gives way (P6 keeps the two apart, #57).
     let mut activities: Vec<Activity> = Vec::new();
     let mut wbs_id: HashMap<String, String> = HashMap::new();
     let wbs: Vec<&Element> = p.all("WBS").chain(root.all("WBS")).collect();
+    let activity_ids: BTreeSet<&str> = p.all("Activity").filter_map(|e| e.text_of("Id")).collect();
+    let mut renamed = 0;
     for w in &wbs {
         let object = w.text_of("ObjectId").unwrap_or_default().to_string();
         let mut id = w.text_of("Code").or_else(|| w.text_of("Name")).unwrap_or("WBS").to_string();
-        while activities.iter().any(|a| a.id == id) {
+        if activities.iter().any(|a| a.id == id) || activity_ids.contains(id.as_str()) {
+            renamed += 1;
+        }
+        while activities.iter().any(|a| a.id == id) || activity_ids.contains(id.as_str()) {
             id.push('*');
         }
         let mut a = Activity { id: id.clone(), name: w.text_of("Name").unwrap_or_default().to_string(), ..Activity::default() };
         a.extra.insert(format!("{PREFIX}wbs"), object.clone());
         activities.push(a);
         wbs_id.insert(object, id);
+    }
+    if renamed > 0 {
+        warnings.push(tr!("warn-p6-wbs-renamed", n = renamed));
     }
     for (k, w) in wbs.iter().enumerate() {
         let parent = w.text_of("ParentObjectId").and_then(|p| wbs_id.get(p)).cloned();

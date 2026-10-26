@@ -104,6 +104,17 @@ fn file() -> String {
 }
 
 #[test]
+fn a_wbs_code_that_is_an_activity_id_gives_way() {
+    // The WBS element E is coded as the activity A1000 is identified: both are read (#57).
+    let r = read(&file().replace("N\tE\tEstrutura", "N\tA1000\tEstrutura")).unwrap();
+    let ids: Vec<&str> = r.project.activities.iter().map(|a| a.id.as_str()).collect();
+    assert_eq!(ids, ["A1000*", "A1000", "A1010", "M1", "A1020"]);
+    let a = |id: &str| r.project.activities.iter().find(|a| a.id == id).unwrap();
+    assert_eq!((a("A1000").name.as_str(), a("A1000").parent.as_deref()), ("Escavação", Some("A1000*")));
+    assert!(r.warnings.iter().any(|w| w.contains("WBS")), "{:?}", r.warnings);
+}
+
+#[test]
 fn reads_a_file() {
     let r = read(&file()).unwrap();
     let p = &r.project;

@@ -616,6 +616,7 @@ err-p6-not-p6 = Este XML não é um projeto do P6: não tem APIBusinessObjects c
 err-p6-too-big = O arquivo é mais aninhado ou tem mais elementos do que o MK Perth lê.
 err-p6-field = { $what }: o campo { $field } falta ou não é o que o P6 grava ali.
 warn-p6-projects = O arquivo tem { $n } projetos; o primeiro foi lido.
+warn-p6-wbs-renamed = { $n } códigos da EAP também são o ID de uma atividade ou o código de outro elemento da EAP: os resumos deles recebem o código com * no fim.
 warn-p6-dangling = { $n } vínculos citam atividades que não estão no projeto; ficaram de fora.
 warn-p6-comments = { $n } comentários não são gravados: o P6 XML não tem lugar para eles (salve como Perth JSON para mantê-los).
 warn-p6-assignments = { $n } alocações de recurso citam uma atividade, ou um recurso ou função, que o arquivo não tem: deixadas de fora.
