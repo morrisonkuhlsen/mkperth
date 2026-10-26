@@ -641,6 +641,32 @@ fn a_started_activity_ignores_its_start_constraint() {
 }
 
 #[test]
+fn a_started_activity_ignores_its_start_constraint_in_the_backward_pass_too() {
+    // A(10) → B(2) from Monday 5 October 2026, data date Monday the 12th. A started on the 5th:
+    // five days worked (5–9), five left from the data date, Monday 12 to Friday 16; B Monday 19
+    // to Tuesday 20, the project's finish. Backward: B's late start the 19th, so A's late finish
+    // Friday the 16th and its float 0. A start constraint A met (on or before the 5th, or
+    // mandatory on it) no longer counts: it gave a late finish of the 5th plus the five days
+    // left, Friday the 9th, and a float of -5 (#63).
+    for constraint in [Constraint::StartOnOrBefore(day(2026, 10, 5)), Constraint::MandatoryStart(day(2026, 10, 5))] {
+        let mut p = project(&[("A", 10), ("B", 2)], &[("A", "B", FS, 0)]);
+        p.data_date = Some(day(2026, 10, 12));
+        p.activities[0].actual_start = Some(day(2026, 10, 5));
+        p.activities[0].constraint = Some(constraint);
+        let s = schedule(&p).unwrap();
+        let a = get(&s, "A");
+        assert_eq!((a.early_finish, a.late_finish, a.total_float), (day(2026, 10, 16), day(2026, 10, 16), 0), "{constraint:?}");
+        assert_eq!(dates(&s, "B"), (day(2026, 10, 19), day(2026, 10, 20)));
+        assert!(explain(&p, "A").unwrap().late.iter().all(|b| !matches!(b.source, Source::Constraint(_))), "{constraint:?}");
+        // A finish constraint still bounds the work left: no finish after Wednesday the 14th
+        // puts A's late finish there, two days before its early finish.
+        p.activities[0].constraint = Some(Constraint::FinishOnOrBefore(day(2026, 10, 14)));
+        let a = schedule(&p).unwrap().activities.into_iter().find(|a| a.id == "A").unwrap();
+        assert_eq!((a.late_finish, a.total_float), (day(2026, 10, 14), -2));
+    }
+}
+
+#[test]
 fn a_start_to_start_successor_counts_from_the_actual_start() {
     // A started Monday, two days left from the data date (to Thursday); C SS+3 from A: Monday + 3
     // working days is Thursday, not the data date + 3.

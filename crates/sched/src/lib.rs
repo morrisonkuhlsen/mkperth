@@ -663,8 +663,10 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             }
             latest = latest.min(bounded(f)?);
         }
-        // Late-date constraints: no later than their date; a mandatory one, on it.
-        for c in constraints(i) {
+        // Late-date constraints: no later than their date; a mandatory one, on it. Once started,
+        // its start is what happened, so a start constraint no longer bounds it, as in the
+        // forward pass; a finish constraint still bounds the work left (#63).
+        for c in constraints(i).filter(|c| status(i) == Status::NotStarted || c.on_start() != Some(true)) {
             let when = constraint_time(c, &clock(cal_of(i)))?.map(bounded).transpose()?;
             let (candidate, via, overrides) = match (c, when) {
                 (Constraint::StartOnOrBefore(_) | Constraint::StartOn(_), Some(t)) => (Some(finish_for_start_by(i, t)?), Some(t), false),
