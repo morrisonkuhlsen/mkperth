@@ -15,9 +15,11 @@ Read it before re-scheduling a plan with a new version.
   format of `project.save` and `project.export`), in the browser too. They carry what P6 XML
   does: the project, its WBS, calendars, activities, relationships, resources and prices, roles,
   assignments, cost accounts, expenses, activity codes, user-defined fields (read only), the OBS,
-  the budget, financial periods and each period's actuals; what isn't carried is said in a
-  warning. Built from Oracle's published XER and Prime data map guides and public descriptions
-  of the format.
+  the budget, financial periods and each period's actuals; and (#36) the baselines, each a
+  project of its own, the activities' notes in their notebooks, the budget's log, spending plans
+  and funding. What isn't carried is said in a warning. Built from Oracle's published XER and
+  Prime data map guides and public descriptions of the format.
+- P6 XML: reading a file with baselines no longer warns that they were left out.
 - A stored close keeps each period's own amounts, not the total to date: planned and earned
   value and the actual cost by kind (labour, non-labour, material, expenses) and actual units
   (labour, non-labour) for each activity, as P6's `ActivityPeriodActual` holds them; P6 XML

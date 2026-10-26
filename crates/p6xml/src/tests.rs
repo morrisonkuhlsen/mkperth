@@ -278,7 +278,9 @@ fn baselines_read_back() {
     p.baseline_in_use = Some("Revised & <later>".into());
     let (text, _) = write(&p);
     assert!(text.contains("<BaselineProject>") && text.contains("<CurrentBaselineProjectObjectId>3</CurrentBaselineProjectObjectId>"), "{text}");
-    let back = read(&text).unwrap().project;
+    let back = read(&text).unwrap();
+    assert!(back.warnings.is_empty(), "read, not left out: {:?}", back.warnings);
+    let back = back.project;
     assert_eq!((back.baselines, back.baseline_in_use), (p.baselines, p.baseline_in_use));
 }
 

@@ -93,9 +93,13 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   financial periods and each period's actuals. Read in UTF-8 or Windows-1252, written in
   Windows-1252; told by its header. Written files aren't checked against P6 itself (no licence
   is held, #11).
+- *Done (#36):* XER's baselines (projects of their own naming the project as their original,
+  the one in use its `sum_base_proj_id`), notebooks (TASKMEMO, WBSMEMO, under one topic in
+  MEMOTYPE; HTML read as text), the budget's log (BUDGCHNG), spending plans (WBSBUDG) and
+  funding (FUNDSRC, PROJFUND).
 - **Next:** XER's codes Oracle doesn't publish (an expense's accrual, a user-defined field's
-  data type, an activity code's scope) are read by their sense and left out of what is written;
-  baselines, notebooks and the budget's log aren't in XER yet (#36).
+  data type, an activity code's scope, a budget change's status) are read by their sense and
+  left out of what is written (#37).
 
 ## M2 — the engine and the command line
 - *Started:* `mkperth-engine`: the session (the project, its schedule, what opening it said) and

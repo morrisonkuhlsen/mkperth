@@ -228,6 +228,86 @@ fn written_and_read_back() {
     assert_eq!(s1.activities, s2.activities);
 }
 
+/// What P6 keeps beside the network (#36): two baselines, one in use; notes on an activity and on a
+/// WBS element; the budget's log, spending plans and funding. Written and read back unchanged,
+/// save the approved change's status, whose code isn't published: left for P6, with a warning.
+#[test]
+fn baselines_notes_and_the_budget_read_back() {
+    use mkperth_core::{Baseline, BaselineActivity, BudgetChange, ChangeStatus, Fund, FundingSource, SpendingMonth, WbsBudget};
+    let mut p = read(&file()).unwrap().project;
+    let at = |id: &str| BaselineActivity { id: id.into(), start: day(2026, 11, 2), finish: day(2026, 11, 3), duration: 960, cost: 0 };
+    p.baselines = vec![
+        Baseline { name: "Contrato".into(), activities: vec![BaselineActivity { cost: 150_050, ..at("A1000") }, at("M1")] },
+        Baseline { name: "Revisão & <2>".into(), activities: vec![BaselineActivity { finish: day(2026, 11, 4), duration: 1440, ..at("A1000") }] },
+    ];
+    p.baseline_in_use = Some("Revisão & <2>".into());
+    let note = |p: &mut Project, id: &str, text: &str| p.activities.iter_mut().find(|a| a.id == id).unwrap().notes = text.into();
+    note(&mut p, "A1010", "Bomba alugada & <confirmada>.");
+    note(&mut p, "E", "Estrutura de concreto.");
+    let month = |m, amount| SpendingMonth { month: day(2026, m, 1), amount };
+    p.budget.budgets = vec![
+        WbsBudget { wbs: None, original: 5_000_000, plan: vec![month(11, 3_000_000), month(12, 2_000_050)] },
+        WbsBudget { wbs: Some("E".into()), original: 2_000_000, plan: vec![month(11, 2_000_000)] },
+    ];
+    let change = |number, wbs: Option<&str>, amount, status| BudgetChange {
+        number,
+        wbs: wbs.map(str::to_string),
+        date: day(2026, 11, 10),
+        amount,
+        status,
+        responsible: "Ana & cia".into(),
+        reason: "<escopo>".into(),
+    };
+    p.budget.log = vec![change(1, None, 500_000, ChangeStatus::Pending), change(2, Some("E"), -200_000, ChangeStatus::Pending)];
+    p.budget.sources = vec![
+        FundingSource { id: "BANCO".into(), name: "Empréstimo".into(), parent: None },
+        FundingSource { id: "BNDES".into(), name: "Banco de fomento".into(), parent: Some("BANCO".into()) },
+    ];
+    p.budget.funds = vec![Fund { source: "BNDES".into(), amount: 3_000_000 }];
+
+    let (text, warnings) = write(&p);
+    for table in ["MEMOTYPE", "TASKMEMO", "WBSMEMO", "BUDGCHNG", "WBSBUDG", "FUNDSRC", "PROJFUND"] {
+        assert!(text.contains(&format!("%T\t{table}\r\n")), "{table}: {text}");
+    }
+    assert!(!warnings.iter().any(|w| w.contains("notes") || w.contains("Not written")), "{warnings:?}");
+    let back = read(&text).unwrap();
+    assert!(!back.warnings.iter().any(|w| w.contains("projects") || w.contains("left out") || w.contains("Left out")), "{:?}", back.warnings);
+    let q = back.project;
+    assert_eq!((&q.baselines, &q.baseline_in_use), (&p.baselines, &p.baseline_in_use));
+    assert_eq!(q.budget, p.budget);
+    let notes = |p: &Project| p.activities.iter().map(|a| (a.id.clone(), a.notes.clone())).collect::<Vec<_>>();
+    assert_eq!(notes(&q), notes(&p));
+
+    // An approved change's status and notes on several lines: told, not written as they are.
+    p.budget.log[0].status = ChangeStatus::Approved;
+    note(&mut p, "A1010", "Linha 1\nLinha 2");
+    let (text, warnings) = write(&p);
+    assert!(warnings.iter().any(|w| w.starts_with("1 budget changes")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.contains("several lines")), "{warnings:?}");
+    let q = read(&text).unwrap().project;
+    assert_eq!(q.budget.log[0].status, ChangeStatus::Pending);
+    assert_eq!(q.activities.iter().find(|a| a.id == "A1010").unwrap().notes, "Linha 1 Linha 2");
+}
+
+/// Notebooks as P6 may write them: HTML, several topics on one activity.
+#[test]
+fn notebooks() {
+    let text = xer(&[
+        ("PROJECT", "proj_id proj_short_name", &["1|P"]),
+        ("TASK", "task_id proj_id task_code task_name target_drtn_hr_cnt", &["1|1|A|A|8"]),
+        ("MEMOTYPE", "memo_type_id memo_type", &["1|Escopo", "2|Riscos"]),
+        (
+            "TASKMEMO",
+            "memo_id memo_type_id proj_id task_id task_memo",
+            &["1|1|1|1|<html><body><p>Fazer &amp; medir</p><p>Depois</p></body></html>", "2|2|1|1|Chuva"],
+        ),
+        ("BUDGCHNG", "budg_chng_id proj_id chng_short_name chng_date chng_cost status_code", &["1|1|7|2026-11-10 00:00|10|Approved"]),
+    ]);
+    let p = read(&text).unwrap().project;
+    assert_eq!(p.activities[0].notes, "Escopo\nFazer & medir\nDepois\n\nRiscos\nChuva");
+    assert_eq!((p.budget.log[0].number, p.budget.log[0].status), (7, mkperth_core::ChangeStatus::Approved));
+}
+
 /// A resource without a price keeps its most units an hour on a price of none.
 #[test]
 fn units_without_a_price() {

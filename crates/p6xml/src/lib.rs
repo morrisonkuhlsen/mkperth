@@ -612,7 +612,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
     let organisation = organisation_of(&root, p, &wbs, &wbs_id, &mut activities);
 
     // What else the project and the file hold, each kind named once.
-    const READ: [&str; 20] = [
+    const READ: [&str; 21] = [
         "EPS",
         "OBS",
         "ActivityCodeType",
@@ -633,6 +633,7 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         "CostAccount",
         "ActivityExpense",
         "FundingSource",
+        "BaselineProject",
     ];
     const PROJECT_FIELDS_READ: [&str; 24] = [
         "ActivityPeriodActual",

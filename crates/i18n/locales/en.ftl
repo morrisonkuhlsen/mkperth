@@ -920,3 +920,5 @@ warn-xer-skipped = Tables left out, not read yet: { $tables }.
 warn-xer-left-out = Not written to XER yet: { $kinds }.
 warn-xer-fields = { $n } user-defined fields aren't written: Oracle doesn't publish XER's codes for their data types.
 warn-xer-accrual = { $n } expenses accrue at their activity's start or end: Oracle doesn't publish XER's codes for that, so they take P6's default.
+warn-xer-budget-status = { $n } budget changes are approved or not approved: Oracle doesn't publish XER's codes for a change's status, so it is left for P6 to set.
+warn-xer-note-lines = The notes of { $n } activities run over several lines: a row of XER holds one, so their lines are joined.
