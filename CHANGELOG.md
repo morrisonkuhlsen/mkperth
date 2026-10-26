@@ -41,6 +41,16 @@ Read it before re-scheduling a plan with a new version.
   expenses).
 ### Changed results
 
+- **Activities on calendars of different hours** (#62) no longer get float that isn't there.
+  The backward pass handed a predecessor its successor's late date at the earliest moment its
+  calendar counts as the same, which on the predecessor's calendar could come before work the
+  forward pass used: negative float with no constraint (−180 minutes for a task finishing with
+  one on a 06:00–14:00 shift; −1 day, late dates before the project's start, before a finish
+  milestone on a night shift), now 0. A lead counted on another calendar did the same. The other
+  way, a predecessor of a start-to-start or start-to-finish tie may no longer start after its
+  successor's late start on the successor's calendar: a task starting with one on a night shift
+  had a day of float, now 479 minutes (0 days). A finish milestone's late dates are never before
+  its early ones when they are the same moment, and its explanation shows the table's dates.
 - **A resource-dependent activity** (P6 XML's "Resource Dependent", or the box in Details)
   schedules on its resources' calendars and finishes when the last of them does, instead of
   working its duration on its own calendar: a resource on a shorter week (or with more work)
