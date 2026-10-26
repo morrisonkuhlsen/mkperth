@@ -220,7 +220,7 @@ impl LevellingPriority {
 
 /// What decides, among activities wanting an over-allocated resource on the same day, which keep
 /// it: each in turn, the next only to break a tie (the activity's ID breaks the last).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LevelBy {
     /// The higher levelling priority first.
     Priority,
@@ -232,24 +232,33 @@ pub enum LevelBy {
     LateStart,
     /// The shorter first.
     Duration,
+    /// By the activity code of this name: the value earlier in the code's list of values first,
+    /// an activity without one last (P6's activity codes as levelling priorities).
+    Code(String),
 }
 
 impl LevelBy {
+    /// The ways that need nothing named.
     pub const ALL: [LevelBy; 5] = [LevelBy::Priority, LevelBy::TotalFloat, LevelBy::EarlyStart, LevelBy::LateStart, LevelBy::Duration];
 
-    /// The commands' word for it.
-    pub fn code(self) -> &'static str {
+    /// The commands' word for it: `priority`, …, or `code:` and the code's name.
+    pub fn code(&self) -> String {
         match self {
-            LevelBy::Priority => "priority",
-            LevelBy::TotalFloat => "total-float",
-            LevelBy::EarlyStart => "early-start",
-            LevelBy::LateStart => "late-start",
-            LevelBy::Duration => "duration",
+            LevelBy::Priority => "priority".into(),
+            LevelBy::TotalFloat => "total-float".into(),
+            LevelBy::EarlyStart => "early-start".into(),
+            LevelBy::LateStart => "late-start".into(),
+            LevelBy::Duration => "duration".into(),
+            LevelBy::Code(name) => format!("code:{name}"),
         }
     }
 
     pub fn from_code(code: &str) -> Option<LevelBy> {
-        LevelBy::ALL.into_iter().find(|b| b.code() == code)
+        match code.strip_prefix("code:") {
+            Some(name) if !name.trim().is_empty() => Some(LevelBy::Code(name.to_string())),
+            Some(_) => None,
+            None => LevelBy::ALL.into_iter().find(|b| b.code() == code),
+        }
     }
 }
 

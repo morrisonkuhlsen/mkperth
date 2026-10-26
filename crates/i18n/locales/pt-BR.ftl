@@ -769,6 +769,7 @@ level-by-total-float = Folga total, a menor primeiro
 level-by-early-start = Início cedo, o mais cedo primeiro
 level-by-late-start = Início tarde, o mais cedo primeiro
 level-by-duration = Duração restante, a mais curta primeiro
+level-by-code = Código de atividade { $name }, na ordem dos valores
 level-sooner = Subir { $name }
 level-later = Descer { $name }
 level-run = Nivelar

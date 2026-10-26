@@ -231,7 +231,8 @@ pub struct PerthApp {
     /// What the Calendars pane is editing.
     pub calendar_form: CalendarForm,
     /// The levelling options as the Levelling pane edits them, and the project's they began as.
-    level_form: Option<(mkperth_engine::core::LevellingOptions, levelling_ui::LevelForm)>,
+    /// The Levelling pane's form, and the options and activity codes it was made from.
+    level_form: Option<(mkperth_engine::core::LevellingOptions, Vec<String>, levelling_ui::LevelForm)>,
     /// PERT's analysis and the project it was worked out for; the day its chance is asked for.
     pert_cache: Option<(mkperth_engine::core::Project, Result<mkperth_engine::sched::PertAnalysis, String>)>,
     pert_target: Option<Date>,

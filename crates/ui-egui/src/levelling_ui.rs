@@ -3,7 +3,7 @@
 //! activities the last levelling held. Levelling and clearing it are `resource.level` and
 //! `resource.unlevel`, undoable as any other change.
 
-use mkperth_engine::core::{LevelBy, LevellingOptions, ResourceKind};
+use mkperth_engine::core::{Classification, LevelBy, LevellingOptions, ResourceKind};
 use mkperth_engine::i18n::tr;
 use serde_json::json;
 
@@ -22,10 +22,12 @@ pub struct LevelForm {
 }
 
 impl LevelForm {
-    /// The form for the project's options: the ways it uses first, in its order, then the others.
-    fn of(o: &LevellingOptions) -> LevelForm {
-        let mut order: Vec<(LevelBy, bool)> = o.order.iter().map(|b| (*b, true)).collect();
-        order.extend(LevelBy::ALL.into_iter().filter(|b| !o.order.contains(b)).map(|b| (b, false)));
+    /// The form for the project's options: the ways it uses first, in its order, then the others,
+    /// the project's activity codes among them.
+    fn of(o: &LevellingOptions, classification: &Classification) -> LevelForm {
+        let mut order: Vec<(LevelBy, bool)> = o.order.iter().map(|b| (b.clone(), true)).collect();
+        let codes = classification.codes.iter().map(|c| LevelBy::Code(c.name.clone()));
+        order.extend(LevelBy::ALL.into_iter().chain(codes).filter(|b| !o.order.contains(b)).map(|b| (b, false)));
         LevelForm { within_float: o.within_float, resources: o.resources.clone(), order }
     }
 }
@@ -56,11 +58,13 @@ impl PerthApp {
             self.side = None;
         }
         let p = &self.session.project;
-        // A form begun on other options (an undo, another file) starts again from the project's.
-        if self.level_form.as_ref().is_none_or(|(base, _)| *base != p.levelling) {
-            self.level_form = Some((p.levelling.clone(), LevelForm::of(&p.levelling)));
+        // A form begun on other options or codes (an undo, another file) starts again from the
+        // project's.
+        let codes: Vec<String> = p.classification.codes.iter().map(|c| c.name.clone()).collect();
+        if self.level_form.as_ref().is_none_or(|(base, was, _)| *base != p.levelling || *was != codes) {
+            self.level_form = Some((p.levelling.clone(), codes, LevelForm::of(&p.levelling, &p.classification)));
         }
-        let Some((_, form)) = self.level_form.as_mut() else { return };
+        let Some((_, _, form)) = self.level_form.as_mut() else { return };
         let over = match &self.session.schedule {
             Ok(s) => mkperth_engine::sched::overloads(p, s),
             Err(_) => Vec::new(),
@@ -114,7 +118,10 @@ impl PerthApp {
             for k in 0..n {
                 ui.horizontal(|ui| {
                     let Some((by, on)) = form.order.get_mut(k) else { return };
-                    let name = tr!(&format!("level-by-{}", by.code()));
+                    let name = match by {
+                        LevelBy::Code(code) => tr!("level-by-code", name = code.as_str()),
+                        _ => tr!(&format!("level-by-{}", by.code())),
+                    };
                     ui.checkbox(on, name.clone());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if k + 1 < n && icon_button(ui, Icon::ChevronDown, &tr!("level-later", name = name.as_str())) {
@@ -160,7 +167,7 @@ impl PerthApp {
             }
         });
         if level {
-            let order: Vec<&str> = form.order.iter().filter(|(_, on)| *on).map(|(b, _)| b.code()).collect();
+            let order: Vec<String> = form.order.iter().filter(|(_, on)| *on).map(|(b, _)| b.code()).collect();
             let params = json!({"within_float": form.within_float, "resources": form.resources, "order": order});
             self.run("resource.level", params);
             self.level_status();

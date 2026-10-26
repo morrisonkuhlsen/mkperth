@@ -221,14 +221,21 @@ pub fn level(project: &Project) -> Result<Levelling, ScheduleError> {
 fn first(project: &Project, s: &Schedule, order: &[LevelBy], a: usize, b: usize) -> Ordering {
     let (x, y) = (project.activities.get(a), project.activities.get(b));
     let (sx, sy) = (s.activities.get(a), s.activities.get(b));
-    let by = |key: LevelBy| match key {
+    // A value's place in its code's list; none, after every value.
+    let rank = |v: Option<&mkperth_core::Activity>, name: &str| {
+        let value = v.and_then(|v| v.codes.get(name));
+        let values = project.classification.code(name).map_or(&[][..], |c| c.values.as_slice());
+        value.and_then(|value| values.iter().position(|x| x.code == *value)).unwrap_or(usize::MAX)
+    };
+    let by = |key: &LevelBy| match key {
         LevelBy::Priority => x.map(|v| v.levelling_priority).cmp(&y.map(|v| v.levelling_priority)),
         LevelBy::TotalFloat => sx.map(|v| v.total_float_minutes).cmp(&sy.map(|v| v.total_float_minutes)),
         LevelBy::EarlyStart => sx.map(|v| v.early_start).cmp(&sy.map(|v| v.early_start)),
         LevelBy::LateStart => sx.map(|v| v.late_start).cmp(&sy.map(|v| v.late_start)),
         LevelBy::Duration => sx.map(|v| v.remaining_minutes).cmp(&sy.map(|v| v.remaining_minutes)),
+        LevelBy::Code(name) => rank(x, name).cmp(&rank(y, name)),
     };
-    order.iter().fold(Ordering::Equal, |o, k| o.then_with(|| by(*k))).then_with(|| x.map(|v| &v.id).cmp(&y.map(|v| &v.id)))
+    order.iter().fold(Ordering::Equal, |o, k| o.then_with(|| by(k))).then_with(|| x.map(|v| &v.id).cmp(&y.map(|v| &v.id)))
 }
 
 #[cfg(test)]
@@ -341,6 +348,34 @@ mod tests {
         // By float alone the order is A's again.
         p.levelling.order = vec![LevelBy::TotalFloat];
         assert_eq!(level(&p).unwrap().held[0].0, 1);
+    }
+
+    /// By an activity code, Phase, whose values are listed "Early" then "Late": B in Early keeps
+    /// R before A in Late, so A waits for B to finish (the evening of the 6th) and is the 7th to
+    /// the 9th, as at top priority. An activity without a value comes after every value: with
+    /// A's value gone, B still keeps R. A code no activity has decides nothing, and float does.
+    #[test]
+    fn an_activity_code_as_priority() {
+        use mkperth_core::{ActivityCode, CodeValue};
+        let mut p = two_on_one();
+        let value = |code: &str| CodeValue { code: code.into(), ..CodeValue::default() };
+        p.classification.codes = vec![
+            ActivityCode { name: "Phase".into(), values: vec![value("Early"), value("Late")] },
+            ActivityCode { name: "Unused".into(), values: vec![value("X")] },
+        ];
+        p.activities[0].codes.insert("Phase".into(), "Late".into());
+        p.activities[1].codes.insert("Phase".into(), "Early".into());
+        p.levelling.order = vec![LevelBy::Code("Phase".into()), LevelBy::TotalFloat];
+        let (result, _, s) = levelled(&p);
+        assert_eq!(result.held, [(0, Levelled { start: day(2026, 10, 7), resource: "R".into() })]);
+        assert_eq!((s.activities[0].early_start, s.activities[0].early_finish), (day(2026, 10, 7), day(2026, 10, 9)));
+        p.activities[0].codes.clear();
+        assert_eq!(level(&p).unwrap().held[0].0, 0, "no value comes last");
+        p.levelling.order = vec![LevelBy::Code("Unused".into()), LevelBy::TotalFloat];
+        assert_eq!(level(&p).unwrap().held[0].0, 1, "a tie, then float: A keeps R");
+        assert_eq!(LevelBy::from_code("code:Phase"), Some(LevelBy::Code("Phase".into())));
+        assert_eq!(LevelBy::Code("Phase".into()).code(), "code:Phase");
+        assert_eq!(LevelBy::from_code("code: "), None);
     }
 
     /// Within float B could wait only to its late start, the 6th: Thursday is past it, so nothing

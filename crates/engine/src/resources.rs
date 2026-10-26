@@ -143,6 +143,9 @@ fn assignment_index(p: &Project, params: &Value, command: &str) -> Result<usize,
         .ok_or_else(|| EngineError::UnknownAssignment(activity, resource.or(role).unwrap_or_default()))
 }
 
+/// The most ways of choosing who keeps a resource a levelling takes: the five, and codes.
+const MAX_ORDER: usize = 50;
+
 impl Session {
     /// The resource commands; `None` when `id` isn't one of them.
     pub(crate) fn resource_command(&mut self, id: &str, params: &Value) -> Option<Result<(), EngineError>> {
@@ -284,7 +287,7 @@ impl Session {
     /// Levels the resources (P6's Level Resources). First the options given, kept with the
     /// project: `within_float`, the `resources` levelled (IDs; all when empty) and the `order`
     /// that decides who keeps a resource (`priority`, `total-float`, `early-start`,
-    /// `late-start`, `duration`, each at most once). Then each activity that has to wait is held
+    /// `late-start`, `duration`, or `code:` and an activity code's name, each at most once). Then each activity that has to wait is held
     /// to start no earlier than where levelling put it, the holds of any levelling before gone.
     /// One change.
     fn level(&mut self, params: &Value) -> Result<(), EngineError> {
@@ -296,7 +299,7 @@ impl Session {
         let only = ids(params, C, "resources")?;
         let order = match params.get("order") {
             None | Some(Value::Null) => None,
-            Some(Value::Array(items)) if items.len() <= LevelBy::ALL.len() => {
+            Some(Value::Array(items)) if items.len() <= MAX_ORDER => {
                 let order =
                     items.iter().map(|i| i.as_str().and_then(LevelBy::from_code)).collect::<Option<Vec<_>>>().ok_or_else(|| bad(C, "order"))?;
                 if order.iter().enumerate().any(|(k, b)| order.get(..k).is_some_and(|before| before.contains(b))) {
@@ -317,6 +320,9 @@ impl Session {
                 p.levelling.resources = rs;
             }
             if let Some(o) = order {
+                if o.iter().any(|b| matches!(b, LevelBy::Code(name) if p.classification.code(name).is_none())) {
+                    return Err(bad(C, "order"));
+                }
                 p.levelling.order = o;
             }
             let result = mkperth_sched::level(p)?;
@@ -604,6 +610,21 @@ mod tests {
         assert_eq!(schedule(&s).activities[1].early_start.to_string(), "2026-10-08");
         assert!(mkperth_sched::overloads(&s.project, &schedule(&s)).is_empty());
         assert_eq!(s.undo_label(), Some("level resources"));
+        // By an activity code: B's value comes first in its list, so B keeps Ana and A waits; a
+        // code the project hasn't is refused; deleting the code takes it out of the order.
+        let mut by_code = s.clone();
+        run(&mut by_code, "code.add", json!({"name": "Phase"}));
+        for value in ["Early", "Late"] {
+            run(&mut by_code, "code-value.add", json!({"code": "Phase", "value": value}));
+        }
+        run(&mut by_code, "activity.classify", json!({"id": "A", "codes": {"Phase": "Late"}}));
+        run(&mut by_code, "activity.classify", json!({"id": "B", "codes": {"Phase": "Early"}}));
+        run(&mut by_code, "resource.level", json!({"order": ["code:Phase", "total-float"]}));
+        let a = by_code.project.activities.iter().find(|a| a.id == "A").unwrap();
+        assert_eq!(a.levelled.as_ref().map(|l| l.start.to_string()).as_deref(), Some("2026-10-07"));
+        assert!(by_code.run("resource.level", &json!({"order": ["code:Nowhere"]})).is_err());
+        run(&mut by_code, "code.delete", json!({"name": "Phase"}));
+        assert_eq!(by_code.project.levelling.order, [LevelBy::TotalFloat]);
         run(&mut s, "resource.edit", json!({"id": "ANA", "new_id": "ANNA"}));
         assert_eq!(b(&s).levelled.map(|l| l.resource).as_deref(), Some("ANNA"));
         // B at top priority, levelled again: A waits instead, B's old hold gone.

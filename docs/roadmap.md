@@ -199,8 +199,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   PERT as an analysis: three estimates per activity (Perth.jl's fields), the expected finish on
   a copy, its σ from the expected longest path, the chance of a day and the days for a chance;
   the PERT pane and the estimates in Details. Perth.jl's analysis as an oracle is still to type.
-- **Next:** prices that change over time (#23); levelling against a resource's limit that
-  changes over time, and with the activity codes of #26 as priorities.
+  Activity codes as levelling priorities (P6's): an activity code in the order that decides
+  who keeps a resource, the value earlier in the code's list first and an activity without one
+  last (`code:` and its name in `resource.level`'s `order`, kept in Perth JSON; the Levelling
+  pane lists the project's codes); deleting the code takes it out of the order.
+- **Next:** levelling against a resource's limit that changes over time.
 
 ## M5 — costs and earned value
 - *Done (#23):* resources' prices over time, expenses with their accrual, cost accounts, a

@@ -1235,7 +1235,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     }
     if project.levelling != LevellingOptions::default() {
         let l = &project.levelling;
-        let order: Vec<&str> = l.order.iter().map(|b| b.code()).collect();
+        let order: Vec<String> = l.order.iter().map(LevelBy::code).collect();
         fields.push((LEVELLING.into(), serde_json::json!({"within_float": l.within_float, "resources": l.resources, "order": order})));
     }
     for (field, list) in [("bands", bands), ("markers", markers), ("month_marks", months)] {

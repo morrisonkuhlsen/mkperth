@@ -769,6 +769,7 @@ level-by-total-float = Total float, least first
 level-by-early-start = Early start, earliest first
 level-by-late-start = Late start, earliest first
 level-by-duration = Remaining duration, shortest first
+level-by-code = Activity code { $name }, in its values' order
 level-sooner = Move { $name } up
 level-later = Move { $name } down
 level-run = Level

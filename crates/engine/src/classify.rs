@@ -69,7 +69,7 @@ impl Session {
         })
     }
 
-    /// Deletes the code `name`, and every activity's value of it.
+    /// Deletes the code `name`, every activity's value of it, and levelling's order by it.
     fn delete_code(&mut self, params: &Value) -> Result<(), EngineError> {
         const C: &str = "code.delete";
         let name = required(params, C, "name")?;
@@ -82,6 +82,7 @@ impl Session {
             for a in &mut p.activities {
                 a.codes.remove(&name);
             }
+            p.levelling.order.retain(|b| *b != mkperth_core::LevelBy::Code(name.clone()));
             Ok(())
         })
     }

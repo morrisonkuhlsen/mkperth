@@ -10,6 +10,9 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- Levelling by activity code: an activity code among the ways that decide who keeps a resource
+  (the Levelling pane lists the project's codes; `"code:Phase"` in `resource.level`'s
+  `order`), the value earlier in the code's list first, an activity without a value last.
 - The network printed: File ▸ Export ▸ Network (SVG), the network's corner button, or the
   `network.export-svg` command write it as an SVG drawing (the project's name and finish, the
   boxes and arrows as on screen, the critical path in red) that a browser or viewer prints at
