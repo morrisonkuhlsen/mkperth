@@ -26,6 +26,9 @@ pub struct ResourceForm {
     /// A price change being typed: the day it takes effect and the price.
     pub price_from: Option<mkperth_engine::core::Date>,
     pub price_new: String,
+    /// A change of limit being typed: the day it takes effect and the units an hour.
+    pub limit_from: Option<mkperth_engine::core::Date>,
+    pub limit_new: String,
 }
 
 /// Details' Resources tab: the assignments on `activity` (who, or which role, and the work
@@ -531,6 +534,63 @@ impl PerthApp {
                             form.price_new.clear();
                         }
                     });
+
+                    // Its limit over time: its max units before any change, then each change from its
+                    // day on (not a material's: it is used up, not busy).
+                    if r.kind != ResourceKind::Material {
+                        details.add_space(8.0);
+                        details.label(egui::RichText::new(tr!("resource-limits")).size(12.0).color(t.text_dim));
+                        let as_json = |ls: &[mkperth_engine::core::Limit]| -> Value {
+                            json!(ls.iter().map(|x| json!({"from": x.from.to_string(), "max_units": x.max_units as f64 / 100.0})).collect::<Vec<_>>())
+                        };
+                        egui::Grid::new("resource-limits").num_columns(3).spacing(egui::vec2(10.0, 4.0)).show(details, |ui| {
+                            ui.label(egui::RichText::new(tr!("resource-limit-before")).size(12.0));
+                            ui.label(egui::RichText::new(units_text(r.max_units)).size(12.0));
+                            ui.end_row();
+                            let mut changed = None;
+                            for (k, limit) in r.limits.iter().enumerate() {
+                                let l = ui.label(egui::RichText::new(crate::show_date(limit.from)).size(12.0)).id;
+                                if let Some(v) = field(ui, &mut form.typing, &format!("limit:{k}"), units_text(limit.max_units), l, 80.0)
+                                    && let Some(u) = read_units(&v)
+                                {
+                                    let mut new = r.limits.clone();
+                                    if let Some(x) = new.get_mut(k) {
+                                        x.max_units = (u * 100.0).round() as i64;
+                                    }
+                                    changed = Some(new);
+                                }
+                                if icon_button(ui, Icon::Close, &tr!("resource-limit-delete")) {
+                                    let mut new = r.limits.clone();
+                                    new.remove(k);
+                                    changed = Some(new);
+                                }
+                                ui.end_row();
+                            }
+                            if let Some(new) = changed {
+                                pending.push(("resource.edit", json!({"id": id, "limits": as_json(&new)})));
+                            }
+                        });
+                        details.horizontal(|ui| {
+                            let l = label(ui, tr!("resource-price-from"));
+                            if let Some(d) = crate::date_field(ui, egui::Id::unique("limit-from"), l, form.limit_from, 90.0) {
+                                form.limit_from = d;
+                            }
+                            let l = label(ui, tr!("resource-limit"));
+                            ui.add(egui::TextEdit::singleline(&mut form.limit_new).desired_width(60.0)).labelled_by(l);
+                            let units = read_units(&form.limit_new);
+                            let add = ui.add_enabled(form.limit_from.is_some() && units.is_some(), egui::Button::new(tr!("resource-limit-add")));
+                            if add.on_hover_text(tr!("resource-limit-add-tip")).clicked()
+                                && let (Some(from), Some(u)) = (form.limit_from, units)
+                            {
+                                let mut new = r.limits.clone();
+                                new.retain(|x| x.from != from);
+                                new.push(mkperth_engine::core::Limit { from, max_units: (u * 100.0).round() as i64 });
+                                pending.push(("resource.edit", json!({"id": id, "limits": as_json(&new)})));
+                                form.limit_from = None;
+                                form.limit_new.clear();
+                            }
+                        });
+                    }
 
                     // Its assignments: the work budgeted, done and left on each activity.
                     let unit = if r.kind == ResourceKind::Material { r.unit.clone() } else { tr!("resource-hours") };

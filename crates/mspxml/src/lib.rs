@@ -945,6 +945,10 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     if changing > 0 {
         warnings.push(tr!("warn-msp-prices", n = changing));
     }
+    let limited = project.resources.iter().filter(|r| !r.limits.is_empty()).count();
+    if limited > 0 {
+        warnings.push(tr!("warn-msp-limits", n = limited));
+    }
     let hours = |units: i64| duration(units.saturating_mul(60) / UNIT);
     let mut unstaffed = 0usize;
     out.push_str("  <Assignments>\n");

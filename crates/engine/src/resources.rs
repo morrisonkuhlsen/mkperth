@@ -1,7 +1,7 @@
 //! Resources, roles and their assignments to activities: who and what does the work. Each change
 //! is a command with undo; units come in as numbers (`7.5` hours) and are kept in hundredths.
 
-use mkperth_core::{Assignment, DurationType, LevelBy, Project, Resource, ResourceKind, Role, UNIT};
+use mkperth_core::{Assignment, Date, DurationType, LevelBy, Limit, Project, Resource, ResourceKind, Role, UNIT};
 use mkperth_i18n::tr;
 use serde_json::Value;
 
@@ -40,6 +40,31 @@ fn units(params: &Value, command: &str, name: &str) -> Result<Option<i64>, Engin
             .filter(|u| u.is_finite() && (0.0..=MAX_UNITS).contains(u))
             .map(|u| Some((u * UNIT as f64).round() as i64))
             .ok_or_else(|| bad(command, name)),
+    }
+}
+
+/// The most limits over time a resource may have.
+const MAX_LIMITS: usize = 1000;
+
+/// A resource's limits over time, if given: `[{"from": "2026-12-01", "max_units": 2}]`, each day
+/// once; in order of their days.
+fn limits(params: &Value, command: &str) -> Result<Option<Vec<Limit>>, EngineError> {
+    match params.get("limits") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(items)) if items.len() <= MAX_LIMITS => {
+            let mut list = Vec::with_capacity(items.len());
+            for i in items {
+                let from = i.get("from").and_then(Value::as_str).and_then(Date::parse).ok_or_else(|| bad(command, "limits"))?;
+                let max_units = units(i, command, "max_units")?.ok_or_else(|| bad(command, "limits"))?;
+                if list.iter().any(|l: &Limit| l.from == from) {
+                    return Err(bad(command, "limits"));
+                }
+                list.push(Limit { from, max_units });
+            }
+            list.sort_by_key(|l| l.from);
+            Ok(Some(list))
+        }
+        Some(_) => Err(bad(command, "limits")),
     }
 }
 
@@ -165,8 +190,8 @@ impl Session {
     }
 
     /// A resource: `name` (required), `id` (else `R1`, `R2`…), `kind` (labor, nonlabor,
-    /// material), a material's `unit`, the `calendar` it works on and its `max_units` an hour
-    /// (1 for one full time).
+    /// material), a material's `unit`, the `calendar` it works on, its `max_units` an hour (1 for
+    /// one full time) and its `limits` over time (each `from` a day on, `max_units`).
     fn add_resource(&mut self, params: &Value) -> Result<(), EngineError> {
         const C: &str = "resource.add";
         let name = required(params, C, "name")?;
@@ -176,6 +201,7 @@ impl Session {
         let unit = text(params, C, "unit")?.unwrap_or_default();
         let calendar = text(params, C, "calendar")?.filter(|s| !s.is_empty());
         let max_units = units(params, C, "max_units")?.unwrap_or(UNIT);
+        let limits = limits(params, C)?.unwrap_or_default();
         let prices = crate::costs::prices(params, C)?.unwrap_or_default();
         self.change(tr!("undo-add-resource", id = id.as_str()), |p| {
             if p.resources.len() >= MAX_ITEMS {
@@ -190,13 +216,14 @@ impl Session {
             {
                 return Err(bad(C, "calendar"));
             }
-            p.resources.push(Resource { id: id.clone(), name, kind, unit, calendar, max_units, prices, ..Resource::default() });
+            p.resources.push(Resource { id: id.clone(), name, kind, unit, calendar, max_units, limits, prices, ..Resource::default() });
             Ok(())
         })
     }
 
     /// Changes a resource found by `id`: `new_id` (everywhere it is named), `name`, `kind`,
-    /// `unit`, `calendar` (`null` for the project's), `max_units` and the `roles` it fills.
+    /// `unit`, `calendar` (`null` for the project's), `max_units`, its `limits` over time (all of
+    /// them, `[]` for none) and the `roles` it fills.
     fn edit_resource(&mut self, params: &Value) -> Result<(), EngineError> {
         const C: &str = "resource.edit";
         let id = required(params, C, "id")?;
@@ -210,6 +237,7 @@ impl Session {
             Some(_) => Some(text(params, C, "calendar")?.filter(|s| !s.is_empty())),
         };
         let max_units = units(params, C, "max_units")?;
+        let limits = limits(params, C)?;
         let roles = ids(params, C, "roles")?;
         let prices = crate::costs::prices(params, C)?;
         self.change(tr!("undo-edit-resource", id = id.as_str()), |p| {
@@ -260,6 +288,9 @@ impl Session {
             }
             if let Some(m) = max_units {
                 r.max_units = m;
+            }
+            if let Some(l) = limits {
+                r.limits = l;
             }
             if let Some(rs) = roles {
                 r.roles = rs;
@@ -625,6 +656,19 @@ mod tests {
         assert!(by_code.run("resource.level", &json!({"order": ["code:Nowhere"]})).is_err());
         run(&mut by_code, "code.delete", json!({"name": "Phase"}));
         assert_eq!(by_code.project.levelling.order, [LevelBy::TotalFloat]);
+        // Ana doubled from Tuesday the 6th: B waits only for that, and starts beside A.
+        let mut doubled = s.clone();
+        run(&mut doubled, "resource.edit", json!({"id": "ANA", "limits": [{"from": "2026-10-06", "max_units": 2}]}));
+        assert_eq!(doubled.project.resources[0].limit_on(mkperth_core::Date::from_ymd(2026, 10, 6).unwrap()), 2 * UNIT);
+        run(&mut doubled, "resource.level", Value::Null);
+        assert_eq!(b(&doubled).levelled.map(|l| l.start.to_string()).as_deref(), Some("2026-10-06"));
+        for bad_limits in
+            [json!([{"from": "2026-10-06"}]), json!([{"from": "nope", "max_units": 1}]), json!([{"from": "2026-10-06", "max_units": -1}])]
+        {
+            assert!(doubled.run("resource.edit", &json!({"id": "ANA", "limits": bad_limits})).is_err(), "{bad_limits}");
+        }
+        let twice = json!([{"from": "2026-10-06", "max_units": 1}, {"from": "2026-10-06", "max_units": 2}]);
+        assert!(doubled.run("resource.edit", &json!({"id": "ANA", "limits": twice})).is_err());
         run(&mut s, "resource.edit", json!({"id": "ANA", "new_id": "ANNA"}));
         assert_eq!(b(&s).levelled.map(|l| l.resource).as_deref(), Some("ANNA"));
         // B at top priority, levelled again: A waits instead, B's old hold gone.

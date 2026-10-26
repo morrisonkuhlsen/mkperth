@@ -53,12 +53,12 @@ pub fn usage(project: &Project, schedule: &Schedule, resource: &str) -> Vec<(Dat
 }
 
 /// What the resource `resource` can do on each working day from `from` to `to`: its units an
-/// hour over the hours of its calendar's working day.
+/// hour that day over the hours of its calendar's working day.
 pub fn capacity(project: &Project, resource: &str, from: Date, to: Date) -> Vec<(Date, i64)> {
     let Some(r) = project.resources.iter().find(|r| r.id == resource) else { return Vec::new() };
     let calendar = calendar_named(project, r.calendar.as_deref());
-    let per_day = r.max_units.saturating_mul(calendar.day_minutes()) / 60;
-    working_days(calendar, from, to).into_iter().map(|d| (d, per_day)).collect()
+    let hours = calendar.day_minutes();
+    working_days(calendar, from, to).into_iter().map(|d| (d, r.limit_on(d).saturating_mul(hours) / 60)).collect()
 }
 
 /// Days summed by week, each week by its Monday.

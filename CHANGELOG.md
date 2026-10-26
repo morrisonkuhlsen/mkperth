@@ -10,6 +10,11 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- A resource's limit over time: from a day on, a different number of units at once (the
+  Resources view's Max units over time; `limits` in `resource.add` and `resource.edit`).
+  Levelling keeps to each day's limit, an activity waiting at most until the limit changes; the
+  work-by-week histogram's capacity follows it; P6 XML and XER carry it on each rate (P6's Max
+  Units/Time).
 - Levelling by activity code: an activity code among the ways that decide who keeps a resource
   (the Levelling pane lists the project's codes; `"code:Phase"` in `resource.level`'s
   `order`), the value earlier in the code's list first, an activity without a value last.

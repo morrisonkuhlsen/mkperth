@@ -1,10 +1,11 @@
 //! Resource levelling: activities delayed so that no resource is asked, on any day, for more
-//! units an hour than it has (its max units). The parallel method of the levelling literature
-//! (Kelley, "The critical-path method: resources planning and scheduling", 1963; Davis and
-//! Patterson, "A comparison of heuristic and optimum solutions in resource-constrained project
-//! scheduling", 1975): day by day from the first over-allocation, the activities on an
-//! over-allocated resource that day keep it in an order of priority until it is full; those
-//! that would start that day and don't fit wait for the first of the others to finish. An
+//! units an hour than it has (its max units that day: a limit may change over time). The
+//! parallel method of the levelling literature (Kelley, "The critical-path method: resources
+//! planning and scheduling", 1963; Davis and Patterson, "A comparison of heuristic and optimum
+//! solutions in resource-constrained project scheduling", 1975): day by day from the first
+//! over-allocation, the activities on an over-allocated resource that day keep it in an order of
+//! priority until it is full; those that would start that day and don't fit wait for the first
+//! of the others to finish, or for the resource's limit to change, whichever comes first. An
 //! activity already going that day (begun, or started on an earlier day of the plan) isn't
 //! interrupted, nor is one with a mandatory date moved. Each delay is a start no earlier than
 //! a day, a bound the scheduler explains like any other; then the project is scheduled again
@@ -61,7 +62,7 @@ fn levelled_resources(project: &Project, only: &[String]) -> Vec<usize> {
         .resources
         .iter()
         .enumerate()
-        .filter(|(_, r)| r.kind != ResourceKind::Material && r.max_units > 0 && (only.is_empty() || only.contains(&r.id)))
+        .filter(|(_, r)| r.kind != ResourceKind::Material && r.limited() && (only.is_empty() || only.contains(&r.id)))
         .map(|(k, _)| k)
         .collect()
 }
@@ -111,9 +112,10 @@ fn overloads_of(project: &Project, s: &Schedule, resources: &[usize]) -> Vec<Ove
     for ((day, r), users) in loads(project, s, resources) {
         let Some(resource) = project.resources.get(r) else { continue };
         let units: i64 = users.iter().map(|(_, u)| u).sum();
-        if units > resource.max_units {
+        let limit = resource.limit_on(day);
+        if units > limit {
             let activities = users.iter().filter_map(|(i, _)| project.activities.get(*i)).map(|a| a.id.clone()).collect();
-            out.push(Overload { resource: resource.id.clone(), day, units, limit: resource.max_units, activities });
+            out.push(Overload { resource: resource.id.clone(), day, units, limit, activities });
         }
     }
     out
@@ -139,9 +141,9 @@ pub fn level(project: &Project) -> Result<Levelling, ScheduleError> {
     for _ in 0..MAX_ROUNDS.min(MAX_WORK / n.max(1)).max(1) {
         let s = schedule(&work)?;
         let loads = loads(&work, &s, &resources);
-        let limit = |r: usize| work.resources.get(r).map_or(0, |x| x.max_units);
+        let limit = |r: usize, day: Date| work.resources.get(r).map_or(0, |x| x.limit_on(day));
         let over = |given_up: &BTreeSet<(Date, usize)>, key: &(Date, usize), users: &[(usize, i64)]| {
-            !given_up.contains(key) && users.iter().map(|(_, u)| u).sum::<i64>() > limit(key.1)
+            !given_up.contains(key) && users.iter().map(|(_, u)| u).sum::<i64>() > limit(key.1, key.0)
         };
         // The first day some resource is over its limit.
         let Some(day) = loads.iter().find(|(key, users)| over(&given_up, key, users)).map(|((d, _), _)| *d) else {
@@ -176,7 +178,7 @@ pub fn level(project: &Project) -> Result<Levelling, ScheduleError> {
             let mut rejected = Vec::new();
             for (i, u) in wait {
                 // Alone on it, an activity keeps it even over the limit: waiting wouldn't help.
-                if used == 0 || used + u <= limit(r) {
+                if used == 0 || used + u <= limit(r, day) {
                     used += u;
                     keep.push((i, u));
                 } else {
@@ -187,7 +189,8 @@ pub fn level(project: &Project) -> Result<Levelling, ScheduleError> {
                 given_up.insert((day, r));
                 continue;
             }
-            // They wait for the first of those keeping it to finish.
+            // They wait for the first of those keeping it to finish, or for its limit to change.
+            let change = work.resources.get(r).and_then(|x| x.limits.iter().map(|l| l.from).filter(|f| *f > day).min());
             let release = keep
                 .iter()
                 .filter_map(|(i, _)| s.activities.get(*i).map(|x| x.early_finish))
@@ -195,6 +198,7 @@ pub fn level(project: &Project) -> Result<Levelling, ScheduleError> {
                 .min()
                 .and_then(Date::succ)
                 .or_else(|| day.succ())
+                .map(|r| change.map_or(r, |c| r.min(c)))
                 .unwrap_or(day);
             let id = work.resources.get(r).map_or_else(String::new, |x| x.id.clone());
             for i in rejected {
@@ -376,6 +380,35 @@ mod tests {
         assert_eq!(LevelBy::from_code("code:Phase"), Some(LevelBy::Code("Phase".into())));
         assert_eq!(LevelBy::Code("Phase".into()).code(), "code:Phase");
         assert_eq!(LevelBy::from_code("code: "), None);
+    }
+
+    /// R's limit rises to two from Tuesday the 6th: on the 5th A (no float) keeps R and B waits,
+    /// not for A to finish but for the limit to change, so B is the 6th and 7th beside A, C the
+    /// 8th, which is the finish (the 12th with one all along). Falling to one from the 6th
+    /// instead, with two before: the 5th holds both, and on the 6th A and B, both begun, go on
+    /// over the limit of that day.
+    #[test]
+    fn a_limit_that_changes_over_time() {
+        use mkperth_core::Limit;
+        let mut p = two_on_one();
+        p.resources[0].limits = vec![Limit { from: day(2026, 10, 6), max_units: 2 * UNIT }];
+        let (result, q, s) = levelled(&p);
+        assert_eq!(result.held, [(1, Levelled { start: day(2026, 10, 6), resource: "R".into() })]);
+        assert_eq!((s.activities[1].early_start, s.activities[1].early_finish), (day(2026, 10, 6), day(2026, 10, 7)));
+        assert_eq!(s.finish, day(2026, 10, 8));
+        assert!(overloads(&q, &s).is_empty());
+        // What R can do: 8 hours at one on the 5th, at two from the 6th.
+        let can = crate::capacity(&p, "R", day(2026, 10, 5), day(2026, 10, 6));
+        assert_eq!(can, [(day(2026, 10, 5), 8 * UNIT), (day(2026, 10, 6), 16 * UNIT)]);
+
+        let mut p = two_on_one();
+        p.resources[0].max_units = 2 * UNIT;
+        p.resources[0].limits = vec![Limit { from: day(2026, 10, 6), max_units: UNIT }];
+        let before = schedule(&p).unwrap();
+        assert_eq!(overloads(&p, &before).iter().map(|o| (o.day, o.units, o.limit)).collect::<Vec<_>>(), [(day(2026, 10, 6), 200, 100)]);
+        let (result, _, _) = levelled(&p);
+        assert!(result.held.is_empty());
+        assert_eq!(result.left.iter().map(|o| o.day).collect::<Vec<_>>(), [day(2026, 10, 6)]);
     }
 
     /// Within float B could wait only to its late start, the 6th: Thursday is past it, so nothing

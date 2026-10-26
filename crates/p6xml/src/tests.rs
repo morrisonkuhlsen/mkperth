@@ -321,6 +321,36 @@ fn costs_read_back() {
     assert_eq!(back.expenses, p.expenses);
 }
 
+/// Limits over time on a resource's rates, beside its prices: Ana one at once, two from
+/// 1 December, the price changing on 5 November; three rates (the start, the 5th, the 1st), each
+/// with the price and the limit then; read back as they were. A resource with a limit and no
+/// price has rates without one.
+#[test]
+fn limits_read_back() {
+    use mkperth_core::{Limit, Price, Resource};
+    let mut p = read(&file()).unwrap().project;
+    p.resources.push(Resource {
+        id: "ANA".into(),
+        name: "Ana".into(),
+        prices: vec![Price { from: None, per_unit: 2500 }, Price { from: Some(day(2026, 11, 5)), per_unit: 3000 }],
+        limits: vec![Limit { from: day(2026, 12, 1), max_units: 200 }],
+        ..Resource::default()
+    });
+    p.resources.push(Resource {
+        id: "CRANE".into(),
+        name: "Crane".into(),
+        limits: vec![Limit { from: day(2027, 1, 4), max_units: 0 }],
+        ..Resource::default()
+    });
+    let (text, _) = write(&p);
+    assert_eq!(text.matches("<ResourceRate>").count(), 4, "{text}");
+    assert!(text.contains("<MaxUnitsPerTime>2</MaxUnitsPerTime>\n  </ResourceRate>"), "{text}");
+    let back = read(&text).unwrap().project;
+    let of = |p: &mkperth_core::Project, id: &str| p.resources.iter().find(|r| r.id == id).map(|r| (r.max_units, r.limits.clone(), r.prices.clone()));
+    assert_eq!(of(&back, "ANA"), of(&p, "ANA"));
+    assert_eq!(of(&back, "CRANE"), of(&p, "CRANE"));
+}
+
 /// The budget as P6 keeps it: the project's and its WBS's original budgets, the change log, the
 /// project's and a WBS's spending plans, funding sources in a hierarchy and the project's funds;
 /// written and read back as they were. A budget on an activity that isn't a summary is left out

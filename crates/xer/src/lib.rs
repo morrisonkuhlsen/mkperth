@@ -185,7 +185,8 @@ const MAPS: [Map; 20] = [
             ("seq_num", "SequenceNumber", Text),
         ],
     },
-    // A resource's most units an hour are on its prices (RSRCRATE), P6 XML's on the resource.
+    // A resource's most units an hour are on its prices (RSRCRATE), P6 XML's on the resource and
+    // on its rates: the earliest rate's is the resource's.
     Map {
         table: "RSRC",
         element: "Resource",
@@ -208,6 +209,7 @@ const MAPS: [Map; 20] = [
             ("rsrc_id", "ResourceObjectId", Text),
             ("start_date", "EffectiveDate", Date),
             ("cost_per_qty", "PricePerUnit", Text),
+            ("max_qty_per_hr", "MaxUnitsPerTime", Text),
         ],
     },
     Map {
@@ -819,10 +821,8 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
     let (mut odd_accruals, mut odd_statuses) = (0usize, 0usize);
     for m in &MAPS {
         let mut columns: Vec<&str> = m.columns.iter().map(|(c, _, _)| *c).collect();
-        match m.table {
-            "RSRCRATE" => columns.push("max_qty_per_hr"),
-            "TASKRSRC" => columns.extend(["act_reg_qty", "act_ot_qty"]),
-            _ => {}
+        if m.table == "TASKRSRC" {
+            columns.extend(["act_reg_qty", "act_ot_qty"]);
         }
         for e in objects(m.element) {
             let mut r = row(e, m.columns);
@@ -840,10 +840,13 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
                     }
                     odd_statuses += usize::from(m.table == "BUDGCHNG" && e.text_of("Status").is_some_and(|s| s != "Pending"));
                 }
+                // A rate written without a limit has the resource's.
                 "RSRCRATE" => {
                     let resource = e.text_of("ResourceObjectId");
                     let max = root.all("Resource").find(|x| x.text_of("ObjectId") == resource).and_then(|x| x.text_of("MaxUnitsPerTime"));
-                    r.push(max.unwrap_or("1").to_string());
+                    if let Some(v) = at("max_qty_per_hr").and_then(|k| r.get_mut(k)).filter(|v| v.is_empty()) {
+                        *v = max.unwrap_or("1").to_string();
+                    }
                 }
                 "TASKRSRC" => r.extend([e.text_of("ActualUnits").unwrap_or("0").to_string(), "0".to_string()]),
                 // An activity in no WBS element is under the project's node; its remaining

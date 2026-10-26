@@ -203,7 +203,12 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   who keeps a resource, the value earlier in the code's list first and an activity without one
   last (`code:` and its name in `resource.level`'s `order`, kept in Perth JSON; the Levelling
   pane lists the project's codes); deleting the code takes it out of the order.
-- **Next:** levelling against a resource's limit that changes over time.
+  A resource's limit over time (P6's Max Units/Time on each of its prices): from each day on,
+  its units then; levelling keeps to the limit of each day, and an activity that doesn't fit
+  waits for the first keeper to finish or for the limit to change, whichever is first; the
+  histogram's capacity follows it. `resource.add` and `resource.edit` take `limits`; P6 XML's
+  and XER's rates carry them beside the prices; Microsoft Project XML warns they aren't written;
+  the Resources view edits them.
 
 ## M5 — costs and earned value
 - *Done (#23):* resources' prices over time, expenses with their accrual, cost accounts, a

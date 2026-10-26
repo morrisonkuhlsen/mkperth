@@ -458,8 +458,11 @@ pub struct Resource {
     /// The calendar it works on; the project's when `None`.
     pub calendar: Option<String>,
     /// The most it does at once, in hundredths of a unit per hour: `UNIT` is one person (or
-    /// machine) full time, `2 * UNIT` two of them.
+    /// machine) full time, `2 * UNIT` two of them. Before the first of `limits`, if any.
     pub max_units: i64,
+    /// Its limit changing over time (P6's Max Units/Time on each of a resource's prices): from
+    /// each day on, the units then, in order of their days.
+    pub limits: Vec<Limit>,
     /// The roles it can fill, by their IDs.
     pub roles: Vec<String>,
     /// Its price per unit (an hour, or a material's unit) over time, by the day each takes
@@ -476,7 +479,24 @@ pub struct Price {
     pub per_unit: i64,
 }
 
+/// A resource's most units an hour from a day on, in hundredths of a unit per hour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limit {
+    pub from: Date,
+    pub max_units: i64,
+}
+
 impl Resource {
+    /// Its most units an hour on `day`: the last limit to take effect by then, else `max_units`.
+    pub fn limit_on(&self, day: Date) -> i64 {
+        self.limits.iter().filter(|l| l.from <= day).max_by_key(|l| l.from).map_or(self.max_units, |l| l.max_units)
+    }
+
+    /// Whether it has a limit to level against: any above none, at some time.
+    pub fn limited(&self) -> bool {
+        self.max_units > 0 || self.limits.iter().any(|l| l.max_units > 0)
+    }
+
     /// Its price per unit on `day`: the last to take effect by then, else the first.
     pub fn price_on(&self, day: Date) -> i64 {
         let mut chosen: Option<&Price> = None;
@@ -962,6 +982,7 @@ impl Default for Resource {
             unit: String::new(),
             calendar: None,
             max_units: UNIT,
+            limits: Vec::new(),
             roles: Vec::new(),
             prices: Vec::new(),
             extra: Extra::new(),

@@ -14,6 +14,6 @@ pub use project::{
     Accrual, Activity, ActivityCode, ActivityKind, Assignment, Band, Baseline, BaselineActivity, BudgetChange, Budgeting, ChangeStatus,
     Classification, CodeValue, Comment, Constraint, CostAccount, CriticalBy, DurationType, EarnedValue, EpsNode, EtcTechnique, EvTechnique, Expense,
     ExternalRelationship, Extra, FieldKind, FieldValue, FinancialPeriod, FloatKind, Fund, FundingSource, Indicator, LagCalendar, LagKind, LevelBy,
-    Levelled, LevellingOptions, LevellingPriority, Marker, MonthMark, ObsNode, Organisation, PeriodRecord, Pert, Price, ProgressMode, Project,
+    Levelled, LevellingOptions, LevellingPriority, Limit, Marker, MonthMark, ObsNode, Organisation, PeriodRecord, Pert, Price, ProgressMode, Project,
     Relationship, RelationshipType, Resource, ResourceKind, Role, SpendingMonth, UNIT, UserField, WbsBudget,
 };

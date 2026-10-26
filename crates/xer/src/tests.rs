@@ -289,6 +289,22 @@ fn baselines_notes_and_the_budget_read_back() {
     assert_eq!(q.activities.iter().find(|a| a.id == "A1010").unwrap().notes, "Linha 1 Linha 2");
 }
 
+/// A resource's limit over time, on its prices' rows: Pedreiro two at once from the start, three
+/// from 1 March 2027 (a row of its own) and again with the price of 2027; written and read back.
+#[test]
+fn limits_over_time() {
+    use mkperth_core::Limit;
+    let mut p = read(&file()).unwrap().project;
+    let ped = p.resources.iter_mut().find(|r| r.id == "PED").unwrap();
+    assert_eq!((ped.max_units, ped.limits.as_slice()), (200, &[][..]));
+    ped.limits = vec![Limit { from: day(2027, 3, 1), max_units: 300 }];
+    let (text, _) = write(&p);
+    let q = read(&text).unwrap().project;
+    let ped = q.resources.iter().find(|r| r.id == "PED").unwrap();
+    assert_eq!((ped.max_units, ped.limits.clone(), ped.prices.len()), (200, vec![Limit { from: day(2027, 3, 1), max_units: 300 }], 2));
+    assert_eq!(ped.limit_on(day(2027, 2, 26)), 200);
+}
+
 /// Notebooks as P6 may write them: HTML, several topics on one activity.
 #[test]
 fn notebooks() {

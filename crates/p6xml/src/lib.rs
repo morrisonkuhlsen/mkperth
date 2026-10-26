@@ -20,8 +20,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use mkperth_core::{
     Accrual, Activity, ActivityCode, ActivityKind, Assignment, Baseline, BaselineActivity, BudgetChange, Budgeting, Calendar, ChangeStatus,
     Classification, CodeValue, Constraint, CostAccount, Date, DurationType, EarnedValue, EpsNode, EtcTechnique, EvTechnique, Expense, FieldKind,
-    FieldValue, FinancialPeriod, Fund, FundingSource, Indicator, LevellingPriority, ObsNode, Organisation, Period, PeriodRecord, Price, Project,
-    Relationship, RelationshipType, Resource, ResourceKind, Role, SpendingMonth, UNIT, UserField, WbsBudget, Weekday,
+    FieldValue, FinancialPeriod, Fund, FundingSource, Indicator, LevellingPriority, Limit, ObsNode, Organisation, Period, PeriodRecord, Price,
+    Project, Relationship, RelationshipType, Resource, ResourceKind, Role, SpendingMonth, UNIT, UserField, WbsBudget, Weekday,
 };
 use mkperth_i18n::tr;
 use thiserror::Error;
@@ -415,22 +415,33 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         let unit = e.text_of("UnitOfMeasureObjectId").and_then(|u| unit_of_measure.get(u)).map_or_else(String::new, |u| u.to_string());
         resources.push(Resource { name: e.text_of("Name").unwrap_or(&id).to_string(), id, kind, unit, calendar, max_units, ..Resource::default() });
     }
-    // Prices over time: each resource's rates by the day they take effect; the earliest holds
-    // from the start of time, as MK Perth keeps a first price.
+    // Prices and limits over time: each resource's rates by the day they take effect, each with
+    // its price and its most units an hour. The earliest price holds from the start of time, as
+    // MK Perth keeps a first price; a limit is kept from the day it differs from the one before
+    // (the resource's own, before any). A rate that repeats the one before it says nothing new.
+    // Each rate: its resource's place, its day, its price and its limit.
+    type Rate = (usize, Option<Date>, Option<i64>, Option<i64>);
+    let mut rates: Vec<Rate> = Vec::new();
     for e in root.all("ResourceRate") {
-        let (Some(resource), Some(price)) =
-            (e.text_of("ResourceObjectId").and_then(|r| resource_by_object.get(r)), e.text_of("PricePerUnit").and_then(money_of))
+        let Some(k) = e.text_of("ResourceObjectId").and_then(|r| resource_by_object.get(r)).and_then(|id| resources.iter().position(|x| x.id == *id))
         else {
             continue;
         };
-        if let Some(r) = resources.iter_mut().find(|x| x.id == *resource).filter(|r| r.prices.len() < 1000) {
-            r.prices.push(Price { from: e.text_of("EffectiveDate").and_then(date_of), per_unit: price });
-        }
+        let max = e.text_of("MaxUnitsPerTime").and_then(units_of);
+        rates.push((k, e.text_of("EffectiveDate").and_then(date_of), e.text_of("PricePerUnit").and_then(money_of), max));
     }
-    for r in &mut resources {
-        r.prices.sort_by_key(|p| p.from);
-        if let Some(first) = r.prices.first_mut() {
-            first.from = None;
+    rates.sort_by_key(|(k, from, _, _)| (*k, *from));
+    for (k, from, price, max) in rates {
+        let Some(r) = resources.get_mut(k).filter(|r| r.prices.len() < 1000 && r.limits.len() < 1000) else { continue };
+        if let Some(price) = price
+            && r.prices.last().is_none_or(|p| p.per_unit != price)
+        {
+            r.prices.push(Price { from: if r.prices.is_empty() { None } else { from }, per_unit: price });
+        }
+        if let (Some(max), Some(from)) = (max, from)
+            && max != r.limits.last().map_or(r.max_units, |l| l.max_units)
+        {
+            r.limits.push(Limit { from, max_units: max });
         }
     }
     // Cost accounts, by their object numbers for their parents and the expenses.
@@ -1191,18 +1202,23 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         }
         out.push_str("  </Resource>\n");
     }
-    // Each resource's prices as its rates; a first price from the start of time takes effect on
-    // the project's start.
+    // Each resource's prices and limits as its rates, a rate for each day either changes, with
+    // the price and the most units an hour then; a first price from the start of time takes
+    // effect on the project's start.
     let mut rates = 0usize;
     for r in &project.resources {
-        for price in &r.prices {
+        let days: BTreeSet<Date> = r.prices.iter().map(|p| p.from.unwrap_or(project.start)).chain(r.limits.iter().map(|l| l.from)).collect();
+        for day in days {
             rates += 1;
             out.push_str(&format!(
-                "  <ResourceRate>\n    <ObjectId>{rates}</ObjectId>\n    <ResourceObjectId>{}</ResourceObjectId>\n    <EffectiveDate>{}</EffectiveDate>\n    <PricePerUnit>{}</PricePerUnit>\n  </ResourceRate>\n",
+                "  <ResourceRate>\n    <ObjectId>{rates}</ObjectId>\n    <ResourceObjectId>{}</ResourceObjectId>\n    <EffectiveDate>{}</EffectiveDate>\n",
                 resource_object(&r.id).unwrap_or(0),
-                timestamp(price.from.unwrap_or(project.start), false),
-                money(price.per_unit)
+                timestamp(day, false)
             ));
+            if !r.prices.is_empty() {
+                out.push_str(&format!("    <PricePerUnit>{}</PricePerUnit>\n", money(r.price_on(day))));
+            }
+            out.push_str(&format!("    <MaxUnitsPerTime>{}</MaxUnitsPerTime>\n  </ResourceRate>\n", units_text(r.limit_on(day))));
         }
     }
     let account_object = |id: &str| project.cost_accounts.iter().position(|c| c.id == id).map(|k| k + 1);
