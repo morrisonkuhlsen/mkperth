@@ -2,7 +2,8 @@
 //! boxes are laid out in columns by the topological order (each activity one column after the
 //! furthest of its predecessors) and, in each column, in the order of their predecessors' rows,
 //! so arrows cross less. All of it without recursion over the network, so 5 000 activities lay
-//! out at once; only the boxes and arrows in view are drawn.
+//! out at once; only the boxes and arrows in view are drawn. A relationship is drawn by dragging
+//! from a box's end (its start at the left, its finish at the right) onto another box's.
 
 use std::collections::HashMap;
 
@@ -113,30 +114,63 @@ pub fn layout(session: &Session) -> Layout {
     Layout { place, columns, rows }
 }
 
+/// The ends of a box a relationship is drawn from: a dot at each side's middle, and how near the
+/// pointer must be to take it.
+const HANDLE: f32 = 4.5;
+const HANDLE_REACH: f32 = 9.0;
+
+/// The end of box `b` at `p`: `Some(true)` its start (the left dot), `Some(false)` its finish
+/// (the right one), `None` neither.
+pub fn handle_at(b: Rect, p: egui::Pos2, zoom: f32) -> Option<bool> {
+    let reach = HANDLE_REACH * zoom.max(0.6);
+    if p.distance(b.left_center()) <= reach {
+        Some(true)
+    } else if p.distance(b.right_center()) <= reach {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// The kind of a relationship drawn from one box's start or finish onto the other's left half
+/// (its start) or right half (its finish): FS, FF, SS or SF.
+pub fn tie_kind(from_start: bool, onto_finish: bool) -> &'static str {
+    match (from_start, onto_finish) {
+        (false, false) => "FS",
+        (false, true) => "FF",
+        (true, false) => "SS",
+        (true, true) => "SF",
+    }
+}
+
 /// What the view keeps between frames: where it is scrolled and how near.
 #[derive(Debug, Clone)]
 pub struct NetworkView {
     pub offset: Vec2,
     pub zoom: f32,
+    /// A relationship being drawn: the activity it comes from, and whether from its start.
+    linking: Option<(usize, bool)>,
     /// The layout and the project it was made for.
     cache: Option<(mkperth_engine::core::Project, Layout)>,
 }
 
 impl Default for NetworkView {
     fn default() -> Self {
-        NetworkView { offset: vec2(16.0, 16.0), zoom: 1.0, cache: None }
+        NetworkView { offset: vec2(16.0, 16.0), zoom: 1.0, linking: None, cache: None }
     }
 }
 
-/// What happened in the view this frame: an activity clicked, or double-clicked to open.
+/// What happened in the view this frame: an activity clicked, or double-clicked to open; a
+/// relationship drawn from one activity to another, with its kind (`FS`, `SS`, `FF`, `SF`).
 #[derive(Debug, Default)]
 pub struct NetworkEvents {
     pub clicked: Option<usize>,
     pub open: Option<usize>,
+    pub tie: Option<(usize, usize, &'static str)>,
 }
 
 /// Paints the network in `rect`'s space: drag to move it, Ctrl and the wheel to zoom about the
-/// pointer, a click to choose a box.
+/// pointer, a click to choose a box, a drag from a box's end onto another to tie them.
 pub fn show(ui: &mut egui::Ui, session: &Session, view: &mut NetworkView, selected: Option<usize>) -> NetworkEvents {
     let t = Tokens::get(ui.ctx());
     let mut events = NetworkEvents::default();
@@ -147,7 +181,21 @@ pub fn show(ui: &mut egui::Ui, session: &Session, view: &mut NetworkView, select
     let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, t.grid_bg);
-    if response.dragged() {
+    // Where each box is now, before this frame's moves (a drag begins where it was pressed).
+    let place_now = |i: usize, offset: Vec2, zoom: f32| {
+        lay.place.get(i).copied().flatten().map(|(c, r)| {
+            let cell = (BOX + GAP) * zoom;
+            Rect::from_min_size(rect.min + offset + vec2(c as f32 * cell.x, r as f32 * cell.y), BOX * zoom)
+        })
+    };
+    let n = session.project.activities.len();
+    let box_under = |p: egui::Pos2, offset: Vec2, zoom: f32| (0..n).find(|&i| place_now(i, offset, zoom).is_some_and(|b| b.contains(p)));
+    if response.drag_started() {
+        let origin = ui.input(|i| i.pointer.press_origin());
+        view.linking = origin
+            .and_then(|o| (0..n).find_map(|i| place_now(i, view.offset, view.zoom).and_then(|b| handle_at(b, o, view.zoom)).map(|start| (i, start))));
+    }
+    if response.dragged() && view.linking.is_none() {
         view.offset += response.drag_delta();
     }
     if let Some(p) = response.hover_pos() {
@@ -196,6 +244,7 @@ pub fn show(ui: &mut egui::Ui, session: &Session, view: &mut NetworkView, select
     }
     // The boxes in view: the ID and name over the dates, the float at the right.
     let pointer = response.interact_pointer_pos();
+    let hover = response.hover_pos();
     let mut hit = None;
     for (i, a) in acts.iter().enumerate() {
         let Some(b) = box_of(i) else { continue };
@@ -236,8 +285,42 @@ pub fn show(ui: &mut egui::Ui, session: &Session, view: &mut NetworkView, select
                 );
             }
         }
+        // The ends a relationship is drawn from, on the box under the pointer and the one
+        // being drawn from.
+        let near = hover.is_some_and(|p| b.expand(HANDLE_REACH * z).contains(p));
+        if near || view.linking.is_some_and(|(from, _)| from == i) {
+            for end in [b.left_center(), b.right_center()] {
+                let lit = hover.is_some_and(|p| handle_at(b, p, z).is_some() && p.distance(end) <= HANDLE_REACH * z.max(0.6));
+                painter.circle(end, HANDLE * z.max(0.6), if lit { t.accent } else { t.paper }, Stroke::new(1.2, t.accent));
+            }
+        }
         if pointer.is_some_and(|p| b.contains(p)) {
             hit = Some(i);
+        }
+    }
+    // The relationship being drawn: a line from the end it leaves to the pointer, the box it
+    // would tie to outlined; let go over a box, it is tied.
+    if let Some((from, start)) = view.linking {
+        let pointer = pointer.or(hover);
+        let target = pointer.and_then(|p| box_under(p, view.offset, view.zoom).filter(|&b| b != from).map(|b| (b, p)));
+        if let (Some(b), Some(p)) = (box_of(from), pointer) {
+            let end = if start { b.left_center() } else { b.right_center() };
+            painter.line_segment([end, p], Stroke::new(1.6, t.accent));
+        }
+        if let Some((to, p)) = target
+            && let Some(b) = box_of(to)
+        {
+            let onto_finish = p.x > b.center().x;
+            painter.rect_stroke(b, 0.0, Stroke::new(2.0, t.accent), StrokeKind::Outside);
+            let end = if onto_finish { b.right_center() } else { b.left_center() };
+            painter.circle_filled(end, HANDLE * z.max(0.6), t.accent);
+            painter.text(b.center_top() - vec2(0.0, 4.0), Align2::CENTER_BOTTOM, tie_kind(start, onto_finish), FontId::proportional(12.0), t.accent);
+            if response.drag_stopped() {
+                events.tie = Some((from, to, tie_kind(start, onto_finish)));
+            }
+        }
+        if response.drag_stopped() || !response.dragged() {
+            view.linking = None;
         }
     }
     if response.clicked() {
@@ -303,6 +386,18 @@ mod tests {
         }
         let mut seen = std::collections::HashSet::new();
         assert!(lay.place.iter().flatten().all(|p| seen.insert(*p)), "no two boxes in one place");
+    }
+
+    /// A box's ends and the four kinds drawn between them: from the right dot (its finish) or the
+    /// left (its start), onto the other's left half (its start) or right half (its finish).
+    #[test]
+    fn the_ends_and_the_kinds() {
+        let b = Rect::from_min_size(pos2(100.0, 100.0), BOX);
+        assert_eq!(handle_at(b, b.left_center() + vec2(3.0, 2.0), 1.0), Some(true));
+        assert_eq!(handle_at(b, b.right_center() - vec2(5.0, 0.0), 1.0), Some(false));
+        assert_eq!(handle_at(b, b.center(), 1.0), None);
+        assert_eq!(handle_at(b, b.right_center() + vec2(20.0, 0.0), 1.0), None);
+        assert_eq!([tie_kind(false, false), tie_kind(false, true), tie_kind(true, false), tie_kind(true, true)], ["FS", "FF", "SS", "SF"]);
     }
 
     /// 5 000 activities, each tied to the one before and some to one further back, lay out in

@@ -21,7 +21,7 @@ pub mod fonts;
 pub mod icons;
 mod levelling_ui;
 pub mod mark;
-mod network;
+pub mod network;
 mod pert_ui;
 mod resources_view;
 pub mod splash;
@@ -1227,6 +1227,14 @@ impl PerthApp {
             self.selected = Some(i);
             self.side = Some(Side::Details);
             self.details_tab = DetailsTab::General;
+        }
+        // A relationship drawn: tied as a command, undoable; a loop or a tie already there is
+        // refused in the status bar.
+        if let Some((a, b, kind)) = events.tie {
+            let ids = |i: usize| self.session.project.activities.get(i).map(|x| x.id.clone());
+            if let (Some(a), Some(b)) = (ids(a), ids(b)) {
+                self.run("relationship.add", serde_json::json!({"predecessor": a, "successor": b, "kind": kind}));
+            }
         }
     }
 

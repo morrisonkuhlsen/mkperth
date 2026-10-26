@@ -10,6 +10,9 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- Relationships drawn in the network view: drag from a box's start or finish (the dots at its
+  sides) onto another box, its left half for its start, its right half for its finish; the
+  kind (FS, FF, SS, SF) is shown before letting go, and the tie is one undo.
 - The command line's contract with Perth.jl's bridge written down in `docs/cli.md` and held by a
   test; its usage names XER files among those `--in` reads.
 - Calendars added, renamed and deleted in the Calendars pane (`calendar.add`, a copy of the one

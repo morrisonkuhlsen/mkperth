@@ -170,7 +170,11 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   topological order and rows by the predecessors' mean row, iteratively (5 000 activities at
   once), boxes with dates and float, the critical path in red, the selection shared with the
   table. The brand (#18): the hexagonal P mark, blue, violet and lilac, decided.
-- **Next:** dragging a box to tie two activities in the network; printing it.
+- *Done:* relationships drawn in the network: dragged from a box's start (the dot at its
+  left) or finish (at its right) onto another box's left half (its start) or right half (its
+  finish), FS, FF, SS or SF, the kind shown before it is let go; a loop or a tie already there
+  refused in the status bar; one undo.
+- **Next:** printing the network.
 
 ## M4 — resources
 - *Started (#20):* resources (labor, nonlabor, material, with a unit, a calendar and units an

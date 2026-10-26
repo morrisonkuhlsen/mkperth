@@ -569,6 +569,38 @@ fn the_font_is_chosen_in_the_toolbar() {
     assert!(h.query_by_label("File").is_some(), "still drawn");
 }
 
+/// A relationship drawn in the network: from M0's finish (the dot at its right) onto A20's left
+/// half, FS; onto its right half, FF. Each is one undo. A drag from inside a box moves the view.
+#[test]
+fn ties_drawn_in_the_network() {
+    let mut h = harness(PerthApp::default());
+    h.get_by_label("Network").click();
+    h.run_steps(3);
+    let lay = mkperth_ui_egui::network::layout(&h.state().session);
+    let at = |id: &str| {
+        let i = h.state().session.project.activities.iter().position(|a| a.id == id).unwrap();
+        let (c, r) = lay.place[i].unwrap();
+        // The view's top left (58, 112) and its margin of 16; boxes 168 by 64 in cells of 224 by 82.
+        egui::Rect::from_min_size(egui::pos2(58.0 + 16.0 + c as f32 * 224.0, 112.0 + 16.0 + r as f32 * 82.0), egui::vec2(168.0, 64.0))
+    };
+    let (m0, a20) = (at("M0"), at("A20"));
+    let tied = |h: &Harness<'static, PerthApp>, kind| {
+        h.state().session.project.relationships.iter().any(|r| r.predecessor == "M0" && r.successor == "A20" && r.kind == kind)
+    };
+    use mkperth_engine::core::RelationshipType;
+    drag(&mut h, m0.right_center(), a20.left_center() + egui::vec2(20.0, 0.0));
+    assert!(tied(&h, RelationshipType::FinishToStart), "{:?}", h.state().status);
+    assert_eq!(h.state().session.undo_label(), Some("relate M0 → A20"));
+    h.state_mut().run("edit.undo", serde_json::Value::Null);
+    drag(&mut h, m0.right_center(), a20.right_center() - egui::vec2(20.0, 0.0));
+    assert!(tied(&h, RelationshipType::FinishToFinish), "{:?}", h.state().status);
+    // From a box's middle: the view moves, nothing is tied.
+    let (before, offset) = (h.state().session.project.relationships.len(), h.state().network.offset);
+    drag(&mut h, m0.center(), a20.center());
+    assert_eq!(h.state().session.project.relationships.len(), before);
+    assert_ne!(h.state().network.offset, offset);
+}
+
 /// Pressed at `from`, dragged in steps to `to`, let go.
 fn drag(h: &mut Harness<'static, PerthApp>, from: egui::Pos2, to: egui::Pos2) {
     button(h, from, true, egui::Modifiers::NONE);
