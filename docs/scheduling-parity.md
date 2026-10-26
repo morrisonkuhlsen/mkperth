@@ -11,7 +11,7 @@ ideas.
 | Lags | positive lags and negative leads, in working days | done |
 | Lag calendar | the lag counted on the predecessor's, the successor's, a 24-hour or the project's calendar | done |
 | Calendars | worked weekdays, holidays, exceptions | done |
-| Calendars | a calendar per activity | done |
+| Calendars | a calendar per activity | done: moments with no work between them are one moment on a calendar (Friday 17:00 and Monday 08:00); backwards, a successor's late date reaches its predecessor as the latest such moment on the successor's calendar (and on the lag's, after a lead), and a start bound is kept strictly, so calendars of different hours give no float that isn't there, negative or positive (#62) |
 | Calendars | a region's holidays computed from their rules (Brazil) | done |
 | Calendars | work periods within each day of the week; hours per day from them | done |
 | Calendars | work periods of their own on an exception day | next |
