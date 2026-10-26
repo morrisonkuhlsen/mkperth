@@ -65,6 +65,13 @@ pub enum EngineError {
     UnknownResource(String),
     #[error("{}", tr!("err-resource-taken", id = .0.as_str()))]
     ResourceIdTaken(String),
+    #[error("{}", tr!("err-calendar-taken", name = .0.as_str()))]
+    CalendarTaken(String),
+    /// The calendar and how many activities and resources work on it.
+    #[error("{}", tr!("err-calendar-in-use", name = .0.as_str(), n = *.1))]
+    CalendarInUse(String, usize),
+    #[error("{}", tr!("err-project-calendar", name = .0.as_str()))]
+    ProjectCalendar(String),
     #[error("{}", tr!("err-no-role", id = .0.as_str()))]
     UnknownRole(String),
     #[error("{}", tr!("err-role-taken", id = .0.as_str()))]
@@ -90,7 +97,7 @@ pub enum EngineError {
 }
 
 /// The commands, by id: what `run` takes.
-pub const COMMANDS: [&str; 70] = [
+pub const COMMANDS: [&str; 73] = [
     "project.new",
     "project.open",
     "project.open-text",
@@ -106,6 +113,9 @@ pub const COMMANDS: [&str; 70] = [
     "relationship.delete",
     "project.options",
     "calendar.edit",
+    "calendar.add",
+    "calendar.rename",
+    "calendar.delete",
     "resource.add",
     "resource.edit",
     "resource.delete",
@@ -932,6 +942,63 @@ mod tests {
             assert!(s.run("calendar.edit", &params).is_err(), "{params}");
             assert_eq!(s.project, before, "{params}");
         }
+    }
+
+    /// A10 takes 5 days from Friday 6 November 2026 on a calendar added as a copy of the
+    /// project's and made to work seven days a week: the 6th to the 10th, where the project's
+    /// Monday to Friday gives the 12th. Renamed, A10 and the resource on it follow; deleted only
+    /// once nothing works on it; the project's own never.
+    #[test]
+    fn calendars_are_added_renamed_and_deleted() {
+        let day = |y, m, d| mkperth_core::Date::from_ymd(y, m, d).unwrap();
+        let mut s = Session::default();
+        s.run("project.new", &json!({"start": "2026-11-06"})).unwrap();
+        s.run("activity.add", &json!({"id": "A10", "duration": 5})).unwrap();
+        s.run("resource.add", &json!({"id": "R1", "name": "Crew"})).unwrap();
+        let finish = |s: &Session| s.schedule.as_ref().unwrap().activities[0].early_finish;
+        s.run("calendar.add", &json!({"name": " Night shift ", "from": "Standard"})).unwrap();
+        assert_eq!(s.undo_label(), Some("add calendar Night shift"));
+        s.run("calendar.edit", &json!({"calendar": "Night shift", "week": [true, true, true, true, true, true, true]})).unwrap();
+        s.run("activity.edit", &json!({"id": "A10", "calendar": "Night shift"})).unwrap();
+        s.run("resource.edit", &json!({"id": "R1", "calendar": "Night shift"})).unwrap();
+        assert_eq!(finish(&s), day(2026, 11, 10));
+
+        s.run("calendar.rename", &json!({"calendar": "Night shift", "name": "Shifts"})).unwrap();
+        assert_eq!(s.project.calendars[0].name, "Shifts");
+        assert_eq!((s.project.activities[0].calendar.as_deref(), s.project.resources[0].calendar.as_deref()), (Some("Shifts"), Some("Shifts")));
+        assert_eq!(finish(&s), day(2026, 11, 10));
+        s.run("calendar.rename", &json!({"calendar": "Standard", "name": "Office"})).unwrap();
+        assert_eq!(s.project.calendar.name, "Office");
+
+        // Refused, and the project as it was: a name taken or empty, a copy of no calendar, a
+        // calendar in use, the project's own, one the project hasn't.
+        let before = s.project.clone();
+        for (command, params) in [
+            ("calendar.add", json!({"name": "Office"})),
+            ("calendar.add", json!({"name": "  "})),
+            ("calendar.add", json!({"name": "New", "from": "Nowhere"})),
+            ("calendar.rename", json!({"calendar": "Shifts", "name": "Office"})),
+            ("calendar.rename", json!({"calendar": "Nowhere", "name": "X"})),
+            ("calendar.delete", json!({"calendar": "Shifts"})),
+            ("calendar.delete", json!({"calendar": "Office"})),
+            ("calendar.delete", json!({"calendar": "Nowhere"})),
+        ] {
+            assert!(s.run(command, &params).is_err(), "{command} {params}");
+            assert_eq!(s.project, before, "{command} {params}");
+        }
+        let in_use = s.run("calendar.delete", &json!({"calendar": "Shifts"})).unwrap_err().to_string();
+        assert!(in_use.starts_with("2 activities and resources"), "{in_use}");
+
+        s.run("activity.edit", &json!({"id": "A10", "calendar": ""})).unwrap();
+        s.run("resource.edit", &json!({"id": "R1", "calendar": null})).unwrap();
+        assert_eq!(finish(&s), day(2026, 11, 12));
+        s.run("calendar.delete", &json!({"calendar": "Shifts"})).unwrap();
+        assert!(s.project.calendars.is_empty());
+        s.run("edit.undo", &Value::Null).unwrap();
+        assert_eq!(s.project.calendars[0].week, [true; 7]);
+        // A new calendar of its own: Monday to Friday.
+        s.run("calendar.add", &json!({"name": "Plain"})).unwrap();
+        assert_eq!(s.project.calendars[1].week, [true, true, true, true, true, false, false]);
     }
 
     #[test]

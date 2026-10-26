@@ -1543,7 +1543,26 @@ impl PerthApp {
                             pending = Some(("activity.edit", json!({"id": a.id, "pert": v})));
                         }
                     }
-                    fact(ui, tr!("detail-calendar"), a.calendar.clone().unwrap_or_else(|| project.calendar.name.clone()));
+                    // The calendar it works on: the project's, or another.
+                    theme::row(ui, &tr!("detail-calendar"), |ui, label| {
+                        let current = a.calendar.clone().filter(|c| *c != project.calendar.name);
+                        let shown = |n: Option<&String>| n.cloned().unwrap_or_else(|| tr!("calendar-project", name = project.calendar.name.as_str()));
+                        let mut chosen = current.clone();
+                        let combo = egui::ComboBox::from_id_salt("activity-calendar")
+                            .selected_text(shown(current.as_ref()))
+                            .width(theme::fill(ui))
+                            .truncate()
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut chosen, None, shown(None));
+                                for c in &project.calendars {
+                                    ui.selectable_value(&mut chosen, Some(c.name.clone()), c.name.as_str());
+                                }
+                            });
+                        combo.response.labelled_by(label).on_hover_text(tr!("detail-calendar-tip"));
+                        if chosen != current {
+                            pending = Some(("activity.edit", json!({"id": a.id, "calendar": chosen.unwrap_or_default()})));
+                        }
+                    });
                     if let Some(parent) = a.parent.as_deref() {
                         fact(ui, tr!("detail-wbs"), parent.to_string());
                     }

@@ -10,6 +10,10 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- Calendars added, renamed and deleted in the Calendars pane (`calendar.add`, a copy of the one
+  shown; `calendar.rename`, the activities and resources on it following; `calendar.delete`,
+  refused for the project's own calendar and for one anything works on, saying how many), and
+  an activity's calendar chosen in Details.
 - Primavera P6's XER files (#10): opened (in UTF-8 or Windows' code page, told by their header
   whatever the extension), saved and exported (File ▸ Export ▸ Primavera P6 XER, the `xer`
   format of `project.save` and `project.export`), in the browser too. They carry what P6 XML

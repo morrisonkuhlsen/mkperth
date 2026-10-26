@@ -21,6 +21,24 @@ const MAX_NOTES: usize = 100_000;
 /// The most dates one calendar edit adds or removes, and the most work periods in a day.
 const MAX_DATES: usize = 10_000;
 const MAX_PERIODS: usize = 8;
+/// The most calendars a project may have besides its own, and the longest a calendar's name.
+pub const MAX_CALENDARS: usize = 200;
+const MAX_CALENDAR_NAME: usize = 200;
+
+/// The project's calendar named `name`, its own or another.
+fn calendar_named<'a>(p: &'a Project, name: &str) -> Option<&'a Calendar> {
+    std::iter::once(&p.calendar).chain(&p.calendars).find(|c| c.name == name)
+}
+
+/// A calendar's new name, given as `name`: trimmed, not empty, not too long.
+fn calendar_name(params: &Value, command: &str, name: &str) -> Result<String, EngineError> {
+    let given = required(text(params, command, name)?, command, name)?;
+    let trimmed = given.trim();
+    if trimmed.is_empty() || trimmed.chars().count() > MAX_CALENDAR_NAME {
+        return Err(EngineError::Value(command.into(), name.into()));
+    }
+    Ok(trimmed.to_string())
+}
 
 /// A command's parameter as text, if given; an error if given and not text.
 fn text(params: &Value, command: &str, name: &str) -> Result<Option<String>, EngineError> {
@@ -210,6 +228,9 @@ impl Session {
             "relationship.delete" => self.delete_relationship(params),
             "project.options" => self.set_options(params),
             "calendar.edit" => self.edit_calendar(params),
+            "calendar.add" => self.add_calendar(params),
+            "calendar.rename" => self.rename_calendar(params),
+            "calendar.delete" => self.delete_calendar(params),
             "edit.undo" => self.undo_change(),
             "edit.redo" => self.redo_change(),
             _ => return None,
@@ -352,6 +373,79 @@ impl Session {
             if let Some(r) = region {
                 calendar.region = r;
             }
+            Ok(())
+        })
+    }
+
+    /// Adds a calendar named `name`: a copy of the calendar named `from`, else Monday to Friday
+    /// on the default periods with no days off.
+    fn add_calendar(&mut self, params: &Value) -> Result<(), EngineError> {
+        const C: &str = "calendar.add";
+        let name = calendar_name(params, C, "name")?;
+        let from = text(params, C, "from")?;
+        self.change(tr!("undo-add-calendar", name = name.as_str()), |p| {
+            if calendar_named(p, &name).is_some() {
+                return Err(EngineError::CalendarTaken(name.clone()));
+            }
+            if p.calendars.len() >= MAX_CALENDARS {
+                return Err(EngineError::Value(C.into(), "name".into()));
+            }
+            let mut calendar = match from.as_deref() {
+                Some(f) => calendar_named(p, f).cloned().ok_or_else(|| EngineError::Value(C.into(), "from".into()))?,
+                None => Calendar::default(),
+            };
+            calendar.name = name.clone();
+            p.calendars.push(calendar);
+            Ok(())
+        })
+    }
+
+    /// Renames the calendar named `calendar` (the project's own too) to `name`; the activities
+    /// and resources on it follow.
+    fn rename_calendar(&mut self, params: &Value) -> Result<(), EngineError> {
+        const C: &str = "calendar.rename";
+        let old = required(text(params, C, "calendar")?, C, "calendar")?;
+        let name = calendar_name(params, C, "name")?;
+        self.change(tr!("undo-rename-calendar", name = old.as_str()), |p| {
+            if calendar_named(p, &old).is_none() {
+                return Err(EngineError::Value(C.into(), "calendar".into()));
+            }
+            if name == old {
+                return Ok(());
+            }
+            if calendar_named(p, &name).is_some() {
+                return Err(EngineError::CalendarTaken(name.clone()));
+            }
+            for c in std::iter::once(&mut p.calendar).chain(p.calendars.iter_mut()).filter(|c| c.name == old) {
+                c.name = name.clone();
+            }
+            let on = |c: &mut Option<String>| {
+                if c.as_deref() == Some(old.as_str()) {
+                    *c = Some(name.clone());
+                }
+            };
+            p.activities.iter_mut().for_each(|a| on(&mut a.calendar));
+            p.resources.iter_mut().for_each(|r| on(&mut r.calendar));
+            Ok(())
+        })
+    }
+
+    /// Deletes the calendar named `calendar`. The project's own can't be, nor one an activity or
+    /// a resource works on: they would move to another calendar unseen.
+    fn delete_calendar(&mut self, params: &Value) -> Result<(), EngineError> {
+        const C: &str = "calendar.delete";
+        let name = required(text(params, C, "calendar")?, C, "calendar")?;
+        self.change(tr!("undo-delete-calendar", name = name.as_str()), |p| {
+            if name == p.calendar.name {
+                return Err(EngineError::ProjectCalendar(name.clone()));
+            }
+            let k = p.calendars.iter().position(|c| c.name == name).ok_or_else(|| EngineError::Value(C.into(), "calendar".into()))?;
+            let on = |c: &Option<String>| c.as_deref() == Some(name.as_str());
+            let used = p.activities.iter().filter(|a| on(&a.calendar)).count() + p.resources.iter().filter(|r| on(&r.calendar)).count();
+            if used > 0 {
+                return Err(EngineError::CalendarInUse(name.clone(), used));
+            }
+            p.calendars.remove(k);
             Ok(())
         })
     }

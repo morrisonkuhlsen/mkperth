@@ -1,20 +1,22 @@
-//! The Calendars pane: the project's calendars edited in the app. Which calendar, its working
-//! week, its work periods, its region's holidays, and the days it takes off or works besides its
-//! week. Every change is `calendar.edit`, undoable as any other.
+//! The Calendars pane: the project's calendars edited in the app. Which calendar, added as a copy
+//! of another, renamed or deleted (`calendar.add`, `calendar.rename`, `calendar.delete`); its
+//! working week, its work periods, its region's holidays, and the days it takes off or works
+//! besides its week (`calendar.edit`). Every change is undoable as any other.
 
 use mkperth_engine::core::{Calendar, DEFAULT_PERIODS, Date, Period, Region};
 use mkperth_engine::i18n::tr;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::icons::Icon;
 use crate::theme;
-use crate::{PerthApp, date_field, icon_button, show_date};
+use crate::{PerthApp, Status, date_field, icon_button, show_date};
 
-/// What the Calendars pane is editing: the calendar (empty for the project's own), the work
-/// periods as typed, and the dates about to be added.
+/// What the Calendars pane is editing: the calendar (empty for the project's own), the name typed
+/// for a calendar added or renamed, the work periods as typed, and the dates about to be added.
 #[derive(Debug, Clone, Default)]
 pub struct CalendarForm {
     pub calendar: String,
+    pub name: String,
     /// The periods' text and the calendar and periods it was typed over (so another calendar, or
     /// an undo, shows its own).
     periods: Option<(String, Vec<Period>, String)>,
@@ -70,6 +72,8 @@ impl PerthApp {
         let names: Vec<String> = std::iter::once(p.calendar.name.clone()).chain(p.calendars.iter().map(|c| c.name.clone())).collect();
         let target = if own { None } else { Some(calendar.name.clone()) };
         let mut pending: Option<serde_json::Value> = None;
+        // A calendar added, renamed or deleted.
+        let mut manage: Option<(&str, Value)> = None;
         let mut edit = |change: serde_json::Value| {
             let mut params = change;
             if let (Some(name), Some(map)) = (&target, params.as_object_mut()) {
@@ -92,6 +96,31 @@ impl PerthApp {
                 }
             });
             combo.response.labelled_by(which);
+
+            // A copy of it added under the name typed, it renamed, or it deleted.
+            theme::row(ui, &tr!("calendar-name"), |ui, label| {
+                ui.add(egui::TextEdit::singleline(&mut form.name).desired_width(theme::fill(ui)).hint_text(tr!("calendar-name-hint")))
+                    .labelled_by(label);
+            });
+            // Wrapped: three buttons beside the labels are wider than the pane.
+            ui.horizontal_wrapped(|ui| {
+                let given = form.name.trim().to_string();
+                let add = ui.add_enabled(!given.is_empty(), egui::Button::new(tr!("calendar-add")));
+                if add.on_hover_text(tr!("calendar-add-tip", name = calendar.name.as_str())).clicked() {
+                    manage = Some(("calendar.add", json!({"name": given, "from": calendar.name})));
+                }
+                let rename = ui.add_enabled(!given.is_empty() && given != calendar.name, egui::Button::new(tr!("calendar-rename")));
+                if rename.on_hover_text(tr!("calendar-rename-tip", name = calendar.name.as_str())).clicked() {
+                    manage = Some(("calendar.rename", json!({"calendar": calendar.name, "name": given})));
+                }
+                let delete = ui
+                    .add_enabled(!own, egui::Button::new(tr!("calendar-delete")))
+                    .on_hover_text(tr!("calendar-delete-tip", name = calendar.name.as_str()))
+                    .on_disabled_hover_text(tr!("calendar-delete-own"));
+                if delete.clicked() {
+                    manage = Some(("calendar.delete", json!({"calendar": calendar.name})));
+                }
+            });
 
             // The week: seven toggles sharing the width.
             theme::section(ui, &tr!("calendar-week"));
@@ -165,6 +194,16 @@ impl PerthApp {
         // A refusal (no working day left, periods that overlap) says why in the status bar.
         if let Some(params) = pending {
             self.run("calendar.edit", params);
+        }
+        // Added or renamed, the calendar is the one shown; a refusal says why in the status bar.
+        if let Some((command, params)) = manage {
+            let name = params.get("name").and_then(Value::as_str).map(str::trim).unwrap_or_default().to_string();
+            self.run(command, params);
+            let p = &self.session.project;
+            if command != "calendar.delete" && !matches!(self.status, Some(Status::Error(_))) {
+                self.calendar_form.calendar = if name == p.calendar.name { String::new() } else { name };
+                self.calendar_form.name.clear();
+            }
         }
     }
 }

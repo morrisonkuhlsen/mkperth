@@ -45,7 +45,10 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   and written as P6 XML's `HolidayOrException` work times.
   Calendars edited in the app: the Calendars pane (the strip, or Project > Calendars…) sets a
   calendar's working week, work periods, region and days off or worked, through `calendar.edit`.
-- **Next:** calendars added, renamed and deleted; an activity's calendar chosen in Details.
+  Calendars added (a copy of another, or Monday to Friday), renamed (the activities and
+  resources on one follow) and deleted (never the project's own, nor one anything works on),
+  through `calendar.add`, `calendar.rename` and `calendar.delete`, in the Calendars pane; an
+  activity's calendar chosen in Details.
 
 ## M1 — data in and out
 - *Done:* Perth.jl's project JSON (`mkperth-perth`), read and written back byte for byte: a
