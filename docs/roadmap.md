@@ -127,8 +127,10 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   The Perth.jl bridge (#15), in Perth.jl: `import_p6xml`, `export_p6xml` and `schedule_p6`
   run `mkperth-cli` (on PATH or `ENV["MKPERTH_CLI"]`), no FFI and no dependency; Perth.jl's
   tests hold MK Perth's dates and float against its own `schedule!` and `slack`.
-- **Next:** the CLI's contract (verbs, `--format json` keys, exit codes) kept stable for the
-  bridge; resources (M4).
+- *Done:* the CLI's contract written down ([`cli.md`](cli.md)): the verbs, `--format json`'s
+  keys and their types, the CSV's header, stdout and stderr, the exit codes; a test runs the
+  bridge's three calls and holds each of them.
+- **Next:** resources (M4).
 - *Done (#22):* baselines: `baseline.assign` freezes each activity's dates and duration under
   a name (up to 50), `baseline.use` picks the one compared with, `baseline.delete`; the
   baseline's bars under the schedule's and the BL start, BL finish and start, finish and

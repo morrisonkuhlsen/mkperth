@@ -173,6 +173,7 @@ More in [`docs/architecture.md`](docs/architecture.md).
 - **Start here:** [`CONTRIBUTING.md`](CONTRIBUTING.md); the full rules for people and agents
   (clean-room, asset policy, never-crash, quality gates) are in [`AGENTS.md`](AGENTS.md)
 - **Where things stand:** [`docs/roadmap.md`](docs/roadmap.md); what changed: [`CHANGELOG.md`](CHANGELOG.md)
+- **Scripting:** the command line's contract, kept stable, in [`docs/cli.md`](docs/cli.md)
 - **Issues:** bugs and feature requests on GitHub, with `priority:` labels; security problems
   privately, as [`SECURITY.md`](SECURITY.md) says
 

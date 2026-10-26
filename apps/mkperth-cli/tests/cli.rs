@@ -123,3 +123,87 @@ fn usage_mistakes_exit_2_in_the_locale() {
     // Without a file, the sample.
     assert!(cli(&["schedule", "--format", "csv"]).status.success());
 }
+
+/// The contract Perth.jl's bridge (`src/mkperth.jl`) relies on, as `docs/cli.md` gives it: the
+/// three calls it makes, the keys of `--format json` and their types, the CSV's header, what
+/// goes to stdout and stderr, and the exit codes. A change here is a change to the bridge.
+#[test]
+fn the_bridge_contract() {
+    let d = dir("contract");
+    let p = project(&d);
+    let p = p.to_str().unwrap();
+
+    // export_p6xml: Perth JSON in, P6 XML out.
+    let xml = d.join("out.xml");
+    let o = cli(&["schedule", "--in", p, "--out", xml.to_str().unwrap(), "--format", "csv"]);
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(std::fs::read_to_string(&xml).unwrap().contains("<APIBusinessObjects"));
+
+    // import_p6xml: P6 XML in, Perth JSON out, its tasks with their IDs.
+    let json = d.join("back.json");
+    let o = cli(&["schedule", "--in", xml.to_str().unwrap(), "--out", json.to_str().unwrap(), "--format", "csv"]);
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    let back: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+    let ids: Vec<&str> = back["tasks"].as_array().unwrap().iter().filter_map(|t| t["id"].as_str()).collect();
+    assert_eq!(ids, ["a", "b"]);
+
+    // schedule_p6: the options as a command, the schedule as JSON.
+    let o = cli(&["run", "--in", p, "--cmd", r#"project.options={"float":"smallest","critical":"longest-path"}"#, "--format", "json"]);
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(o.stderr.is_empty());
+    let v: serde_json::Value = serde_json::from_str(&text(&o)).unwrap();
+    let keys = |v: &serde_json::Value| v.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
+    // The keys in the order written.
+    assert_eq!(keys(&v), ["name", "finish", "activities"]);
+    let day = |v: &serde_json::Value| v.as_str().is_some_and(|s| s.len() == 10 && s.as_bytes()[4] == b'-' && s.as_bytes()[7] == b'-');
+    assert!(day(&v["finish"]) && v["name"].is_string());
+    for a in v["activities"].as_array().unwrap() {
+        assert_eq!(
+            keys(a),
+            [
+                "id",
+                "name",
+                "early_start",
+                "early_finish",
+                "late_start",
+                "late_finish",
+                "total_float",
+                "free_float",
+                "critical",
+                "longest_path",
+                "status"
+            ]
+        );
+        assert!(a["id"].is_string() && a["name"].is_string());
+        assert!(["early_start", "early_finish", "late_start", "late_finish"].iter().all(|k| day(&a[*k])), "{a}");
+        assert!(a["total_float"].is_number() && a["free_float"].is_number());
+        assert!(a["critical"].is_boolean() && a["longest_path"].is_boolean());
+        assert!(["not-started", "in-progress", "completed"].contains(&a["status"].as_str().unwrap()));
+    }
+    assert_eq!(v["activities"][1]["longest_path"], true);
+
+    // The CSV's header, fixed whatever the language.
+    let csv = String::from_utf8(cli(&["schedule", "--in", p, "--format", "csv"]).stdout).unwrap();
+    assert!(csv.starts_with("id,name,early_start,early_finish,late_start,late_finish,total_float,free_float,critical,longest_path,status\r\n"));
+
+    // A warning is a line on stderr, `warning: ` first (in the C locale), and the call succeeds.
+    let xer = d.join("two.xer");
+    std::fs::write(
+        &xer,
+        "ERMHDR\t19.12\r\n%T\tPROJECT\r\n%F\tproj_id\tproj_short_name\tplan_start_date\r\n%R\t1\tP1\t2026-09-01 08:00\r\n%R\t2\tP2\t2026-09-01 08:00\r\n\
+         %T\tTASK\r\n%F\ttask_id\tproj_id\ttask_code\ttask_name\ttarget_drtn_hr_cnt\r\n%R\t1\t1\tA\tA\t8\r\n%E\r\n",
+    )
+    .unwrap();
+    let o = cli(&["schedule", "--in", xer.to_str().unwrap(), "--format", "csv"]);
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    let said = String::from_utf8_lossy(&o.stderr).into_owned();
+    assert!(!said.is_empty() && said.lines().all(|l| l.starts_with("warning: ")), "{said}");
+
+    // An error: 1, nothing on stdout, one line on stderr; a usage mistake: 2.
+    let o = cli(&["run", "--in", p, "--cmd", r#"project.options={"float":"widest"}"#, "--format", "json"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(o.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&o.stderr).starts_with("error: "));
+    assert_eq!(cli(&["schedule", "--float", "start"]).status.code(), Some(2));
+    std::fs::remove_dir_all(&d).unwrap();
+}

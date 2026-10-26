@@ -1,6 +1,6 @@
 //! MK Perth's command line: schedules, changes and explains projects from scripts and CI.
 //!
-//! - `mkperth-cli schedule [--in project.json|project.xml] [--out file] [--format table|json|csv]`
+//! - `mkperth-cli schedule [--in project.json|.xml|.xer] [--out file] [--format table|json|csv]`
 //! - `mkperth-cli run [--in …] --cmd 'activity.add={"name": "Survey"}' [--cmd …] [--out file] [--format …]`
 //! - `mkperth-cli explain [--in …] --activity A100 [--tex calculation.tex]`
 //!
@@ -8,6 +8,9 @@
 //! is written only when everything before it succeeded, all or nothing. Exit codes: 0 done, 1 an
 //! error (said on stderr), 2 a usage mistake. Messages follow the locale (`LC_ALL`,
 //! `LC_MESSAGES`, `LANG`).
+//!
+//! The verbs, `--format json`'s keys, the CSV's header and the exit codes are a contract
+//! (`docs/cli.md`): Perth.jl's bridge runs this binary. `tests/cli.rs` holds it.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use std::path::Path;
