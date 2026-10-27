@@ -29,7 +29,7 @@ quick-xml = "0.42"
 
 # ui
 # A system font checked before egui takes it (the reader egui itself uses). MIT/Apache.
-skrifa = "0.44"
+skrifa = "0.49"
 # The splash screen's Morrison Kühlsen wordmark (PNG). MIT/Apache.
 png = "0.18"
 egui = "0.37"
