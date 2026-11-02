@@ -823,3 +823,136 @@ fn elapsed_and_percent_lags() {
     assert_eq!(get(&s, "C").early_start, day(12));
     assert_eq!(get(&s, "D").early_start, day(14));
 }
+
+/// "Early": Monday to Friday, 06:00–10:00 and 11:00–14:00 (seven hours). "Night": Monday to
+/// Saturday, 20:00–24:00.
+fn with_shifts(p: &mut Project) {
+    let early = vec![(6 * 60, 10 * 60), (11 * 60, 14 * 60)];
+    p.calendars.push(Calendar {
+        name: "Early".into(),
+        periods: [early.clone(), early.clone(), early.clone(), early.clone(), early, Vec::new(), Vec::new()],
+        ..Calendar::default()
+    });
+    let night = vec![(20 * 60, 24 * 60)];
+    p.calendars.push(Calendar {
+        name: "Night".into(),
+        week: [true, true, true, true, true, true, false],
+        periods: [night.clone(), night.clone(), night.clone(), night.clone(), night.clone(), night, Vec::new()],
+        ..Calendar::default()
+    });
+}
+
+#[test]
+fn calendars_of_different_hours_give_no_float_that_isnt_there() {
+    // (a) A(3) on the standard week, Monday the 5th to the evening of Wednesday the 7th, 17:00;
+    // B(1), seven hours on "Early", finishes with it: by 14:00 on Wednesday, the same moment
+    // as Early's next morning, so it runs on Wednesday 06:00–14:00. Backward, B's late finish
+    // is that moment too, and A may finish as late as anything before Early works again:
+    // Wednesday 17:00, float 0 (it was −180 minutes, A's late finish 14:00).
+    let mut p = project(&[("A", 3), ("B", 1)], &[("A", "B", FF, 0)]);
+    with_shifts(&mut p);
+    p.activities[1].calendar = Some("Early".into());
+    let s = schedule(&p).unwrap();
+    let a = get(&s, "A");
+    assert_eq!((a.early_finish, a.late_finish, a.total_float_minutes), (day(2026, 10, 7), day(2026, 10, 7), 0));
+    assert_eq!(get(&s, "B").total_float_minutes, 0);
+    // (b) A(1) on the standard week, Monday the 5th; M, a finish milestone on "Night", follows
+    // at its first working minute, Monday 20:00, shown on Monday. Backward, M finishes there
+    // too (not on the evening of Saturday the 3rd, the same moment on its calendar), and A by
+    // Monday 17:00: float 0 (it was −1 day, A's late dates Friday the 2nd).
+    let mut p = project(&[("A", 1), ("M", 0)], &[("A", "M", FS, 0)]);
+    with_shifts(&mut p);
+    p.activities[1].kind = ActivityKind::FinishMilestone;
+    p.activities[1].calendar = Some("Night".into());
+    let s = schedule(&p).unwrap();
+    let (a, m) = (get(&s, "A"), get(&s, "M"));
+    assert_eq!((a.late_start, a.late_finish, a.total_float_minutes), (day(2026, 10, 5), day(2026, 10, 5), 0));
+    assert_eq!((m.early_finish, m.late_finish, m.total_float_minutes), (day(2026, 10, 5), day(2026, 10, 5), 0));
+    // Its explanation names the dates the table shows.
+    let e = explain(&p, "M").unwrap();
+    assert_eq!((e.early_finish.date, e.late_finish.date), (day(2026, 10, 5), day(2026, 10, 5)));
+    // (c) P(1) on the standard week, Monday 08:00–17:00; S(1) starts with it on "Night", at
+    // 20:00, and X(5) follows S there, Tuesday to Saturday. S must start by Monday 20:00, so P
+    // by then too: on its calendar, by 16:59, finishing Tuesday 16:59, 479 minutes of float
+    // (it was a day, P starting Tuesday 08:00, which would hold S to Tuesday night).
+    let mut p = project(&[("P", 1), ("S", 1), ("X", 5)], &[("P", "S", SS, 0), ("S", "X", FS, 0)]);
+    with_shifts(&mut p);
+    p.activities[1].calendar = Some("Night".into());
+    p.activities[2].calendar = Some("Night".into());
+    let s = schedule(&p).unwrap();
+    let p_ = get(&s, "P");
+    assert_eq!((p_.late_start, p_.late_finish, p_.total_float, p_.total_float_minutes), (day(2026, 10, 5), day(2026, 10, 6), 0, 479));
+    assert_eq!((get(&s, "S").total_float_minutes, get(&s, "X").total_float_minutes), (0, 0));
+}
+
+/// Random networks without constraints or progress, on calendars of different hours and days,
+/// with the four kinds of relationship and lags and leads: none has negative float, no late date
+/// comes before an early one, and every explanation shows the table's dates.
+#[test]
+fn without_constraints_no_float_is_negative() {
+    let mut seed = 0x2545_f491_4f6c_dd1du64;
+    let mut next = |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % n
+    };
+    let names = ["Standard", "Early", "Night", "seven"];
+    for _ in 0..400 {
+        let n = 2 + next(6) as usize;
+        let ids: Vec<String> = (0..n).map(|k| format!("A{k}")).collect();
+        let acts: Vec<(&str, i64)> = ids.iter().map(|id| (id.as_str(), next(4) as i64)).collect();
+        let mut p = project(&acts, &[]);
+        with_shifts(&mut p);
+        with_seven_days(&mut p);
+        for a in &mut p.activities {
+            let k = next(4) as usize;
+            a.calendar = (k > 0).then(|| names[k].to_string());
+            if a.duration == 0 {
+                a.kind = if next(2) == 0 { ActivityKind::StartMilestone } else { ActivityKind::FinishMilestone };
+            } else if next(3) == 0 {
+                a.duration_minutes = Some(a.duration * 480 - 60 * next(4) as i64);
+            }
+        }
+        for to in 1..n {
+            for from in 0..to {
+                if next(3) != 0 {
+                    continue;
+                }
+                let kind = [FS, SS, FF, SF][next(4) as usize];
+                let mut r = Relationship {
+                    predecessor: ids[from].clone(),
+                    successor: ids[to].clone(),
+                    kind,
+                    lag: next(3) as i64 - 1,
+                    lag_minutes: None,
+                    lag_kind: Default::default(),
+                };
+                if next(3) == 0 {
+                    r.lag_minutes = Some(60 * (next(9) as i64 - 4));
+                }
+                p.relationships.push(r);
+            }
+        }
+        p.lag_calendar = [LagCalendar::Predecessor, LagCalendar::Successor, LagCalendar::Project, LagCalendar::TwentyFourHour][next(4) as usize];
+        let s = schedule(&p).unwrap();
+        // The network in a line or two, for a failure.
+        let net = format!(
+            "lags on {:?}; {:?}; {:?}",
+            p.lag_calendar,
+            p.activities.iter().map(|a| (&a.id, a.kind, a.duration, a.duration_minutes, &a.calendar)).collect::<Vec<_>>(),
+            p.relationships.iter().map(|r| (&r.predecessor, &r.successor, r.kind, r.lag, r.lag_minutes)).collect::<Vec<_>>()
+        );
+        for a in &s.activities {
+            assert!(a.total_float_minutes >= 0, "{}: float {} in {net}", a.id, a.total_float_minutes);
+            assert!(a.late_start >= a.early_start && a.late_finish >= a.early_finish, "{}: {a:?} in {net}", a.id);
+            let e = explain(&p, &a.id).unwrap();
+            assert_eq!(
+                (e.early_start.date, e.early_finish.date, e.late_start.date, e.late_finish.date),
+                (a.early_start, a.early_finish, a.late_start, a.late_finish),
+                "{}: the explanation in {net}",
+                a.id
+            );
+        }
+    }
+}

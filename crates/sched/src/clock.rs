@@ -85,12 +85,6 @@ impl Clock<'_> {
         Ok(self.periods(day)?.iter().any(|(a, b)| i64::from(*a) <= m && m < i64::from(*b)))
     }
 
-    /// The latest start at or before `t`: `t` in working time, else the next working minute,
-    /// which is the same moment (no work lies between).
-    pub(crate) fn previous_start(&self, t: i64) -> Result<i64, ScheduleError> {
-        if self.working_at(t)? { Ok(t) } else { self.next_start(t) }
-    }
-
     /// The latest working minute at or before `t`, strictly: for a date a start must not pass,
     /// even when no work lies between.
     pub(crate) fn start_by(&self, t: i64) -> Result<i64, ScheduleError> {
@@ -215,7 +209,6 @@ mod tests {
         assert_eq!(c.between(t(2026, 10, 12, 0, 0), t(2026, 10, 5, 0, 0)).unwrap(), -5 * 480);
         assert_eq!(c.next_finish(t(2026, 10, 9, 17, 0)).unwrap(), t(2026, 10, 9, 17, 0));
         assert_eq!(c.next_finish(t(2026, 10, 10, 0, 0)).unwrap(), t(2026, 10, 12, 8, 0));
-        assert_eq!(c.previous_start(t(2026, 10, 10, 0, 0)).unwrap(), t(2026, 10, 12, 8, 0));
         assert_eq!(c.start_by(t(2026, 10, 10, 0, 0)).unwrap(), t(2026, 10, 9, 16, 59));
     }
 

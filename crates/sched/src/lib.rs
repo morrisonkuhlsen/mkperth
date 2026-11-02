@@ -500,15 +500,21 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         }
         clock(cal_of(i)).retreat(lf, dur(i))
     };
-    // The latest finish that starts no later than `t`: a relationship's bound counts moments
-    // with no work between as one; a constraint's date is strict.
-    let finish_for_start = |i: usize, t: i64| -> Result<i64, ScheduleError> {
-        let c = clock(cal_of(i));
-        if driven(i).is_some() {
-            return finish_of(i, c.previous_start(t)?);
+    // The latest moment the same as `t` for activity `i`: none of its work lies between them (a
+    // finish at 14:00 is its calendar's next morning). What a successor's late date bounds.
+    let latest_same = |i: usize, t: i64| -> Result<i64, ScheduleError> {
+        if let Some(d) = driven(i) {
+            let mut s: Option<i64> = None;
+            for (k, _, _) in d {
+                let x = clock(*k).next_start(t)?;
+                s = Some(s.map_or(x, |y| y.min(x)));
+            }
+            return Ok(s.unwrap_or(t));
         }
-        if dur(i) == 0 { Ok(t) } else { c.advance(c.previous_start(t)?, dur(i)) }
+        clock(cal_of(i)).next_start(t)
     };
+    // The latest finish that starts no later than `t`, strictly: a constraint's date, or a
+    // relationship's bound, already the latest moment its successor allows (#62).
     let finish_for_start_by = |i: usize, t: i64| -> Result<i64, ScheduleError> {
         let c = clock(cal_of(i));
         if driven(i).is_some() {
@@ -644,17 +650,25 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         for &k in outgoing.get(i).map_or(&[][..], Vec::as_slice) {
             let Some(t) = ties.get(k) else { continue };
             let lag = clock(t.lag_calendar);
-            let (s_ls, s_lf) = (ls.get(t.to).copied().unwrap_or(end), lf.get(t.to).copied().unwrap_or(end));
+            // The successor's late dates as late as they go on its calendar: on the predecessor's,
+            // the moment its own placing chose may come before work it can do (#62).
+            let (s_ls, s_lf) = (latest_same(t.to, ls.get(t.to).copied().unwrap_or(end))?, latest_same(t.to, lf.get(t.to).copied().unwrap_or(end))?);
+            // The lag taken back on its calendar; a lead, counted forward there, ends at the end of
+            // its work, which is the same moment until that calendar works again.
+            let back = |x: i64| -> Result<i64, ScheduleError> {
+                let y = lag.shift(x, -t.lag_minutes)?;
+                if t.lag_minutes < 0 { lag.next_start(y) } else { Ok(y) }
+            };
             let (f, via) = match t.kind {
-                RelationshipType::FinishToStart => (lag.shift(s_ls, -t.lag_minutes)?, None),
+                RelationshipType::FinishToStart => (back(s_ls)?, None),
                 RelationshipType::StartToStart => {
-                    let v = lag.shift(s_ls, -t.lag_minutes)?;
-                    (finish_for_start(i, v)?, Some(v))
+                    let v = back(s_ls)?;
+                    (finish_for_start_by(i, v)?, Some(v))
                 }
-                RelationshipType::FinishToFinish => (lag.shift(s_lf, -t.lag_minutes)?, None),
+                RelationshipType::FinishToFinish => (back(s_lf)?, None),
                 RelationshipType::StartToFinish => {
-                    let v = lag.shift(s_lf, -t.lag_minutes)?;
-                    (finish_for_start(i, v)?, Some(v))
+                    let v = back(s_lf)?;
+                    (finish_for_start_by(i, v)?, Some(v))
                 }
             };
             if traced(i) {
@@ -688,7 +702,13 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         if traced(i) {
             latest_seen = Some(latest);
         }
-        let f = bounded(place_finish(i, latest)?)?;
+        // Never before its early finish when that meets the bound, or is the same moment on its
+        // calendar: a milestone at a morning is also the evening before, maybe days earlier.
+        let f = place_finish(i, latest)?;
+        let f = bounded(match ef.get(i).copied() {
+            Some(e) if e <= latest_same(i, latest)? => f.max(e),
+            _ => f,
+        })?;
         let s = bounded(start_of(i, f)?)?;
         if let (Some(a), Some(b)) = (ls.get_mut(i), lf.get_mut(i)) {
             *a = s;
@@ -914,6 +934,15 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             let start_evening = kind == ActivityKind::FinishMilestone;
             let finish_evening = kind == ActivityKind::FinishMilestone || (kind == ActivityKind::Task && dur(i) > 0) || is_summary(i);
             let get = |v: &[i64], d: i64| v.get(i).copied().unwrap_or(d);
+            // A finish milestone's own dates as the table shows them: the evening before a
+            // morning may be days earlier on another calendar.
+            let own = |t: i64, evening: bool| {
+                if kind == ActivityKind::FinishMilestone {
+                    explain::moment(t, evening, traced_calendar).ok_or(ScheduleError::TooLong)
+                } else {
+                    at(t, evening)
+                }
+            };
             Some(Explanation {
                 id: id_of(i),
                 calendar: calendars.get(cal_of(i)).map_or_else(String::new, |c| c.name.clone()),
@@ -933,12 +962,12 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
                 children: (0..n).filter(|&c| parent.get(c).copied().flatten() == Some(i)).map(id_of).collect(),
                 early: early_bounds,
                 earliest: at(earliest.unwrap_or(origin), false)?,
-                early_start: at(get(&es, origin), start_evening)?,
-                early_finish: at(get(&ef, origin), finish_evening)?,
+                early_start: own(get(&es, origin), start_evening)?,
+                early_finish: own(get(&ef, origin), finish_evening)?,
                 late: late_bounds,
                 latest: at(latest_seen.unwrap_or(end), true)?,
-                late_start: at(get(&ls, end), start_evening)?,
-                late_finish: at(get(&lf, end), finish_evening)?,
+                late_start: own(get(&ls, end), start_evening)?,
+                late_finish: own(get(&lf, end), finish_evening)?,
                 free: slacks,
                 held_late,
                 scheduled: out.get(i).cloned().ok_or(ScheduleError::UnknownActivity(id_of(i)))?,
