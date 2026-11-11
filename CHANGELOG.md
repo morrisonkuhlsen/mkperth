@@ -18,6 +18,12 @@ Read it before re-scheduling a plan with a new version.
   The palette is warm ivory in layers (the dark one the house's blue-black), with soft corners
   on menus, fields and buttons. The zoom moved to the status bar: its figure opens the usual
   ones.
+- A finer activity table and Gantt chart: the table without lines between its cells, only soft
+  ones between rows and one between the table and the chart; titles on one line at the foot of
+  the header, with the chart's days; figures (durations, floats, variances, costs) at the right;
+  summaries lightly tinted; the selected row marked at its left edge. Bars flat with soft
+  corners, slimmer diamonds and summary brackets, quieter relationship lines; a faint line each
+  week; days off, bands, markers, today and the data date down the chart's whole height.
 
 ## [0.1.0] - 2026-10-26
 

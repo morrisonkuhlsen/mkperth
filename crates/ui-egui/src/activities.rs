@@ -35,6 +35,12 @@ pub const COLUMNS: [(&str, f32); 18] = [
     ("col-cost-variance", 96.0),
 ];
 
+/// The columns of figures, aligned at the right: the duration, the floats, the variances and the
+/// costs.
+fn numeric(k: usize) -> bool {
+    matches!(k, 2 | 7 | 8 | 11..=17)
+}
+
 /// The columns hidden at first: the baseline's, until asked for.
 pub const HIDDEN: [bool; 18] = [false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true];
 
@@ -573,9 +579,12 @@ pub(crate) fn show(
         // The column the rows are sorted by: a small triangle at its right, up or down.
         let sorted = options.sort.as_ref().filter(|(by, _)| options.sort_key(k).as_ref() == Some(by)).map(|(_, down)| *down);
         let room = if sorted.is_some() { 22.0 } else { 12.0 };
-        // A title wider than its column wraps onto a second line rather than being cut.
+        // A title wider than its column wraps onto a second line rather than being cut; titles
+        // stand on one line at the foot of the header, with the chart's days, and figures'
+        // titles at the right, over their figures.
         let title = painter.layout(name, FontId::proportional(12.0), t.header_text, (w - room).max(1.0));
-        let at = pos2(x + 6.0, header.center().y - title.size().y / 2.0);
+        let x_title = if numeric(k) { x + w - room + 4.0 - title.size().x } else { x + 8.0 };
+        let at = pos2(x_title, header.bottom() - 7.0 - title.size().y);
         painter.with_clip_rect(cell.shrink(2.0)).galley(at, title, t.header_text);
         if let Some(down) = sorted {
             let c = pos2(x + w - 9.0, header.center().y);
@@ -583,8 +592,12 @@ pub(crate) fn show(
             painter.add(egui::Shape::convex_polygon(vec![pos2(c.x - 4.0, base), pos2(c.x + 4.0, base), pos2(c.x, tip)], t.accent, Stroke::NONE));
         }
         x += w;
-        painter.vline(x, header.y_range(), Stroke::new(1.0, t.gridline));
+        if x < chart_left - 2.0 {
+            painter.vline(x, (header.top() + 10.0)..=(header.bottom() - 8.0), Stroke::new(1.0, t.header_line));
+        }
     }
+    // The ruler's two tiers, parted by a hairline; the table parted from the chart by another.
+    painter.hline(chart_left..=header.right(), header.center().y, Stroke::new(1.0, t.gridline));
     // A click on a column's title sorts the rows by it: upwards, then downwards, then as they were.
     if header_response.clicked()
         && let Some(p) = header_response.interact_pointer_pos().filter(|p| p.x < chart_left)
@@ -654,8 +667,8 @@ pub(crate) fn show(
                 let first = x.month.days();
                 let next = Date::from_ymd(if m == 12 { y + 1 } else { y }, if m == 12 { 1 } else { m + 1 }, 1).map_or(first + 31, |n| n.days());
                 let strip = Rect::from_min_max(pos2(x_of(first, chart_left), header.top()), pos2(x_of(next, chart_left), header.center().y));
-                chart_header.rect_filled(strip, 0.0, color.gamma_multiply(0.22));
-                chart_header.hline(strip.x_range(), strip.bottom() - 1.0, Stroke::new(2.0, color));
+                chart_header.rect_filled(strip, 0.0, color.gamma_multiply(0.12));
+                chart_header.hline(strip.x_range(), strip.bottom() - 1.0, Stroke::new(1.5, color.gamma_multiply(0.8)));
             }
             let galley = chart_header.layout_no_wrap(text, FontId::proportional(12.0), t.header_text);
             let at = if day == 1 { xd } else { xd.max(chart_left) };
@@ -723,6 +736,49 @@ pub(crate) fn show(
         })
     };
     let position = |i: usize| rows.iter().position(|(r, _)| *r == i);
+    // The chart's backdrop, the whole height under the ruler whatever the rows: the days off,
+    // a faint line each week, the bands, the markers, today and the data date. The rows paint
+    // over it only where they are chosen or striped.
+    let body = Rect::from_min_max(pos2(full.left(), header.bottom() + 1.0), full.max);
+    let chart_body = Rect::from_min_max(pos2(chart_left, body.top()), body.max);
+    {
+        let painter = ui.painter().with_clip_rect(chart_body.intersect(ui.clip_rect()));
+        painter.rect_filled(body, 0.0, t.grid_bg);
+        let weekly = scale * 7.0 >= 22.0;
+        for k in first_day.max(0)..last_day.min(days) {
+            let Some(d) = Date::from_days(from + k) else { continue };
+            let xd = x_of(d.days(), chart_left);
+            if scale >= 8.0 && !calendar.is_working(d) {
+                painter.rect_filled(Rect::from_min_max(pos2(xd, body.top()), pos2(xd + scale, body.bottom())), 0.0, t.header_bg);
+            }
+            if weekly && d.weekday().index() == 0 {
+                painter.vline(xd, body.y_range(), Stroke::new(1.0, t.gridline.gamma_multiply(0.7)));
+            }
+        }
+        for b in &session.project.bands {
+            let color = note_color(&b.color, t.blue);
+            let (l, r) = (x_of(b.from.days(), chart_left), x_of(b.to.days(), chart_left) + scale);
+            painter.rect_filled(Rect::from_min_max(pos2(l, body.top()), pos2(r, body.bottom())), 0.0, color.gamma_multiply(0.10));
+            painter.vline(l, body.y_range(), Stroke::new(1.0, color.gamma_multiply(0.35)));
+        }
+        for m in &session.project.markers {
+            let x = x_of(m.date.days(), chart_left) + scale / 2.0;
+            let color = note_color(&m.color, t.orange);
+            painter.extend(egui::Shape::dashed_line(
+                &[pos2(x, body.top()), pos2(x, body.bottom())],
+                Stroke::new(1.0, color.gamma_multiply(0.8)),
+                4.0,
+                3.0,
+            ));
+        }
+        if let Some(d) = options.today {
+            let xd = x_of(d.days(), chart_left) + scale / 2.0;
+            painter.vline(xd, body.y_range(), Stroke::new(1.0, t.orange.gamma_multiply(0.6)));
+        }
+        if let Some(d) = data_date {
+            painter.vline(x_of(d.days(), chart_left), body.y_range(), Stroke::new(1.5, t.green.gamma_multiply(0.7)));
+        }
+    }
     let mut area = egui::ScrollArea::vertical().id_salt("activities").auto_shrink(false);
     // A row asked for: a few rows down from the top.
     if let Some(i) = options.goto_row.take()
@@ -736,7 +792,16 @@ pub(crate) fn show(
         let mut first_top = None;
         let mut placed = Vec::with_capacity(range.len());
         // A row's own background: every other one tinted when striped.
-        let plain = |n: usize| if options.striped && n % 2 == 1 { t.grid_bg.lerp_to_gamma(t.header_bg, 0.6) } else { t.grid_bg };
+        // A summary's a little tinted, so the WBS reads at a glance.
+        let plain = |n: usize, summary: bool| {
+            if summary {
+                t.grid_bg.lerp_to_gamma(t.header_bg, 0.7)
+            } else if options.striped && n % 2 == 1 {
+                t.grid_bg.lerp_to_gamma(t.header_bg, 0.5)
+            } else {
+                t.grid_bg
+            }
+        };
         for (k, &(i, depth)) in rows.iter().skip(range.start).take(range.len()).enumerate() {
             let n = range.start + k;
             let (rect, response) = ui.allocate_exact_size(vec2(full.width(), ROW), Sense::click_and_drag());
@@ -852,49 +917,24 @@ pub(crate) fn show(
                 }
             }
             let chosen = selected == Some(i) || marked.contains(&i) || banded.last() == Some(&i);
-            painter.rect_filled(rect, 0.0, if chosen { t.accent_soft } else { plain(n) });
-            // Non-working days of the project's calendar, shaded, when they're wide enough.
-            if scale >= 8.0 {
-                for k in first_day.max(0)..last_day.min(days) {
-                    if let Some(d) = Date::from_days(from + k).filter(|d| !calendar.is_working(*d)) {
-                        let xd = x_of(d.days(), chart_left);
-                        painter.rect_filled(Rect::from_min_max(pos2(xd, rect.top()), pos2(xd + scale, rect.bottom())), 0.0, t.header_bg);
-                    }
-                }
+            // The table's part of the row opaque; the chart's lets the backdrop through.
+            let table_part = Rect::from_min_max(rect.min, pos2(chart_left, rect.bottom()));
+            let chart_part = Rect::from_min_max(pos2(chart_left, rect.top()), rect.max);
+            let fill = if chosen { t.accent_soft } else { plain(n, is_summary(i)) };
+            painter.rect_filled(table_part, 0.0, fill);
+            if fill != t.grid_bg {
+                painter.rect_filled(chart_part, 0.0, fill.gamma_multiply(if chosen { 0.75 } else { 0.6 }));
             }
-            // The bands behind the bars, and the markers' lines.
-            let chart_row = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, rect.top()), rect.max));
-            for b in &session.project.bands {
-                let color = note_color(&b.color, t.blue);
-                let (l, r) = (x_of(b.from.days(), chart_left), x_of(b.to.days(), chart_left) + scale);
-                chart_row.rect_filled(Rect::from_min_max(pos2(l, rect.top()), pos2(r, rect.bottom())), 0.0, color.gamma_multiply(0.16));
-                chart_row.vline(l, rect.y_range(), Stroke::new(1.0, color.gamma_multiply(0.45)));
+            if chosen && selected == Some(i) {
+                painter.rect_filled(Rect::from_min_size(rect.min, vec2(2.0, rect.height())), 0.0, t.accent);
             }
-            for m in &session.project.markers {
-                let x = x_of(m.date.days(), chart_left) + scale / 2.0;
-                let color = note_color(&m.color, t.orange);
-                chart_row.extend(egui::Shape::dashed_line(&[pos2(x, rect.top()), pos2(x, rect.bottom())], Stroke::new(1.2, color), 3.0, 3.0));
-            }
-            if let Some(d) = options.today {
-                let xd = x_of(d.days(), chart_left) + scale / 2.0;
-                if xd >= chart_left {
-                    painter.vline(xd, rect.y_range(), Stroke::new(1.0, t.orange.gamma_multiply(0.6)));
-                }
-            }
-            // The data date: a line down the chart where progress was told.
-            if let Some(d) = data_date {
-                let xd = x_of(d.days(), chart_left);
-                if xd >= chart_left {
-                    painter.vline(xd, rect.y_range(), Stroke::new(1.5, t.green.gamma_multiply(0.7)));
-                }
-            }
-            placed.push((i, depth, rect, n));
+            placed.push((i, depth, rect));
         }
         // The names of bands and markers, turned along their lines, over the rows in view.
         let view = ui.clip_rect().intersect(Rect::from_min_max(pos2(chart_left, ui.clip_rect().top()), full.max));
         let names = ui.painter().with_clip_rect(view);
         let turned = |x: f32, y: f32, text: &str, color: egui::Color32| {
-            let galley = names.layout_no_wrap(text.to_string(), FontId::monospace(10.5), color);
+            let galley = names.layout_no_wrap(text.to_string(), FontId::proportional(11.0), color);
             // A quarter turn clockwise: it reads downwards, its height to the left of `x`.
             names.add(egui::epaint::TextShape::new(pos2(x + galley.size().y + 2.0, y), galley, color).with_angle(std::f32::consts::FRAC_PI_2));
         };
@@ -912,7 +952,7 @@ pub(crate) fn show(
         {
             let clip = Rect::from_min_max(pos2(chart_left, ui.clip_rect().top()), pos2(full.right(), ui.clip_rect().bottom()));
             let painter = ui.painter().with_clip_rect(clip);
-            let y_of = |n: usize| top + (n as f32 - range.start as f32) * ROW + ROW / 2.0 - 2.0;
+            let y_of = |n: usize| top + (n as f32 - range.start as f32) * ROW + ROW / 2.0;
             // Where an activity's work begins and ends on the chart.
             let ends = |i: usize| -> Option<(f32, f32)> {
                 let (a, s) = (acts.get(i)?, schedule.activities.get(i)?);
@@ -943,11 +983,11 @@ pub(crate) fn show(
                 let x1 = if to_start { qe.0 } else { qe.1 };
                 let (y0, y1) = (y_of(np), y_of(nq));
                 let critical = schedule.activities.get(p).is_some_and(|s| s.critical) && schedule.activities.get(q).is_some_and(|s| s.critical);
-                let color = if critical { t.red.gamma_multiply(0.85) } else { t.text_dim.gamma_multiply(0.75) };
+                let color = if critical { t.red.gamma_multiply(0.6) } else { t.text_dim.gamma_multiply(0.5) };
                 link(&painter, (x0, y0), (x1, y1), from_finish, to_start, color);
             }
         }
-        for (i, depth, rect, n) in placed {
+        for (i, depth, rect) in placed {
             let (Some(a), Some(s)) = (acts.get(i), schedule.activities.get(i)) else { continue };
             let painter = ui.painter_at(rect);
             let summary = is_summary(i);
@@ -1008,10 +1048,16 @@ pub(crate) fn show(
                 let Some(&(_, _, w)) = columns.iter().find(|(c, _, _)| *c == k) else { continue };
                 let cell = Rect::from_min_size(pos2(x, rect.top()), vec2(w, ROW));
                 let painter = painter.with_clip_rect(cell.shrink(1.0));
-                painter.text(pos2(x + 6.0 + indent, rect.center().y), Align2::LEFT_CENTER, &text, FontId::proportional(12.5), color);
+                // Figures at the right, as columns of figures line up; text at the left.
+                let (at, align) = if numeric(k) {
+                    (pos2(x + w - 12.0, rect.center().y), Align2::RIGHT_CENTER)
+                } else {
+                    (pos2(x + 8.0 + indent, rect.center().y), Align2::LEFT_CENTER)
+                };
+                painter.text(at, align, &text, FontId::proportional(12.5), color);
                 if summary {
                     // Bold by drawing twice: the built-in fonts have no bold face.
-                    painter.text(pos2(x + 6.5 + indent, rect.center().y), Align2::LEFT_CENTER, &text, FontId::proportional(12.5), color);
+                    painter.text(at + vec2(0.5, 0.0), align, &text, FontId::proportional(12.5), color);
                 }
                 if k == 0 && acts.get(i).is_some_and(|a| commented.contains(a.id.as_str())) {
                     let corner = pos2(x + w - 1.0, rect.top() + 1.0);
@@ -1022,7 +1068,6 @@ pub(crate) fn show(
                     ));
                 }
                 x += w;
-                painter.vline(x, rect.y_range(), Stroke::new(1.0, t.gridline));
             }
             // The cell being edited: a text box over it; a date, a month of days under it.
             if let Some(e) = editing.as_mut().filter(|e| e.index == i) {
@@ -1090,17 +1135,16 @@ pub(crate) fn show(
                 }
             }
             let chart = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, rect.top()), rect.max));
-            painter.hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, t.gridline));
+            painter.hline(rect.left()..=chart_left, rect.bottom(), Stroke::new(1.0, t.gridline));
             let chosen = selected == Some(i) || marked.contains(&i) || banded.contains(&i);
-            let background = if chosen { t.accent_soft } else { plain(n) };
-            let look = Look { summary, selected: chosen, float: options.late_bars, background, data_date };
+            let look = Look { summary, selected: chosen, float: options.late_bars, data_date };
             // The baseline's bar, thin, under the schedule's.
             if options.baseline_bars
                 && let Some(b) = b
             {
                 let (l, r) = (x_of(b.start.days(), chart_left), x_of(b.finish.days(), chart_left) + scale);
-                let y = rect.center().y + 6.0;
-                chart.rect_filled(Rect::from_min_max(pos2(l, y), pos2(r.max(l + 3.0), y + 3.5)), 0.0, t.orange.gamma_multiply(0.85));
+                let y = rect.center().y + 7.0;
+                chart.rect_filled(Rect::from_min_max(pos2(l, y), pos2(r.max(l + 3.0), y + 3.0)), 1.0, t.orange.gamma_multiply(0.85));
             }
             bar(&chart, a.kind, &a.name, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, look, &t);
         }
@@ -1136,6 +1180,10 @@ pub(crate) fn show(
                 events.bar = Some(BarEdit { index: drag.index, mode: drag.mode, start: s, finish: f });
             }
         }
+    }
+    // The table parted from the chart, down the whole height.
+    if !columns.is_empty() {
+        ui.painter().with_clip_rect(full).vline(chart_left - 0.5, full.y_range(), Stroke::new(1.0, t.header_line));
     }
     // A thin scroll bar under the chart when part of it is out of view.
     if options.scale.is_some() && visible_days < days as f32 {
@@ -1198,21 +1246,13 @@ struct Look {
     selected: bool,
     /// The total float as a light bar to the late finish.
     float: bool,
-    /// The row's background, behind the name so lines passing under it don't cross the text.
-    background: egui::Color32,
     /// Where the work done ends on an activity under way.
     data_date: Option<Date>,
 }
 
-/// A colour a little darker, for a bar's edge.
-fn darker(c: egui::Color32) -> egui::Color32 {
-    let f = |v: u8| (f32::from(v) * 0.78) as u8;
-    egui::Color32::from_rgb(f(c.r()), f(c.g()), f(c.b()))
-}
-
-/// An activity's bar: rounded, red on the critical path, its float a light bar to the late
-/// finish, its name beside it; a summary as a thin bracket over its span; a milestone as a
-/// diamond.
+/// An activity's bar: flat with soft corners, red on the critical path, its float a light band
+/// to the late finish, its name beside it in a quiet grey; a summary as a slim bracket over its
+/// span; a milestone as a diamond.
 #[allow(clippy::too_many_arguments)]
 fn bar(
     painter: &egui::Painter,
@@ -1225,25 +1265,32 @@ fn bar(
     look: Look,
     t: &Tokens,
 ) {
-    let mid = row.center().y - 2.0;
+    let mid = row.center().y;
     let span = |a: Date, b: Date| (x_of(a), x_of(b) + scale);
     let label = |x: f32| {
-        let galley = painter.layout_no_wrap(name.to_string(), FontId::proportional(11.0), t.text_dim);
-        let at = pos2(x + 6.0, mid - galley.size().y / 2.0);
-        painter.rect_filled(Rect::from_min_size(at - vec2(2.0, 0.0), galley.size() + vec2(4.0, 0.0)), 2.0, look.background);
-        painter.galley(at, galley, t.text_dim);
+        let galley = painter.layout_no_wrap(name.to_string(), FontId::proportional(11.5), t.text_dim);
+        // Clear of the relationship line that leaves the bar's end and turns down.
+        painter.galley(pos2(x + 10.0, mid - galley.size().y / 2.0), galley, t.text_dim);
+    };
+    let ring = |rect: Rect, radius: f32| {
+        if look.selected {
+            painter.rect_stroke(rect.expand(1.5), radius + 1.5, Stroke::new(1.5, t.accent), StrokeKind::Outside);
+        }
     };
     if look.summary {
         let (l, r) = span(s.early_start, s.early_finish);
-        let color = t.text.gamma_multiply(0.8);
-        painter.rect_filled(Rect::from_min_max(pos2(l, mid - 3.0), pos2(r, mid + 1.0)), 1.0, color);
+        let color = t.text.gamma_multiply(0.75);
+        let body = Rect::from_min_max(pos2(l, mid - 2.5), pos2(r, mid + 1.5));
+        painter.rect_filled(body, 1.0, color);
         for x in [l, r] {
+            let dx = if x == l { 1.0 } else { -1.0 };
             painter.add(egui::Shape::convex_polygon(
-                vec![pos2(x - 3.5, mid + 1.0), pos2(x + 3.5, mid + 1.0), pos2(x, mid + 6.0)],
+                vec![pos2(x, mid + 1.5), pos2(x + dx * 5.0, mid + 1.5), pos2(x, mid + 6.0)],
                 color,
                 Stroke::NONE,
             ));
         }
+        ring(body, 1.0);
         return;
     }
     // What happened in green: a completed activity whole, an activity under way up to the data date.
@@ -1257,39 +1304,36 @@ fn bar(
     if kind.is_milestone() || s.early_start > s.early_finish {
         // A start milestone at the morning of its day, a finish milestone at the evening.
         let x = if kind == ActivityKind::FinishMilestone { x_of(s.early_finish) + scale } else { x_of(s.early_start) };
-        let r = 6.5;
+        let r = 5.5;
         let diamond = vec![pos2(x, mid - r), pos2(x + r, mid), pos2(x, mid + r), pos2(x - r, mid)];
-        let edge = if look.selected { Stroke::new(2.0, t.accent) } else { Stroke::new(1.0, darker(color)) };
+        let edge = if look.selected { Stroke::new(1.5, t.accent) } else { Stroke::NONE };
         painter.add(egui::Shape::convex_polygon(diamond, color, edge));
         label(x + r);
         return;
     }
     let (l, r) = span(s.early_start, s.early_finish);
     let r = r.max(l + 3.0);
-    // The float first, under the bar's end: a light band to the late finish, with a tick there.
+    let radius = 3.0_f32.min((r - l) / 2.0);
+    // The float first, after the bar's end: a light band to the late finish, a tick there.
     if look.float && s.total_float > 0 {
         let (_, lr) = span(s.late_start, s.late_finish);
-        let band = Rect::from_min_max(pos2(r - 2.0, mid - 2.0), pos2(lr, mid + 2.0));
-        painter.rect_filled(band, 0.0, color.gamma_multiply(0.28));
+        let band = Rect::from_min_max(pos2(r - 2.0, mid - 1.5), pos2(lr, mid + 1.5));
+        painter.rect_filled(band, 1.0, color.gamma_multiply(0.3));
         painter.vline(lr, (mid - 4.0)..=(mid + 4.0), Stroke::new(1.0, color.gamma_multiply(0.6)));
     }
-    let body = Rect::from_min_max(pos2(l, mid - 6.0), pos2(r, mid + 6.0));
-    let edge = if look.selected { Stroke::new(2.0, t.accent) } else { Stroke::new(1.0, darker(color)) };
-    painter.rect(body, 0.0, color, edge, StrokeKind::Inside);
-    // A highlight along the top, for a little depth.
-    painter.rect_filled(
-        Rect::from_min_max(pos2(l + 2.0, mid - 5.0), pos2((r - 2.0).max(l + 2.0), mid - 3.5)),
-        0.0,
-        egui::Color32::from_white_alpha(46),
-    );
+    let body = Rect::from_min_max(pos2(l, mid - 5.5), pos2(r, mid + 5.5));
+    painter.rect_filled(body, radius, color);
     if s.status == Status::InProgress
         && let Some(d) = look.data_date
     {
         let done = x_of(d).clamp(l, r);
         if done > l {
-            painter.rect_filled(Rect::from_min_max(pos2(l, mid - 6.0), pos2(done, mid + 6.0)), egui::CornerRadius::ZERO, t.green);
+            let part = Rect::from_min_max(body.min, pos2(done, body.bottom()));
+            let corners = egui::CornerRadius { nw: radius as u8, sw: radius as u8, ne: 0, se: 0 };
+            painter.rect_filled(part, corners, t.green);
         }
     }
+    ring(body, radius);
     let end = if look.float && s.total_float > 0 { span(s.late_start, s.late_finish).1 } else { r };
     label(end);
 }
@@ -1315,10 +1359,10 @@ fn link(painter: &egui::Painter, from: (f32, f32), to: (f32, f32), from_finish: 
         let mid = y0 + down * (ROW / 2.0);
         points.extend([pos2(out, y0), pos2(out, mid), pos2(into, mid), pos2(into, y1), pos2(x1, y1)]);
     }
-    painter.add(egui::Shape::line(points, Stroke::new(1.2, color)));
+    painter.add(egui::Shape::line(points, Stroke::new(1.0, color)));
     let head = if to_start { -1.0 } else { 1.0 };
     painter.add(egui::Shape::convex_polygon(
-        vec![pos2(x1, y1), pos2(x1 + head * 5.0, y1 - 3.5), pos2(x1 + head * 5.0, y1 + 3.5)],
+        vec![pos2(x1, y1), pos2(x1 + head * 4.5, y1 - 3.0), pos2(x1 + head * 4.5, y1 + 3.0)],
         color,
         Stroke::NONE,
     ));
