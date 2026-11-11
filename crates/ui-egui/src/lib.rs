@@ -181,7 +181,7 @@ const RAIL_WIDTH: f32 = 44.0;
 /// The height of the open views' tabs over the main area.
 const VIEW_TABS: f32 = 30.0;
 const SIDE_WIDTH: f32 = 320.0;
-const SIDE_STRIP: f32 = 30.0;
+const SIDE_STRIP: f32 = 38.0;
 const CALCULATION_HEIGHT: f32 = 230.0;
 
 pub struct PerthApp {
@@ -678,7 +678,6 @@ impl PerthApp {
             Action::Calendars => self.side = Some(Side::Calendars),
             Action::Levelling => self.side = Some(Side::Levelling),
             Action::Pert => self.side = Some(Side::Pert),
-            Action::Zoom(z) => self.zoom = z.clamp(50, 200),
             Action::ToggleAutoSave => self.toggle_autosave(),
             Action::Link | Action::Unlink => {
                 let ids = self.chosen_ids();
@@ -944,12 +943,15 @@ impl PerthApp {
         let t = Tokens::get(ui.ctx());
         let whole = ui.max_rect().expand(8.0);
         ui.painter().rect_filled(whole, 0.0, t.window);
+        // Everything runs to the window's edges, as Pearl's: rails, bars and panes are flush,
+        // parted by hairlines.
+        let mut root = ui.new_child(egui::UiBuilder::new().max_rect(whole).layout(egui::Layout::top_down(egui::Align::Min)));
+        root.set_clip_rect(whole.intersect(ui.clip_rect()));
+        let ui = &mut root;
         if self.presenting {
             self.presentation(ui);
             return;
         }
-        // The chrome — header and toolbar — is one surface, painted once its height is known.
-        let chrome = ui.painter().add(egui::Shape::Noop);
         ui.spacing_mut().item_spacing.y = 0.0;
         let state = chrome::State {
             name: &name,
@@ -977,15 +979,12 @@ impl PerthApp {
             chosen: self.chosen_ids().len(),
             nested: self.selected.and_then(|i| self.session.project.activities.get(i)).is_some_and(|a| a.parent.is_some()),
             today: self.options.today.is_some(),
-            zoom: self.zoom,
             toolbar_hidden: self.toolbar_hidden,
         };
         let mut actions = Vec::new();
         actions.extend(chrome::header(ui, &state));
         // The File backstage covers everything under the header.
         if let Some(page) = self.backstage {
-            let bottom = ui.cursor().top();
-            ui.painter().set(chrome, egui::Shape::rect_filled(egui::Rect::from_min_max(whole.min, egui::pos2(whole.right(), bottom)), 0.0, t.ribbon));
             for action in actions {
                 self.act(ui.ctx(), action);
             }
@@ -1016,18 +1015,18 @@ impl PerthApp {
             return;
         }
         actions.extend(chrome::toolbar(ui, &state));
-        let bottom = ui.cursor().top();
-        ui.painter().set(chrome, egui::Shape::rect_filled(egui::Rect::from_min_max(whole.min, egui::pos2(whole.right(), bottom)), 0.0, t.ribbon));
+        if self.toolbar_hidden {
+            ui.add_space(6.0);
+        }
+        ui.painter().hline(whole.x_range(), ui.cursor().top(), egui::Stroke::new(1.0, t.border));
         for action in actions {
             self.act(ui.ctx(), action);
         }
 
-        let body = (ui.available_height() - STATUS_HEIGHT - 8.0).max(100.0);
-        ui.add_space(6.0);
-        let gap = 6.0;
+        let body = (ui.available_height() - STATUS_HEIGHT).max(100.0);
         // The activities take the width; a side pane, when open, sits beside the strip.
-        let side_width = if self.side.is_some() { SIDE_WIDTH + gap } else { 0.0 };
-        let left_width = (ui.available_width() - RAIL_WIDTH - SIDE_STRIP - side_width - 2.0 * gap).floor();
+        let side_width = if self.side.is_some() { SIDE_WIDTH } else { 0.0 };
+        let left_width = (ui.available_width() - RAIL_WIDTH - SIDE_STRIP - side_width).floor();
         // Each column in a place of its own, clipped to it: what one holds never pushes the next
         // (a wide calendar row once pushed the strip out of the window).
         let (area, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), body), egui::Sense::hover());
@@ -1045,7 +1044,7 @@ impl PerthApp {
         // The active view, and the open views as tabs under it, as a spreadsheet's sheets: each
         // its own place, so a view that fills its height leaves the tabs theirs.
         let above = (body - VIEW_TABS - 4.0).max(100.0);
-        let x = area.left() + RAIL_WIDTH + gap;
+        let x = area.left() + RAIL_WIDTH;
         let mut view = place(ui, x, area.top(), left_width, above);
         match self.view {
             View::Activities => self.left_pane(&mut view, above),
@@ -1055,8 +1054,8 @@ impl PerthApp {
         let mut tabs = place(ui, x, area.top() + above, left_width, body - above);
         self.view_tabs(&mut tabs);
         if let Some(side) = self.side {
-            let mut pane = column(ui, area.right() - SIDE_STRIP - gap - SIDE_WIDTH, SIDE_WIDTH);
-            theme::card(&t).fill(t.paper).show(&mut pane, |ui| {
+            let mut pane = column(ui, area.right() - SIDE_STRIP - SIDE_WIDTH, SIDE_WIDTH);
+            theme::sheet(&t).show(&mut pane, |ui| {
                 ui.set_min_size(ui.available_size());
                 match side {
                     Side::Details => self.details(ui),
@@ -1073,10 +1072,10 @@ impl PerthApp {
                     Side::Organisation => self.organisation_pane(ui),
                 }
             });
+            pane.painter().vline(pane.max_rect().left() + 0.5, pane.max_rect().y_range(), egui::Stroke::new(1.0, t.border));
         }
         let mut strip = column(ui, area.right() - SIDE_STRIP, SIDE_STRIP);
         self.side_strip(&mut strip);
-        ui.add_space(2.0);
         self.status_line(ui);
         self.quick_note_window(ui.ctx());
         let zoom = self.zoom as f32 / 100.0;
@@ -1150,7 +1149,6 @@ impl PerthApp {
         // A strip along the bottom, as a spreadsheet's sheet tabs: square, the active one lifted
         // in the paper's colour with the brand's line along its foot.
         let (strip, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), VIEW_TABS + 4.0), egui::Sense::hover());
-        ui.painter().rect_filled(strip, 0.0, t.ribbon);
         ui.painter().hline(strip.x_range(), strip.top(), egui::Stroke::new(1.0, t.border));
         let mut row =
             ui.new_child(egui::UiBuilder::new().max_rect(strip.shrink2(egui::vec2(6.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Min)));
@@ -1170,20 +1168,20 @@ impl PerthApp {
                 let (rect, response) = ui.allocate_exact_size(egui::vec2(width, VIEW_TABS), egui::Sense::click());
                 response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, on, &name));
                 if on {
-                    ui.painter().rect_filled(rect, 0.0, t.paper);
-                    ui.painter().hline(rect.x_range(), rect.bottom() - 1.0, egui::Stroke::new(3.0, crate::splash::BRAND));
+                    ui.painter().rect_filled(rect, 0.0, t.grid_bg);
+                    ui.painter().hline(rect.x_range(), rect.top() + 1.0, egui::Stroke::new(2.0, t.accent));
                 } else if response.hovered() {
                     ui.painter().rect_filled(rect, 0.0, t.hover);
                 }
-                // A hairline between tabs.
-                ui.painter().vline(rect.right(), (rect.top() + 6.0)..=(rect.bottom() - 6.0), egui::Stroke::new(1.0, t.border));
-                icons::paint(
+                let ink = if on { t.text } else { t.text_dim };
+                icons::paint_mono(
                     ui.painter(),
-                    egui::Rect::from_center_size(egui::pos2(rect.left() + 18.0, rect.center().y), egui::vec2(14.0, 14.0)),
+                    egui::Rect::from_center_size(egui::pos2(rect.left() + 18.0, rect.center().y), egui::vec2(13.0, 13.0)),
                     icon,
                     &t,
+                    ink,
                 );
-                ui.painter().galley(egui::pos2(rect.left() + 30.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
+                ui.painter().galley(egui::pos2(rect.left() + 30.0, rect.center().y - galley.size().y / 2.0), galley, ink);
                 if response.clicked() {
                     choose = Some(view);
                 }
@@ -1211,7 +1209,7 @@ impl PerthApp {
     /// The network view in the space the activities take in theirs; its selection is theirs.
     fn network_view(&mut self, ui: &mut egui::Ui, height: f32) {
         let t = Tokens::get(ui.ctx());
-        let frame = egui::Frame::new().fill(t.grid_bg).stroke(egui::Stroke::new(1.0, t.border)).inner_margin(egui::Margin::same(1));
+        let frame = egui::Frame::new().fill(t.grid_bg).inner_margin(egui::Margin::same(1));
         let mut events = network::NetworkEvents::default();
         frame.show(ui, |ui| {
             let size = egui::vec2(ui.available_width(), height - 2.0);
@@ -1246,8 +1244,7 @@ impl PerthApp {
     fn view_rail(&mut self, ui: &mut egui::Ui, height: f32) {
         let t = Tokens::get(ui.ctx());
         let (rect, _) = ui.allocate_exact_size(egui::vec2(RAIL_WIDTH, height), egui::Sense::hover());
-        ui.painter().rect_filled(rect, 0.0, t.ribbon);
-        ui.painter().vline(rect.right(), rect.y_range(), egui::Stroke::new(1.0, t.border));
+        ui.painter().vline(rect.right() - 0.5, rect.y_range(), egui::Stroke::new(1.0, t.border));
         let views = [
             (Icon::Gantt, tr!("activities-view"), tr!("activities-view-tip"), View::Activities),
             (Icon::People, tr!("resources-view"), tr!("resources-view-tip"), View::Resources),
@@ -1256,36 +1253,39 @@ impl PerthApp {
         let views_len = views.len();
         for (k, (icon, name, tip, view)) in views.into_iter().enumerate() {
             let on = self.view == view;
-            let slot = egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 4.0 + 42.0 * k as f32), egui::vec2(RAIL_WIDTH - 1.0, 40.0));
+            let slot = egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 6.0 + 40.0 * k as f32), egui::vec2(RAIL_WIDTH - 1.0, 36.0));
             let response = ui.interact(slot, ui.scope_id().with(("rail", k)), egui::Sense::click());
             response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, &name));
             let painter = ui.painter();
             if on {
                 painter.rect_filled(slot, 0.0, t.accent_soft);
-                painter.rect_filled(egui::Rect::from_min_size(slot.min, egui::vec2(3.0, slot.height())), 0.0, t.accent);
+                painter.rect_filled(egui::Rect::from_min_size(slot.min, egui::vec2(2.0, slot.height())), 0.0, t.accent);
             } else if response.hovered() {
                 painter.rect_filled(slot, 0.0, t.hover);
             }
-            icons::paint(painter, egui::Rect::from_center_size(slot.center(), egui::vec2(20.0, 20.0)), icon, &t);
+            let ink = if on { t.text } else { t.text_dim };
+            icons::paint_mono(painter, egui::Rect::from_center_size(slot.center(), egui::vec2(18.0, 18.0)), icon, &t, ink);
             if response.on_hover_text(tip).clicked() {
                 self.open_view(view);
             }
         }
         // Under the views, a hairline and the activity table's switch (in their view): off, the
         // chart takes the width.
-        let top = rect.top() + 4.0 + 42.0 * views_len as f32;
-        ui.painter().hline((rect.left() + 10.0)..=(rect.right() - 11.0), top + 2.0, egui::Stroke::new(1.0, t.border));
-        let slot = egui::Rect::from_min_size(egui::pos2(rect.left(), top + 6.0), egui::vec2(RAIL_WIDTH - 1.0, 40.0));
+        let top = rect.top() + 6.0 + 40.0 * views_len as f32;
+        ui.painter().hline((rect.left() + 12.0)..=(rect.right() - 13.0), top + 1.0, egui::Stroke::new(1.0, t.header_line));
+        let slot = egui::Rect::from_min_size(egui::pos2(rect.left(), top + 6.0), egui::vec2(RAIL_WIDTH - 1.0, 36.0));
         let shown = !self.options.table_hidden;
         let name = tr!("activity-table");
         let response = ui.interact(slot, ui.scope_id().with("rail-table"), egui::Sense::click());
         response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, shown, &name));
+        let tile = egui::Rect::from_center_size(slot.center(), egui::vec2(30.0, 30.0));
         if shown {
-            ui.painter().rect_filled(slot.shrink(4.0), 0.0, t.accent_soft);
+            ui.painter().rect_filled(tile, theme::RADIUS, t.accent_soft);
         } else if response.hovered() {
-            ui.painter().rect_filled(slot.shrink(4.0), 0.0, t.hover);
+            ui.painter().rect_filled(tile, theme::RADIUS, t.hover);
         }
-        icons::paint(ui.painter(), egui::Rect::from_center_size(slot.center(), egui::vec2(18.0, 18.0)), Icon::Table, &t);
+        let ink = if shown { t.accent } else { t.text_dim };
+        icons::paint_mono(ui.painter(), egui::Rect::from_center_size(slot.center(), egui::vec2(16.0, 16.0)), Icon::Table, &t, ink);
         let tip = if shown { tr!("activity-table-hide-tip") } else { tr!("activity-table-show-tip") };
         if response.on_hover_text(tip).clicked() {
             self.options.table_hidden = shown;
@@ -1295,8 +1295,8 @@ impl PerthApp {
     /// The Activities view over the selected activity's calculation.
     fn left_pane(&mut self, ui: &mut egui::Ui, height: f32) {
         let t = Tokens::get(ui.ctx());
-        let table_height = (height - CALCULATION_HEIGHT - 6.0).max(140.0);
-        let grid = egui::Frame::new().fill(t.grid_bg).stroke(egui::Stroke::new(1.0, t.border)).inner_margin(egui::Margin::same(1));
+        let table_height = (height - CALCULATION_HEIGHT).max(140.0);
+        let grid = egui::Frame::new().fill(t.grid_bg).inner_margin(egui::Margin::same(1));
         let mut events = activities::Events::default();
         grid.show(ui, |ui| {
             let size = egui::vec2(ui.available_width(), table_height - 2.0);
@@ -1370,10 +1370,10 @@ impl PerthApp {
         if let Some((index, column, text)) = events.commit {
             self.commit(index, column, text);
         }
-        ui.add_space(6.0);
+        let top = ui.cursor().top();
         let mut schedule = false;
         let mut export = false;
-        theme::card(&t).show(ui, |ui| {
+        theme::sheet(&t).show(ui, |ui| {
             ui.set_min_size(egui::vec2(ui.available_width(), ui.available_height()));
             schedule = theme::pane_header(ui, Icon::List, &tr!("pane-calculation"), &tr!("pane-calculation-tip"), |ui| {
                 let run = chrome::accent_button(ui, Icon::Run, &tr!("schedule")).on_hover_text(tr!("schedule-tip")).clicked();
@@ -1411,6 +1411,8 @@ impl PerthApp {
                 });
             }
         });
+        // The hairline over the calculation, drawn over its sheet.
+        ui.painter().hline(ui.max_rect().x_range(), top, egui::Stroke::new(1.0, t.border));
         if schedule {
             self.run("project.schedule", json!(null));
         }
@@ -1802,15 +1804,14 @@ impl PerthApp {
         }
     }
 
-    /// The strip at the right edge: Details and Filters, their names turned down the strip. A
-    /// click opens one beside it; a click on the open one closes it.
+    /// The rail at the right edge, icons only, as Pearl's: Details, Filters, Notes, Calendars and
+    /// Levelling. A click opens one beside it; a click on the open one closes it. A filter on
+    /// shows as a dot by the Filters icon.
     fn side_strip(&mut self, ui: &mut egui::Ui) {
         let t = Tokens::get(ui.ctx());
         let rect = ui.max_rect();
-        ui.painter().rect_filled(rect, 0.0, t.ribbon);
-        ui.painter().vline(rect.left(), rect.y_range(), egui::Stroke::new(1.0, t.border));
+        ui.painter().vline(rect.left() + 0.5, rect.y_range(), egui::Stroke::new(1.0, t.border));
         let count = usize::from(self.options.critical_only) + usize::from(!self.options.search.trim().is_empty());
-        let mut top = rect.top() + 4.0;
         for (k, (side, icon, name, badge)) in [
             (Side::Details, Icon::Info, tr!("pane-details"), 0),
             (Side::Filters, Icon::Filter, tr!("filters"), count),
@@ -1821,40 +1822,25 @@ impl PerthApp {
         .into_iter()
         .enumerate()
         {
-            let painter = ui.painter();
-            let galley = painter.layout_no_wrap(name.clone(), egui::FontId::proportional(13.0), t.text);
-            let height = 28.0 + galley.size().x + if badge > 0 { 18.0 } else { 6.0 };
-            let slot = egui::Rect::from_min_size(egui::pos2(rect.left() + 1.0, top), egui::vec2(rect.width() - 1.0, height));
-            top += height + 6.0;
+            let slot =
+                egui::Rect::from_min_size(egui::pos2(rect.left() + 1.0, rect.top() + 6.0 + 36.0 * k as f32), egui::vec2(rect.width() - 1.0, 34.0));
             let response = ui.interact(slot, ui.scope_id().with(("side", k)), egui::Sense::click());
             let on = self.side == Some(side);
             response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, &name));
             let painter = ui.painter();
+            let tile = egui::Rect::from_center_size(slot.center(), egui::vec2(30.0, 30.0));
             if on {
-                painter.rect_filled(slot, 0.0, t.accent_soft);
-                painter.rect_filled(
-                    egui::Rect::from_min_size(egui::pos2(slot.right() - 3.0, slot.top()), egui::vec2(3.0, slot.height())),
-                    0.0,
-                    t.accent,
-                );
+                painter.rect_filled(tile, theme::RADIUS, t.accent_soft);
             } else if response.hovered() {
-                painter.rect_filled(slot, 0.0, t.hover);
+                painter.rect_filled(tile, theme::RADIUS, t.hover);
             }
-            let x = slot.center().x;
-            icons::paint(painter, egui::Rect::from_center_size(egui::pos2(x, slot.top() + 13.0), egui::vec2(14.0, 14.0)), icon, &t);
-            // Turned a quarter clockwise, it reads downwards and its height lies to the left of `at`.
-            let at = egui::pos2(x + galley.size().y / 2.0, slot.top() + 26.0);
-            painter.add(egui::epaint::TextShape::new(at, galley, if on { t.accent } else { t.text }).with_angle(std::f32::consts::FRAC_PI_2));
+            let ink = if on { t.accent } else { t.text_dim };
+            icons::paint_mono(painter, egui::Rect::from_center_size(slot.center(), egui::vec2(15.0, 15.0)), icon, &t, ink);
             if badge > 0 {
-                painter.text(
-                    egui::pos2(x, slot.bottom() - 9.0),
-                    egui::Align2::CENTER_CENTER,
-                    badge.to_string(),
-                    egui::FontId::proportional(12.0),
-                    t.accent,
-                );
+                painter.circle_filled(tile.right_top() + egui::vec2(-6.0, 6.0), 3.0, t.accent);
             }
-            if response.on_hover_text(name).clicked() {
+            let tip = if badge > 0 { format!("{name} ({badge})") } else { name.clone() };
+            if response.on_hover_text(tip).clicked() {
                 self.side = if on { None } else { Some(side) };
             }
         }
@@ -2087,7 +2073,7 @@ impl PerthApp {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), STATUS_HEIGHT), egui::Sense::hover());
         ui.painter().hline(rect.x_range(), rect.top(), egui::Stroke::new(1.0, t.border));
         let mut row = ui
-            .new_child(egui::UiBuilder::new().max_rect(rect.shrink2(egui::vec2(10.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+            .new_child(egui::UiBuilder::new().max_rect(rect.shrink2(egui::vec2(12.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
         let ready = tr!("status-ready");
         let (text, color) = match &self.status {
             Some(Status::Info(s)) => (s.as_str(), t.text_dim),
@@ -2113,10 +2099,20 @@ impl PerthApp {
         let mut zoom = self.zoom;
         row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
+            // The zoom's figure opens the usual ones; a double click puts it back to 100%.
             let percent = ui.add(egui::Label::new(egui::RichText::new(format!("{zoom}%")).color(t.text_dim).size(12.0)).sense(egui::Sense::click()));
-            if percent.on_hover_text(tr!("zoom-reset")).clicked() {
+            percent.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, tr!("zoom-named", n = zoom)));
+            if percent.double_clicked() {
                 zoom = 100;
             }
+            let percent = percent.on_hover_text(tr!("zoom-reset"));
+            egui::Popup::menu(&percent).show(|ui| {
+                for z in chrome::ZOOMS {
+                    if ui.radio(zoom == z, format!("{z}%")).clicked() {
+                        zoom = z;
+                    }
+                }
+            });
             if icon_button(ui, Icon::Plus, &tr!("zoom-in")) {
                 zoom = (zoom / 10 * 10 + 10).min(200);
             }
@@ -2126,7 +2122,7 @@ impl PerthApp {
                 zoom = (zoom.div_ceil(10) * 10).saturating_sub(10).max(50);
             }
             ui.add_space(16.0);
-            ui.label(egui::RichText::new(facts.join("   ·   ")).color(t.text_dim).size(12.0));
+            ui.label(egui::RichText::new(facts.join("      ")).color(t.text_dim).size(12.0));
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(egui::Label::new(egui::RichText::new(text).color(color).size(12.0)).truncate());
             });
@@ -2141,9 +2137,10 @@ pub(crate) fn icon_button(ui: &mut egui::Ui, icon: Icon, name: &str) -> bool {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
     if response.hovered() {
-        ui.painter().rect_filled(rect, 0.0, t.hover);
+        ui.painter().rect_filled(rect, theme::RADIUS, t.hover);
     }
-    icons::paint(ui.painter(), rect.shrink(4.0), icon, &t);
+    let ink = if response.hovered() { t.text } else { t.text_dim };
+    icons::paint_mono(ui.painter(), rect.shrink(4.0), icon, &t, ink);
     response.on_hover_text(name).clicked()
 }
 

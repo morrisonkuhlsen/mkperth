@@ -1,16 +1,22 @@
 //! Design tokens: the colours every part of the window is painted with, light and dark. The
-//! layout follows online spreadsheets (a quiet header with the menus, one slim toolbar, a grid
-//! with headers, tabs and a status bar at the bottom); the palette is the house's own (MK Sigma's),
-//! accented with Morrison Kühlsen's blue until MK Perth's brand is chosen (#18).
+//! layout is the house's quiet one, as Pearl has it: a slim title bar with the name in the
+//! middle, a row of menus, one row of small single-colour icons, rails of icons flush with both
+//! edges and a status bar, all on one warm surface, with the schedule on a lighter sheet. The
+//! palette is Pearl's ivory in layers, accented with Morrison Kühlsen's blue until MK Perth's
+//! brand is chosen (#18); the dark one is the house's ink in layers of the same blue-black.
 
 use egui::{Color32, Stroke, Visuals};
+
+/// The corners of menus, fields, buttons and dialogs: soft, as Pearl's. What runs to an edge of
+/// the window (rails, bars, panes) stays square.
+pub const RADIUS: u8 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tokens {
     pub dark: bool,
-    /// Behind everything, the toolbar's band and the status bar.
+    /// Behind everything: the title bar, the menus, the toolbar, the rails and the status bar.
     pub window: Color32,
-    /// The header and the cards (syntax, steps, Output).
+    /// Raised a step from the window: cards, dialogs.
     pub ribbon: Color32,
     pub border: Color32,
     pub text: Color32,
@@ -27,9 +33,9 @@ pub struct Tokens {
     /// Cells' text; dimmed for missing values.
     pub cell_text: Color32,
     pub input_bg: Color32,
-    /// The Output's page.
+    /// The panes' sheet beside the schedule.
     pub paper: Color32,
-    /// Icon colours beside the accent: data, analysis, charts, warnings.
+    /// Colours of the drawings beside the accent: data, analysis, charts, warnings.
     pub blue: Color32,
     pub green: Color32,
     pub orange: Color32,
@@ -38,63 +44,67 @@ pub struct Tokens {
     pub warn: Color32,
 }
 
+const fn rgb(hex: u32) -> Color32 {
+    Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
+}
+
 impl Tokens {
     pub fn light() -> Tokens {
         Tokens {
             dark: false,
-            window: Color32::from_rgb(0xF2, 0xF2, 0xF5),
-            ribbon: Color32::WHITE,
-            border: Color32::from_rgb(0xE0, 0xE0, 0xE6),
-            text: Color32::from_rgb(0x22, 0x23, 0x2A),
-            text_dim: Color32::from_rgb(0x62, 0x64, 0x70),
+            window: rgb(0xF4EFE7),
+            ribbon: rgb(0xFBF8F2),
+            border: rgb(0xE6DDD0),
+            text: rgb(0x2A2622),
+            text_dim: rgb(0x655D54),
             // Morrison Kühlsen's blue.
-            accent: Color32::from_rgb(0x25, 0x40, 0xD8),
-            accent_soft: Color32::from_rgb(0xE3, 0xE8, 0xFC),
-            hover: Color32::from_rgb(0xEA, 0xEA, 0xEF),
-            pressed: Color32::from_rgb(0xDC, 0xDC, 0xE4),
-            grid_bg: Color32::WHITE,
-            gridline: Color32::from_rgb(0xE3, 0xE3, 0xE8),
-            header_bg: Color32::from_rgb(0xF7, 0xF7, 0xFA),
-            header_text: Color32::from_rgb(0x44, 0x46, 0x52),
-            header_line: Color32::from_rgb(0xD4, 0xD4, 0xDC),
-            cell_text: Color32::from_rgb(0x14, 0x14, 0x18),
-            input_bg: Color32::WHITE,
-            paper: Color32::WHITE,
-            blue: Color32::from_rgb(0x1F, 0x6F, 0xC5),
-            green: Color32::from_rgb(0x1E, 0x8A, 0x5A),
-            orange: Color32::from_rgb(0xE0, 0x7A, 0x1F),
-            red: Color32::from_rgb(0xC9, 0x3C, 0x3C),
-            danger: Color32::from_rgb(0xC4, 0x2B, 0x1C),
-            warn: Color32::from_rgb(0xA3, 0x62, 0x00),
+            accent: rgb(0x2540D8),
+            accent_soft: rgb(0xE4E4F2),
+            hover: rgb(0xEDE5D9),
+            pressed: rgb(0xE3D9CA),
+            grid_bg: rgb(0xFFFDF9),
+            gridline: rgb(0xEDE6DB),
+            header_bg: rgb(0xF8F4ED),
+            header_text: rgb(0x5C544B),
+            header_line: rgb(0xDDD3C5),
+            cell_text: rgb(0x1F1B17),
+            input_bg: rgb(0xFFFDF9),
+            paper: rgb(0xFFFDF9),
+            blue: rgb(0x1F6FC5),
+            green: rgb(0x1E8A5A),
+            orange: rgb(0xE07A1F),
+            red: rgb(0xC93C3C),
+            danger: rgb(0xC42B1C),
+            warn: rgb(0xA36200),
         }
     }
 
     pub fn dark() -> Tokens {
         Tokens {
             dark: true,
-            window: Color32::from_rgb(0x1F, 0x20, 0x25),
-            ribbon: Color32::from_rgb(0x2A, 0x2B, 0x31),
-            border: Color32::from_rgb(0x3B, 0x3C, 0x44),
-            text: Color32::from_rgb(0xEC, 0xEC, 0xF1),
-            text_dim: Color32::from_rgb(0xA8, 0xAA, 0xB6),
-            accent: Color32::from_rgb(0x8E, 0x9C, 0xFF),
-            accent_soft: Color32::from_rgb(0x2E, 0x34, 0x5E),
-            hover: Color32::from_rgb(0x37, 0x38, 0x40),
-            pressed: Color32::from_rgb(0x43, 0x44, 0x4E),
-            grid_bg: Color32::from_rgb(0x24, 0x25, 0x2B),
-            gridline: Color32::from_rgb(0x36, 0x37, 0x3F),
-            header_bg: Color32::from_rgb(0x2C, 0x2D, 0x34),
-            header_text: Color32::from_rgb(0xC6, 0xC7, 0xD0),
-            header_line: Color32::from_rgb(0x44, 0x45, 0x4F),
-            cell_text: Color32::from_rgb(0xEC, 0xEC, 0xF1),
-            input_bg: Color32::from_rgb(0x1A, 0x1B, 0x20),
-            paper: Color32::from_rgb(0x26, 0x27, 0x2D),
-            blue: Color32::from_rgb(0x6C, 0xAE, 0xF5),
-            green: Color32::from_rgb(0x5C, 0xC5, 0x8E),
-            orange: Color32::from_rgb(0xF2, 0xA0, 0x55),
-            red: Color32::from_rgb(0xF0, 0x7A, 0x7A),
-            danger: Color32::from_rgb(0xF1, 0x70, 0x5F),
-            warn: Color32::from_rgb(0xF0, 0xC0, 0x60),
+            window: rgb(0x14161C),
+            ribbon: rgb(0x1B1E25),
+            border: rgb(0x262A33),
+            text: rgb(0xE6E8EC),
+            text_dim: rgb(0x9AA1AD),
+            accent: rgb(0x8E9CFF),
+            accent_soft: rgb(0x262C4E),
+            hover: rgb(0x232731),
+            pressed: rgb(0x2B303B),
+            grid_bg: rgb(0x1B1E25),
+            gridline: rgb(0x2A2E37),
+            header_bg: rgb(0x181B21),
+            header_text: rgb(0xB4BAC5),
+            header_line: rgb(0x2E333D),
+            cell_text: rgb(0xE6E8EC),
+            input_bg: rgb(0x101217),
+            paper: rgb(0x1B1E25),
+            blue: rgb(0x6CAEF5),
+            green: rgb(0x5CC58E),
+            orange: rgb(0xF2A055),
+            red: rgb(0xF07A7A),
+            danger: rgb(0xFF9585),
+            warn: rgb(0xF0C060),
         }
     }
 
@@ -132,10 +142,10 @@ pub fn apply(ctx: &egui::Context) {
         v.widgets.active.weak_bg_fill = t.pressed;
         v.widgets.active.bg_fill = t.pressed;
         for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
-            w.corner_radius = egui::CornerRadius::ZERO;
+            w.corner_radius = egui::CornerRadius::same(RADIUS);
         }
-        v.window_corner_radius = egui::CornerRadius::ZERO;
-        v.menu_corner_radius = egui::CornerRadius::ZERO;
+        v.window_corner_radius = egui::CornerRadius::same(RADIUS + 2);
+        v.menu_corner_radius = egui::CornerRadius::same(RADIUS);
         // A dialog's title bar is the open state's fill: the faint header tone, not a grey band.
         v.widgets.open.weak_bg_fill = t.header_bg;
         v.widgets.open.bg_fill = t.header_bg;
@@ -165,9 +175,15 @@ pub fn apply(ctx: &egui::Context) {
     });
 }
 
-/// A white (or dark) panel with a hairline border: the syntax editor, the Output, the Filters.
+/// A panel with a hairline border and soft corners: a card inside a pane.
 pub fn card(t: &Tokens) -> egui::Frame {
-    egui::Frame::new().fill(t.ribbon).stroke(Stroke::new(1.0, t.border)).inner_margin(egui::Margin::symmetric(12, 8))
+    egui::Frame::new().fill(t.ribbon).stroke(Stroke::new(1.0, t.border)).corner_radius(RADIUS).inner_margin(egui::Margin::symmetric(12, 8))
+}
+
+/// A sheet flush with what is round it, edged by the hairlines its neighbours draw: the panes
+/// and the calculation.
+pub fn sheet(t: &Tokens) -> egui::Frame {
+    egui::Frame::new().fill(t.paper).inner_margin(egui::Margin::symmetric(14, 8))
 }
 
 /// Text and icons on the accent colour: white on the light theme's deep blue, near-black on the
@@ -187,7 +203,8 @@ pub fn pane_header<R>(ui: &mut egui::Ui, icon: crate::icons::Icon, title: &str, 
         .horizontal(|ui| {
             ui.set_min_height(HEADER_HEIGHT);
             ui.spacing_mut().item_spacing.x = 6.0;
-            crate::icons::show(ui, icon, 14.0);
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+            crate::icons::paint_mono(ui.painter(), rect, icon, &t, t.text_dim);
             let label = ui.label(egui::RichText::new(title).size(13.5).color(t.text).strong());
             if !tip.is_empty() {
                 label.on_hover_text(tip);
@@ -216,7 +233,7 @@ pub fn ghost(ui: &mut egui::Ui, text: &str, tip: &str, enabled: bool) -> bool {
     let color = if !enabled {
         t.text_dim.gamma_multiply(0.45)
     } else if response.hovered() {
-        ui.painter().rect_filled(rect, 0.0, t.hover);
+        ui.painter().rect_filled(rect, RADIUS, t.hover);
         t.text
     } else {
         t.text_dim

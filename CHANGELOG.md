@@ -10,6 +10,15 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- A quieter window, as Pearl's: a slim title bar (AutoSave, undo and redo on the left; the mark
+  and the project's name in the middle; Schedule, presenting, theme and search on the right), a
+  row of menus with File in the accent, and one toolbar of small single-colour icons without
+  group names. The rails of views and panes run flush with the window's edges, the panes' rail
+  shows icons only, and the panes and the calculation are parted by hairlines instead of gaps.
+  The palette is warm ivory in layers (the dark one the house's blue-black), with soft corners
+  on menus, fields and buttons. The zoom moved to the status bar: its figure opens the usual
+  ones.
+
 ## [0.1.0] - 2026-10-26
 
 - Releases: each version published on GitHub for Linux, Windows and macOS (the desktop app,

@@ -492,9 +492,9 @@ fn quick(app: PerthApp) -> Harness<'static, PerthApp> {
 // Where the sample's rows and ruler are in the 1360 × 820 window: W1, M0, A10, A20, A30 down
 // the table; the ruler's months over its days; the chart past the table.
 const TABLE_X: f32 = 200.0;
-const ROW_A10: f32 = 223.0;
-const ROW_A20: f32 = 247.0;
-const ROW_A30: f32 = 271.0;
+const ROW_A10: f32 = 214.0;
+const ROW_A20: f32 = 238.0;
+const ROW_A30: f32 = 262.0;
 
 /// Dragging over rows of the table chooses them all; Ctrl and a click adds one; Delete takes
 /// every one chosen, in one change.
@@ -543,7 +543,7 @@ fn double_clicks_on_the_chart_add_notes_and_open_details() {
     assert!(h.state().quick_note.is_none());
     // January 2027 on the ruler's months (a fresh window: the name just typed keeps the focus).
     let mut h = quick(PerthApp::default());
-    double_click(&mut h, egui::pos2(1090.0, 131.0));
+    double_click(&mut h, egui::pos2(1085.0, 122.0));
     let note = h.state().quick_note.clone().expect("a month's window");
     assert_eq!((note.month, note.from.to_string()), (true, "2027-01-01".to_string()));
     h.key_press(egui::Key::Escape);
@@ -613,8 +613,8 @@ fn ties_drawn_in_the_network() {
     let at = |id: &str| {
         let i = h.state().session.project.activities.iter().position(|a| a.id == id).unwrap();
         let (c, r) = lay.place[i].unwrap();
-        // The view's top left (58, 112) and its margin of 16; boxes 168 by 64 in cells of 224 by 82.
-        egui::Rect::from_min_size(egui::pos2(58.0 + 16.0 + c as f32 * 224.0, 112.0 + 16.0 + r as f32 * 82.0), egui::vec2(168.0, 64.0))
+        // The view's top left (44, 103) and its margin of 16; boxes 168 by 64 in cells of 224 by 82.
+        egui::Rect::from_min_size(egui::pos2(44.0 + 16.0 + c as f32 * 224.0, 103.0 + 16.0 + r as f32 * 82.0), egui::vec2(168.0, 64.0))
     };
     let (m0, a20) = (at("M0"), at("A20"));
     let tied = |h: &Harness<'static, PerthApp>, kind| {
@@ -646,9 +646,9 @@ fn drag(h: &mut Harness<'static, PerthApp>, from: egui::Pos2, to: egui::Pos2) {
 }
 
 // B10, Earthworks, has 19 days of float: its bar is the blue one on its row, from 25 November.
-const ROW_B10: f32 = 343.0;
-const B10_MIDDLE: f32 = 981.0;
-const B10_FINISH_EDGE: f32 = 989.0;
+const ROW_B10: f32 = 334.0;
+const B10_MIDDLE: f32 = 970.0;
+const B10_FINISH_EDGE: f32 = 978.0;
 
 /// A bar dragged later starts on or after its new day, and the dates follow; its finish edge
 /// dragged makes it longer. Each is one undo.
@@ -707,8 +707,8 @@ fn resources_are_levelled_in_their_pane() {
 }
 
 // A10's start and finish cells, from the table's left edge: ID, name and duration before them.
-const A10_START: f32 = 440.0;
-const A10_FINISH: f32 = 520.0;
+const A10_START: f32 = 426.0;
+const A10_FINISH: f32 = 506.0;
 
 /// A double click on a start or finish cell opens a month of days over it: a day picked for
 /// the start moves A10 there (on or after), one for the finish stretches it; each one undo.
@@ -959,8 +959,8 @@ fn codes_added_and_a_column_sorts() {
     h.run_steps(2);
     assert!(h.state().session.project.classification.code("Phase").is_some());
     // The title "Total float": the table's eighth column (ID 84, name 230, duration 60, four
-    // dates of 84 from x 58), in the header over the first row.
-    let (x, header_y) = (58.0 + 84.0 + 230.0 + 60.0 + 4.0 * 84.0 + 30.0, ROW_A10 - 2.0 * 24.0 - 22.0);
+    // dates of 84 from x 44), in the header over the first row.
+    let (x, header_y) = (44.0 + 84.0 + 230.0 + 60.0 + 4.0 * 84.0 + 30.0, ROW_A10 - 2.0 * 24.0 - 22.0);
     click(&mut h, egui::pos2(x, header_y), egui::Modifiers::NONE);
     assert_eq!(h.state().options.sort, Some((mkperth_ui_egui::activities::SortBy::Column(7), false)));
     click(&mut h, egui::pos2(x, header_y), egui::Modifiers::NONE);
@@ -978,7 +978,7 @@ fn the_network_view() {
     h.run_steps(3);
     assert_eq!(h.state().view, mkperth_ui_egui::View::Network);
     // M0's box is the first, at the view's top left.
-    click(&mut h, egui::pos2(58.0 + 16.0 + 60.0, 112.0 + 16.0 + 30.0), egui::Modifiers::NONE);
+    click(&mut h, egui::pos2(44.0 + 16.0 + 60.0, 103.0 + 16.0 + 30.0), egui::Modifiers::NONE);
     let m0 = h.state().session.project.activities.iter().position(|a| a.id == "M0");
     assert_eq!(h.state().selected, m0);
     h.get_by_label("The whole network in view").click();

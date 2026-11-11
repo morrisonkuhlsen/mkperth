@@ -99,6 +99,27 @@ pub enum Icon {
     Latex,
 }
 
+/// Draws `icon` in one colour, `ink`, as the chrome's quiet icons are: outlines and fills alike,
+/// the paper inside left as it is.
+pub fn paint_mono(painter: &Painter, rect: Rect, icon: Icon, t: &Tokens, ink: Color32) {
+    let mono = Tokens {
+        text: ink,
+        text_dim: ink,
+        accent: ink,
+        accent_soft: ink.gamma_multiply(0.25),
+        blue: ink,
+        green: ink,
+        orange: ink,
+        red: ink,
+        danger: ink,
+        warn: ink,
+        cell_text: ink,
+        header_text: ink,
+        ..*t
+    };
+    paint(painter, rect, icon, &mono);
+}
+
 /// Draws `icon` in `rect` (square) in its own colours: the theme's text for outlines and the
 /// accent, blue, green, orange and red where the drawing calls for them (MK Sigma draws the same
 /// set in the accent alone; MK Perth keeps the colours).

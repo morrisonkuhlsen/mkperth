@@ -262,7 +262,7 @@ impl PerthApp {
         // The table of resources, as the activities' is drawn: a header band, a row each, the
         // columns at fixed widths; then the forms to add a resource and a role, lined up.
         let top = (height * 0.4).max(200.0);
-        theme::card(&t).show(ui, |ui| {
+        theme::sheet(&t).show(ui, |ui| {
             ui.set_min_size(egui::vec2(ui.available_width(), top));
             if theme::pane_header(ui, Icon::People, &tr!("resources-view"), &tr!("resources-view-tip"), |ui| {
                 theme::ghost(ui, &tr!("level-menu"), &tr!("pane-levelling-tip"), true)
@@ -395,9 +395,11 @@ impl PerthApp {
                 ui.end_row();
             });
         });
-        ui.add_space(6.0);
+        // A hairline between the two sheets.
+        let (line, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        ui.painter().rect_filled(line, 0.0, t.border);
         // The selected resource: its details beside its assignments.
-        theme::card(&t).show(ui, |ui| {
+        theme::sheet(&t).show(ui, |ui| {
             ui.set_min_size(egui::vec2(ui.available_width(), ui.available_height()));
             // Details, assignments and the histogram scroll when the window is short.
             egui::ScrollArea::vertical().id_salt("resource-detail").auto_shrink(false).show(ui, |ui| {

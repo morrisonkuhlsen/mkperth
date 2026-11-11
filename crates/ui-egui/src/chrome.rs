@@ -1,7 +1,8 @@
-//! The top of the window, quiet as an online spreadsheet's: a header with the mark, the project's
-//! name and whether it is saved, the menus (File, Edit, Project, View) under the name, and search,
-//! theme and the Schedule button on the right; under it one slim toolbar of small icons in a
-//! rounded band. Buttons only report what was asked for; the app acts through the session.
+//! The top of the window, quiet as Pearl's: a slim title bar (AutoSave, undo and redo on the
+//! left, the mark and the project's name in the middle, Schedule, presenting, theme and search on
+//! the right), a row of menus (File, Edit, Project, View) and one row of small single-colour icons
+//! in groups parted by hairlines, all on the window's surface. Buttons only report what was asked
+//! for; the app acts through the session.
 
 use crate::View;
 use crate::icons::{self, Icon};
@@ -33,8 +34,6 @@ pub(crate) enum Action {
     ToggleToolbar,
     Search,
     Calendars,
-    /// The interface's zoom, in percent.
-    Zoom(u32),
     /// The chosen activities tied one after another, or untied.
     Link,
     Unlink,
@@ -113,15 +112,16 @@ pub(crate) struct State<'a> {
     pub nested: bool,
     /// Today is known, to go to.
     pub today: bool,
-    /// The interface's zoom, in percent.
-    pub zoom: u32,
     pub toolbar_hidden: bool,
 }
 
-const HEADER_HEIGHT: f32 = 60.0;
-const TOOLBAR_HEIGHT: f32 = 36.0;
+/// The title bar, the menus' row and the toolbar's: together with the hairline under them, the
+/// chrome is 110 points high.
+const TITLE_HEIGHT: f32 = 36.0;
+const MENU_HEIGHT: f32 = 30.0;
+const TOOLBAR_HEIGHT: f32 = 43.0;
 /// Corners of the hover tints on the menus and the toolbar's buttons.
-const ROUND: f32 = 0.0;
+const ROUND: f32 = crate::theme::RADIUS as f32;
 
 /// Presenting: the schedule alone on the whole screen, as slides start.
 pub(crate) const PRESENT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F5);
@@ -137,7 +137,7 @@ fn tool(ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: bool, on:
 
 fn tool_response(ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: bool, on: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(30.0, 28.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 26.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, on, name));
     if on {
         ui.painter().rect_filled(rect, ROUND, t.accent_soft);
@@ -146,54 +146,29 @@ fn tool_response(ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: 
     }
     let mut painter = ui.painter().clone();
     if !enabled {
-        painter.set_opacity(0.35);
+        painter.set_opacity(0.4);
     }
-    icons::paint(&painter, egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)), icon, &t);
+    // One colour, as the house's chrome draws its icons: the accent marks a toggle that is on.
+    let ink = if on { t.accent } else { t.text_dim };
+    icons::paint_mono(&painter, egui::Rect::from_center_size(rect.center(), egui::vec2(15.0, 15.0)), icon, &t, ink);
     response.on_hover_text(tip)
 }
 
-/// A group's name before its icons in the toolbar, small and dim.
-fn group_name(ui: &mut egui::Ui, name: &str) {
-    let t = Tokens::get(ui.ctx());
-    ui.add_space(4.0);
-    ui.label(egui::RichText::new(name).size(11.5).color(t.text_dim));
-    ui.add_space(4.0);
-}
-
 /// The zooms offered, in percent.
-const ZOOMS: [u32; 9] = [50, 75, 90, 100, 110, 125, 150, 175, 200];
+pub(crate) const ZOOMS: [u32; 9] = [50, 75, 90, 100, 110, 125, 150, 175, 200];
 
 /// A hairline between the toolbar's groups.
 fn divider(ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
-    ui.add_space(5.0);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(1.0, 20.0), egui::Sense::hover());
+    ui.add_space(6.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(1.0, 18.0), egui::Sense::hover());
     ui.painter().rect_filled(rect, 0.0, t.header_line);
-    ui.add_space(5.0);
+    ui.add_space(6.0);
 }
 
 /// A filled accent button with an icon and text, for a pane's one main action.
 pub(crate) fn accent_button(ui: &mut egui::Ui, icon: Icon, text: &str) -> egui::Response {
-    accent(ui, icon, text, 26.0, 0.0)
-}
-
-/// A quiet button for the header: a hairline round it, its icon in the accent, the text in the
-/// text's colour, a tint only under the pointer.
-fn outlined(ui: &mut egui::Ui, icon: Icon, text: &str) -> egui::Response {
-    let t = Tokens::get(ui.ctx());
-    let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(13.0), t.text);
-    let (height, pad) = (30.0, 14.0);
-    let size = egui::vec2(galley.size().x + 2.0 * pad + 18.0, height);
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text));
-    if response.hovered() {
-        ui.painter().rect_filled(rect, 0.0, if response.is_pointer_button_down_on() { t.pressed } else { t.hover });
-    }
-    ui.painter().rect_stroke(rect, 0.0, egui::Stroke::new(1.0, t.header_line), egui::StrokeKind::Inside);
-    let icon_center = egui::pos2(rect.left() + pad + 5.0, rect.center().y);
-    icons::paint(ui.painter(), egui::Rect::from_center_size(icon_center, egui::vec2(12.0, 12.0)), icon, &t);
-    ui.painter().galley(egui::pos2(rect.left() + pad + 18.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
-    response
+    accent(ui, icon, text, 26.0, ROUND)
 }
 
 /// The accent button at `height` with corners of `round`.
@@ -243,13 +218,14 @@ fn switch(ui: &mut egui::Ui, on: bool, name: &str) -> egui::Response {
     response
 }
 
-/// The header: the mark, the AutoSave switch over the menus, the project's name and its saved
-/// state in the middle, and on the right search, theme and Schedule. It is the window's title
-/// bar too: drag it to move the window, double-click it to maximize or restore.
+/// The title bar: AutoSave, undo and redo on the left; the mark and the project's name in the
+/// middle, its saved state after it in a quieter grey; Schedule, presenting, theme and search on
+/// the right. Under it, the menus' row. It is the window's title bar too: drag it to move the
+/// window, double-click it to maximize or restore.
 pub(crate) fn header(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     let t = Tokens::get(ui.ctx());
     let mut action = None;
-    let (rect, background) = ui.allocate_exact_size(egui::vec2(ui.available_width(), HEADER_HEIGHT), egui::Sense::click_and_drag());
+    let (rect, background) = ui.allocate_exact_size(egui::vec2(ui.available_width(), TITLE_HEIGHT), egui::Sense::click_and_drag());
     if background.drag_started() {
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
     }
@@ -258,32 +234,58 @@ pub(crate) fn header(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
     }
     let mut row =
-        ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(egui::vec2(14.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(egui::vec2(10.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
     quiet(&mut row);
-    icons::show(&mut row, Icon::Mark, 36.0).on_hover_text("MK Perth");
-    row.add_space(6.0);
-    let mut line = rect.center().y;
-    row.vertical(|ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(0.0, 1.0);
-        let top = ui.horizontal(|ui| {
-            ui.set_min_height(22.0);
-            // In line with the menus' text, which sits inside their padding.
-            ui.add_space(7.0);
-            let tip = if state.autosave { tr!("autosave-on-tip") } else { tr!("autosave-off-tip") };
-            if switch(ui, state.autosave, &tr!("autosave")).on_hover_text(tip).clicked() {
-                action = Some(Action::ToggleAutoSave);
+    row.spacing_mut().item_spacing.x = 2.0;
+    let tip = if state.autosave { tr!("autosave-on-tip") } else { tr!("autosave-off-tip") };
+    if switch(&mut row, state.autosave, &tr!("autosave")).on_hover_text(tip).clicked() {
+        action = Some(Action::ToggleAutoSave);
+    }
+    row.add_space(8.0);
+    let undo = state.undo.map_or_else(|| tr!("nothing-to-undo"), |l| tr!("undo-named", what = l));
+    if tool(&mut row, Icon::Undo, &tr!("undo"), &undo, state.undo.is_some(), false) {
+        action = Some(Action::Undo);
+    }
+    let redo = state.redo.map_or_else(|| tr!("nothing-to-redo"), |l| tr!("redo-named", what = l));
+    if tool(&mut row, Icon::Redo, &tr!("redo"), &redo, state.redo.is_some(), false) {
+        action = Some(Action::Redo);
+    }
+    let left_end = row.min_rect().right();
+    let right_start = row
+        .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            if tool(ui, Icon::Search, &tr!("search"), &tr!("search-tip"), true, false) {
+                action = Some(Action::Search);
             }
-        });
-        line = top.response.rect.center().y;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            ui.spacing_mut().button_padding = egui::vec2(7.0, 3.0);
-            if let Some(a) = menus(ui, state) {
-                action = Some(a);
+            let theme = tool_response(ui, Icon::Contrast, &tr!("theme"), &tr!("theme-tip"), true, false);
+            if theme.clicked() {
+                action = Some(Action::Theme(if t.dark { egui::ThemePreference::Light } else { egui::ThemePreference::Dark }));
             }
-        });
-    });
-    // The name in the middle of the window, its saved state after it in a quieter grey.
+            theme.context_menu(|ui| {
+                if let Some(p) = themes(ui) {
+                    action = Some(Action::Theme(p));
+                }
+            });
+            let tip = format!("{} ({})", tr!("present-tip"), ui.ctx().format_shortcut(&PRESENT));
+            if tool(ui, Icon::Present, &tr!("present"), &tip, true, false) {
+                action = Some(Action::Present);
+            }
+            let tip = format!("{} (F9)", tr!("schedule-tip"));
+            if tool(ui, Icon::Run, &tr!("schedule"), &tip, true, false) {
+                action = Some(Action::Schedule);
+            }
+            // The hidden toolbar comes back from here.
+            if state.toolbar_hidden {
+                let tip = format!("{} ({})", tr!("toolbar-show"), ui.ctx().format_shortcut(&TOGGLE_TOOLBAR));
+                if tool(ui, Icon::ChevronDown, &tr!("toolbar-show"), &tip, true, false) {
+                    action = Some(Action::ToggleToolbar);
+                }
+            }
+            ui.min_rect().left()
+        })
+        .inner;
+    // The name in the middle, cut with "…" so it never runs under the controls on either side;
+    // the mark goes with it where there is room, the saved state after it.
     let status = if state.modified {
         Some(tr!("doc-unsaved"))
     } else if state.has_file {
@@ -291,51 +293,57 @@ pub(crate) fn header(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     } else {
         None
     };
+    const MARK: f32 = 18.0;
     let painter = ui.painter();
-    let name = painter.layout_no_wrap(state.name.to_string(), egui::FontId::proportional(15.0), t.text);
-    let name_pos = egui::pos2(rect.center().x - name.size().x / 2.0, line - name.size().y / 2.0);
-    let name_right = name_pos.x + name.size().x;
-    painter.galley(name_pos, name, t.text);
-    if let Some(status) = status {
-        painter.text(egui::pos2(name_right + 10.0, line), egui::Align2::LEFT_CENTER, status, egui::FontId::proportional(12.0), t.text_dim);
+    let status = status.map(|s| painter.layout_no_wrap(s, egui::FontId::proportional(12.0), t.text_dim));
+    let status_width = status.as_ref().map_or(0.0, |g| g.size().x + 10.0);
+    let half = (rect.center().x - left_end).min(right_start - rect.center().x) - 16.0;
+    let mut job = egui::text::LayoutJob::simple_singleline(state.name.to_string(), egui::FontId::proportional(13.5), t.text);
+    job.wrap = egui::text::TextWrapping::truncate_at_width((2.0 * half - MARK - 8.0 - status_width).max(0.0));
+    let name = painter.layout_job(job);
+    let whole = MARK + 8.0 + name.size().x + status_width;
+    let left = rect.center().x - whole / 2.0;
+    if half > MARK {
+        icons::paint(painter, egui::Rect::from_min_size(egui::pos2(left, rect.center().y - MARK / 2.0), egui::vec2(MARK, MARK)), Icon::Mark, &t);
     }
-    row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        if outlined(ui, Icon::Run, &tr!("schedule")).on_hover_text(tr!("schedule-tip")).clicked() {
-            action = Some(Action::Schedule);
-        }
-        ui.add_space(6.0);
-        let theme = tool_response(ui, Icon::Contrast, &tr!("theme"), &tr!("theme-tip"), true, false);
-        if theme.clicked() {
-            action = Some(Action::Theme(if t.dark { egui::ThemePreference::Light } else { egui::ThemePreference::Dark }));
-        }
-        theme.context_menu(|ui| {
-            if let Some(p) = themes(ui) {
-                action = Some(Action::Theme(p));
-            }
-        });
-        let tip = format!("{} ({})", tr!("present-tip"), ui.ctx().format_shortcut(&PRESENT));
-        if tool(ui, Icon::Present, &tr!("present"), &tip, true, false) {
-            action = Some(Action::Present);
-        }
-        if tool(ui, Icon::Search, &tr!("search"), &tr!("search-tip"), true, false) {
-            action = Some(Action::Search);
-        }
-        // The hidden toolbar comes back from here, where its arrow was.
-        if state.toolbar_hidden {
-            let tip = format!("{} ({})", tr!("toolbar-show"), ui.ctx().format_shortcut(&TOGGLE_TOOLBAR));
-            if tool(ui, Icon::ChevronDown, &tr!("toolbar-show"), &tip, true, false) {
-                action = Some(Action::ToggleToolbar);
-            }
-        }
-    });
+    let name_pos = egui::pos2(left + MARK + 8.0, rect.center().y - name.size().y / 2.0);
+    let name_right = name_pos.x + name.size().x;
+    // Strong by drawing twice, half a point apart: the built-in fonts have no bold face.
+    painter.galley(name_pos, name.clone(), t.text);
+    painter.galley(name_pos + egui::vec2(0.4, 0.0), name, t.text);
+    if let Some(status) = status {
+        painter.galley(egui::pos2(name_right + 10.0, rect.center().y - status.size().y / 2.0), status, t.text_dim);
+    }
+    // The menus' row.
+    let (menu_rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), MENU_HEIGHT), egui::Sense::hover());
+    let mut menus_row = ui
+        .new_child(egui::UiBuilder::new().max_rect(menu_rect.shrink2(egui::vec2(8.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    quiet(&mut menus_row);
+    menus_row.spacing_mut().item_spacing.x = 0.0;
+    if let Some(a) = menus(&mut menus_row, state) {
+        action = Some(a);
+    }
     action
 }
 
-/// One menu's name in the header, its items in a popup under it.
+/// A name in the menus' row: its text, a soft tint under the pointer or while its menu is open.
+fn top_label(ui: &mut egui::Ui, name: &str, color: egui::Color32, open: bool) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let galley = ui.painter().layout_no_wrap(name.to_string(), egui::FontId::proportional(13.0), color);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(galley.size().x + 18.0, 24.0), egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
+    if open || response.hovered() {
+        ui.painter().rect_filled(rect, ROUND, if response.is_pointer_button_down_on() || open { t.pressed } else { t.hover });
+    }
+    let color = if response.hovered() && color == t.text_dim { t.text } else { color };
+    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
+    response
+}
+
+/// One menu's name in the menus' row, its items in a popup under it.
 fn menu(ui: &mut egui::Ui, name: &str, add: impl FnOnce(&mut egui::Ui)) {
     let t = Tokens::get(ui.ctx());
-    let response = ui.add(egui::Button::new(egui::RichText::new(name).size(13.5).color(t.text)).frame_when_inactive(false));
+    let response = top_label(ui, name, t.text_dim, false);
     egui::Popup::menu(&response).show(|ui| {
         ui.set_min_width(230.0);
         add(ui);
@@ -360,10 +368,10 @@ fn check(ui: &mut egui::Ui, on: bool, text: &str) -> bool {
 fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     let mut action = None;
     let mut set = |a: Action| action = Some(a);
-    // File opens the backstage, as office suites do; its items live there.
+    // File opens the backstage, as office suites do; its items live there. It is in the accent,
+    // as Pearl's.
     let t = Tokens::get(ui.ctx());
-    let file = egui::Button::new(egui::RichText::new(tr!("file")).size(13.5).color(t.text)).frame_when_inactive(false).selected(state.backstage);
-    if ui.add(file).clicked() {
+    if top_label(ui, &tr!("file"), t.accent, state.backstage).clicked() {
         set(Action::Backstage);
     }
     menu(ui, &tr!("menu-edit"), |ui| {
@@ -548,23 +556,34 @@ fn font_sizes(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoi
     chosen
 }
 
-/// A flat drop-down in the toolbar, as spreadsheets have them: its value, a small chevron, a
-/// tint under the pointer; a click opens `contents` under it.
-fn drop_down<R>(ui: &mut egui::Ui, text: &str, name: &str, tip: &str, width: f32, contents: impl FnOnce(&mut egui::Ui) -> Option<R>) -> Option<R> {
+/// A field with a drop-down in the toolbar, as Pearl's: its value on the input's colour in a
+/// hairline frame, a small chevron; a click opens `contents` under it.
+pub(crate) fn drop_down<R>(
+    ui: &mut egui::Ui,
+    text: &str,
+    name: &str,
+    tip: &str,
+    width: f32,
+    contents: impl FnOnce(&mut egui::Ui) -> Option<R>,
+) -> Option<R> {
     let t = Tokens::get(ui.ctx());
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 22.0), egui::Sense::click());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, name));
-    if response.hovered() {
-        ui.painter().rect_filled(rect, ROUND, if response.is_pointer_button_down_on() { t.pressed } else { t.hover });
-    }
+    let fill = if response.is_pointer_button_down_on() {
+        t.pressed
+    } else if response.hovered() {
+        t.hover
+    } else {
+        t.input_bg
+    };
+    ui.painter().rect(rect, ROUND, fill, egui::Stroke::new(1.0, t.header_line), egui::StrokeKind::Inside);
     let painter = ui.painter().with_clip_rect(rect.shrink2(egui::vec2(4.0, 0.0)).intersect(ui.clip_rect()));
     let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), egui::FontId::proportional(12.5), t.text);
     job.wrap = egui::text::TextWrapping::truncate_at_width(width - 28.0);
     let galley = painter.layout_job(job);
     painter.galley(egui::pos2(rect.left() + 7.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
-    let chevron = egui::Rect::from_center_size(egui::pos2(rect.right() - 10.0, rect.center().y), egui::vec2(10.0, 10.0));
-    ui.painter().rect_filled(chevron.expand(3.0), 0.0, if response.hovered() { t.hover } else { egui::Color32::TRANSPARENT });
-    icons::paint(ui.painter(), chevron, Icon::ChevronDown, &t);
+    let chevron = egui::Rect::from_center_size(egui::pos2(rect.right() - 10.0, rect.center().y), egui::vec2(9.0, 9.0));
+    icons::paint_mono(ui.painter(), chevron, Icon::ChevronDown, &t, t.text_dim);
     let response = response.on_hover_text(tip);
     egui::Popup::menu(&response).show(contents).and_then(|r| r.inner)
 }
@@ -576,8 +595,8 @@ fn font_tools(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoi
     let now = state.font;
     let shown = now.family.clone().unwrap_or_else(|| tr!("font-default-short"));
     let name = tr!("font-family-named", name = shown.as_str());
-    let mut chosen = drop_down(ui, &shown, &name, &tr!("font-family-tip"), 92.0, |ui| font_families(ui, state));
-    divider(ui);
+    let mut chosen = drop_down(ui, &shown, &name, &tr!("font-family-tip"), 120.0, |ui| font_families(ui, state));
+    ui.add_space(6.0);
     let with = |size: u8| (size != now.size).then(|| crate::fonts::FontChoice { size: crate::fonts::clamp_size(size), ..now.clone() });
     if tool(ui, Icon::Minus, &tr!("font-smaller"), &tr!("font-smaller"), now.size > crate::fonts::MIN_SIZE, false) {
         chosen = with(now.size.saturating_sub(1));
@@ -586,10 +605,12 @@ fn font_tools(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoi
     let key = egui::Id::unique("toolbar-font-size");
     let mut text = ui.data(|d| d.get_temp::<(u8, String)>(key)).filter(|(was, _)| *was == now.size).map_or(now.size.to_string(), |(_, t)| t);
     let label = tr!("font-size");
-    let field =
-        egui::Frame::new().stroke(egui::Stroke::new(1.0, t.text_dim)).corner_radius(0.0).inner_margin(egui::Margin::symmetric(2, 1)).show(ui, |ui| {
-            ui.add(egui::TextEdit::singleline(&mut text).desired_width(24.0).align(egui::Align2::CENTER_CENTER).frame(egui::Frame::NONE))
-        });
+    let field = egui::Frame::new()
+        .fill(t.input_bg)
+        .stroke(egui::Stroke::new(1.0, t.header_line))
+        .corner_radius(ROUND)
+        .inner_margin(egui::Margin::symmetric(2, 1))
+        .show(ui, |ui| ui.add(egui::TextEdit::singleline(&mut text).desired_width(24.0).align(egui::Align2::CENTER_CENTER).frame(egui::Frame::NONE)));
     let response = field.inner;
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, &label));
     if response.lost_focus() {
@@ -688,105 +709,63 @@ fn scheduling_options(ui: &mut egui::Ui, state: &State) -> Option<serde_json::Va
     chosen
 }
 
-/// The toolbar: undo and redo, the activities, what the chart shows, the time scale and the data
-/// date, as small icons in one row on the header's surface, with no band or edge of its own.
-/// Nothing when hidden.
+/// The toolbar: the font, the activities, what the chart shows, the time scale, levelling and
+/// the data date, as small single-colour icons in one row on the window's surface, groups parted
+/// by hairlines, with no band or edge of its own. Nothing when hidden.
 pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     if state.toolbar_hidden {
         return None;
     }
     let t = Tokens::get(ui.ctx());
     let mut action = None;
-    // The groups' names, when the row has room for them beside everything else: measured on the
-    // last frame without them, so showing them never takes away the room they were shown in.
-    let names = [tr!("group-edit"), tr!("font"), tr!("group-activities"), tr!("group-show"), tr!("group-time-scale"), tr!("group-resources")];
-    let names_width: f32 =
-        names.iter().map(|n| ui.painter().layout_no_wrap(n.clone(), egui::FontId::proportional(11.5), t.text_dim).size().x + 10.0).sum();
-    let fits_key = egui::Id::unique("toolbar-without-names");
-    let without_names = ui.data(|d| d.get_temp::<f32>(fits_key));
-    egui::Frame::new().inner_margin(egui::Margin { left: 10, right: 10, top: 0, bottom: 8 }).show(ui, |ui| {
-        let (band, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), TOOLBAR_HEIGHT), egui::Sense::hover());
-        let inner = band.shrink2(egui::vec2(12.0, 0.0));
-        let named = without_names.is_none_or(|w| w + names_width + 40.0 <= inner.width());
-        let mut row = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        quiet(&mut row);
-        row.spacing_mut().item_spacing.x = 1.0;
-        let mut go = |ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: bool, on: bool, then: Action| {
-            if tool(ui, icon, name, tip, enabled, on) {
-                action = Some(then);
-            }
-        };
-        let group = |ui: &mut egui::Ui, k: usize| {
-            if named && let Some(name) = names.get(k) {
-                group_name(ui, name);
-            }
-        };
-        group(&mut row, 0);
-        let undo = state.undo.map_or_else(|| tr!("nothing-to-undo"), |l| tr!("undo-named", what = l));
-        go(&mut row, Icon::Undo, &tr!("undo"), &undo, state.undo.is_some(), false, Action::Undo);
-        let redo = state.redo.map_or_else(|| tr!("nothing-to-redo"), |l| tr!("redo-named", what = l));
-        go(&mut row, Icon::Redo, &tr!("redo"), &redo, state.redo.is_some(), false, Action::Redo);
-        row.add_space(2.0);
-        let zoom = format!("{}%", state.zoom);
-        let zoomed = drop_down(&mut row, &zoom, &tr!("zoom-named", n = state.zoom), &tr!("zoom"), 62.0, |ui| {
-            let mut chosen = None;
-            for z in ZOOMS {
-                if ui.radio(state.zoom == z, format!("{z}%")).clicked() {
-                    chosen = Some(z);
-                }
-            }
-            chosen
-        });
-        divider(&mut row);
-        group(&mut row, 1);
-        let font = font_tools(&mut row, state);
-        divider(&mut row);
-        group(&mut row, 2);
-        go(&mut row, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
-        go(&mut row, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
-        go(&mut row, Icon::Link, &tr!("link-activities"), &tr!("link-activities-tip"), state.chosen >= 2, false, Action::Link);
-        go(&mut row, Icon::Unlink, &tr!("unlink-activities"), &tr!("unlink-activities-tip"), state.chosen >= 2, false, Action::Unlink);
-        go(&mut row, Icon::Outdent, &tr!("outdent"), &tr!("outdent-tip"), state.nested, false, Action::Outdent);
-        go(&mut row, Icon::Indent, &tr!("indent"), &tr!("indent-tip"), state.selected, false, Action::Indent);
-        let tip = format!("{} ({})", tr!("comment-tool-tip"), ui.ctx().format_shortcut(&COMMENT));
-        go(&mut row, Icon::Comment, &tr!("comment-tool"), &tip, state.selected, false, Action::Comment);
-        divider(&mut row);
-        group(&mut row, 3);
-        go(&mut row, Icon::Critical, &tr!("critical-only"), &tr!("critical-only-tip"), true, state.critical_only, Action::CriticalOnly);
-        go(&mut row, Icon::Gantt, &tr!("late-bars"), &tr!("late-bars-tip"), true, state.late_bars, Action::LateBars);
-        go(&mut row, Icon::Network, &tr!("links"), &tr!("links-tip"), true, state.links, Action::Links);
-        go(&mut row, Icon::Stripes, &tr!("stripes"), &tr!("stripes-tip"), true, state.striped, Action::Stripes);
-        divider(&mut row);
-        group(&mut row, 4);
-        go(&mut row, Icon::Minus, &tr!("time-narrower"), &tr!("time-narrower-tip"), true, false, Action::TimeScale(-1));
-        go(&mut row, Icon::Grid, &tr!("time-fit"), &tr!("time-fit-tip"), true, state.fitted, Action::TimeScale(0));
-        go(&mut row, Icon::Plus, &tr!("time-wider"), &tr!("time-wider-tip"), true, false, Action::TimeScale(1));
-        go(&mut row, Icon::Today, &tr!("go-today"), &tr!("go-today-tip"), state.today, false, Action::Today);
-        go(&mut row, Icon::Locate, &tr!("go-selected"), &tr!("go-selected-tip"), state.selected, false, Action::Locate);
-        divider(&mut row);
-        group(&mut row, 5);
-        go(&mut row, Icon::Level, &tr!("level-tool"), &tr!("level-tool-tip"), true, false, Action::Level);
-        divider(&mut row);
-        if let Some(f) = font {
-            action = Some(Action::Font(f));
+    let (band, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), TOOLBAR_HEIGHT), egui::Sense::hover());
+    let inner = egui::Rect::from_min_max(egui::pos2(band.left() + 10.0, band.top()), egui::pos2(band.right() - 10.0, band.bottom() - 9.0));
+    let mut row = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    quiet(&mut row);
+    row.spacing_mut().item_spacing.x = 1.0;
+    let mut go = |ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: bool, on: bool, then: Action| {
+        if tool(ui, icon, name, tip, enabled, on) {
+            action = Some(then);
         }
-        if let Some(z) = zoomed {
-            action = Some(Action::Zoom(z));
+    };
+    let font = font_tools(&mut row, state);
+    divider(&mut row);
+    go(&mut row, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
+    go(&mut row, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
+    go(&mut row, Icon::Link, &tr!("link-activities"), &tr!("link-activities-tip"), state.chosen >= 2, false, Action::Link);
+    go(&mut row, Icon::Unlink, &tr!("unlink-activities"), &tr!("unlink-activities-tip"), state.chosen >= 2, false, Action::Unlink);
+    go(&mut row, Icon::Outdent, &tr!("outdent"), &tr!("outdent-tip"), state.nested, false, Action::Outdent);
+    go(&mut row, Icon::Indent, &tr!("indent"), &tr!("indent-tip"), state.selected, false, Action::Indent);
+    let tip = format!("{} ({})", tr!("comment-tool-tip"), ui.ctx().format_shortcut(&COMMENT));
+    go(&mut row, Icon::Comment, &tr!("comment-tool"), &tip, state.selected, false, Action::Comment);
+    divider(&mut row);
+    go(&mut row, Icon::Critical, &tr!("critical-only"), &tr!("critical-only-tip"), true, state.critical_only, Action::CriticalOnly);
+    go(&mut row, Icon::Gantt, &tr!("late-bars"), &tr!("late-bars-tip"), true, state.late_bars, Action::LateBars);
+    go(&mut row, Icon::Network, &tr!("links"), &tr!("links-tip"), true, state.links, Action::Links);
+    go(&mut row, Icon::Stripes, &tr!("stripes"), &tr!("stripes-tip"), true, state.striped, Action::Stripes);
+    divider(&mut row);
+    go(&mut row, Icon::Minus, &tr!("time-narrower"), &tr!("time-narrower-tip"), true, false, Action::TimeScale(-1));
+    go(&mut row, Icon::Grid, &tr!("time-fit"), &tr!("time-fit-tip"), true, state.fitted, Action::TimeScale(0));
+    go(&mut row, Icon::Plus, &tr!("time-wider"), &tr!("time-wider-tip"), true, false, Action::TimeScale(1));
+    go(&mut row, Icon::Today, &tr!("go-today"), &tr!("go-today-tip"), state.today, false, Action::Today);
+    go(&mut row, Icon::Locate, &tr!("go-selected"), &tr!("go-selected-tip"), state.selected, false, Action::Locate);
+    divider(&mut row);
+    go(&mut row, Icon::Level, &tr!("level-tool"), &tr!("level-tool-tip"), true, false, Action::Level);
+    divider(&mut row);
+    if let Some(f) = font {
+        action = Some(Action::Font(f));
+    }
+    row.add_space(4.0);
+    let label = row.label(egui::RichText::new(tr!("option-data-date")).size(12.5).color(t.text_dim));
+    row.add_space(6.0);
+    if let Some(d) = crate::date_field(&mut row, egui::Id::unique("data-date"), label.id, state.data_date, 96.0) {
+        action = Some(Action::Options(serde_json::json!({ "data_date": d.map(|d| d.to_string()) })));
+    }
+    row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let tip = format!("{} ({})", tr!("toolbar-hide"), ui.ctx().format_shortcut(&TOGGLE_TOOLBAR));
+        if tool(ui, Icon::ChevronUp, &tr!("toolbar-hide"), &tip, true, false) {
+            action = Some(Action::ToggleToolbar);
         }
-        row.add_space(4.0);
-        let label = row.label(egui::RichText::new(tr!("option-data-date")).size(12.5).color(t.text_dim));
-        row.add_space(6.0);
-        if let Some(d) = crate::date_field(&mut row, egui::Id::unique("data-date"), label.id, state.data_date, 96.0) {
-            action = Some(Action::Options(serde_json::json!({ "data_date": d.map(|d| d.to_string()) })));
-        }
-        let used = row.cursor().left() - inner.left() - if named { names_width } else { 0.0 };
-        row.ctx().data_mut(|d| d.insert_temp(fits_key, used));
-        row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let tip = format!("{} ({})", tr!("toolbar-hide"), ui.ctx().format_shortcut(&TOGGLE_TOOLBAR));
-            if tool(ui, Icon::ChevronUp, &tr!("toolbar-hide"), &tip, true, false) {
-                action = Some(Action::ToggleToolbar);
-            }
-        });
     });
     action
 }
