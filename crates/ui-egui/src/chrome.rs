@@ -7,6 +7,7 @@
 use crate::View;
 use crate::icons::{self, Icon};
 use crate::theme::Tokens;
+use egui::emath::GuiRounding as _;
 use egui::{Key, KeyboardShortcut, Modifiers};
 use mkperth_engine::core::{CriticalBy, Date, FloatKind, ProgressMode};
 use mkperth_engine::i18n::{self, Lang, tr};
@@ -132,10 +133,15 @@ pub(crate) const TOGGLE_TOOLBAR: KeyboardShortcut = KeyboardShortcut::new(Modifi
 /// A small square icon button with an accessible name and a tip; clicks count only when enabled.
 /// `on` marks a toggle that is on.
 fn tool(ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: bool, on: bool) -> bool {
-    tool_response(ui, icon, name, tip, enabled, on).clicked() && enabled
+    tool_response(ui, icon, name, tip, enabled, on, false).clicked() && enabled
 }
 
-fn tool_response(ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: bool, on: bool) -> egui::Response {
+/// A [`tool`] drawn in one quiet colour, as the title bar's are.
+fn quiet_tool(ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: bool) -> bool {
+    tool_response(ui, icon, name, tip, enabled, false, true).clicked() && enabled
+}
+
+fn tool_response(ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: bool, on: bool, mono: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 26.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, on, name));
@@ -148,9 +154,14 @@ fn tool_response(ui: &mut egui::Ui, icon: Icon, name: &str, tip: &str, enabled: 
     if !enabled {
         painter.set_opacity(0.4);
     }
-    // One colour, as the house's chrome draws its icons: the accent marks a toggle that is on.
-    let ink = if on { t.accent } else { t.text_dim };
-    icons::paint_mono(&painter, egui::Rect::from_center_size(rect.center(), egui::vec2(15.0, 15.0)), icon, &t, ink);
+    // In the text's colour, the action part in its family's ink, as the house's toolbars draw
+    // them; snapped to whole pixels, so their one-pixel lines stay sharp.
+    let square = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)).round_to_pixels(ui.pixels_per_point());
+    if mono {
+        icons::paint_mono(&painter, square, icon, t.text_dim);
+    } else {
+        icons::paint_in(&painter, square, icon, &t, t.text);
+    }
     response.on_hover_text(tip)
 }
 
@@ -182,10 +193,8 @@ fn accent(ui: &mut egui::Ui, icon: Icon, text: &str, height: f32, round: f32) ->
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text));
     let fill = if response.hovered() { t.accent.gamma_multiply(0.85) } else { t.accent };
     ui.painter().rect_filled(rect, round, fill);
-    let mut on = t;
-    on.accent = ink;
     let icon_center = egui::pos2(rect.left() + pad + 5.0, rect.center().y);
-    icons::paint(ui.painter(), egui::Rect::from_center_size(icon_center, egui::vec2(12.0, 12.0)), icon, &on);
+    icons::paint_mono(ui.painter(), egui::Rect::from_center_size(icon_center, egui::vec2(12.0, 12.0)), icon, ink);
     ui.painter().galley(egui::pos2(rect.left() + pad + 16.0, rect.center().y - galley.size().y / 2.0), galley, ink);
     response
 }
@@ -243,21 +252,21 @@ pub(crate) fn header(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     }
     row.add_space(8.0);
     let undo = state.undo.map_or_else(|| tr!("nothing-to-undo"), |l| tr!("undo-named", what = l));
-    if tool(&mut row, Icon::Undo, &tr!("undo"), &undo, state.undo.is_some(), false) {
+    if quiet_tool(&mut row, Icon::Undo, &tr!("undo"), &undo, state.undo.is_some()) {
         action = Some(Action::Undo);
     }
     let redo = state.redo.map_or_else(|| tr!("nothing-to-redo"), |l| tr!("redo-named", what = l));
-    if tool(&mut row, Icon::Redo, &tr!("redo"), &redo, state.redo.is_some(), false) {
+    if quiet_tool(&mut row, Icon::Redo, &tr!("redo"), &redo, state.redo.is_some()) {
         action = Some(Action::Redo);
     }
     let left_end = row.min_rect().right();
     let right_start = row
         .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
-            if tool(ui, Icon::Search, &tr!("search"), &tr!("search-tip"), true, false) {
+            if quiet_tool(ui, Icon::Search, &tr!("search"), &tr!("search-tip"), true) {
                 action = Some(Action::Search);
             }
-            let theme = tool_response(ui, Icon::Contrast, &tr!("theme"), &tr!("theme-tip"), true, false);
+            let theme = tool_response(ui, Icon::Contrast, &tr!("theme"), &tr!("theme-tip"), true, false, true);
             if theme.clicked() {
                 action = Some(Action::Theme(if t.dark { egui::ThemePreference::Light } else { egui::ThemePreference::Dark }));
             }
@@ -267,17 +276,17 @@ pub(crate) fn header(ui: &mut egui::Ui, state: &State) -> Option<Action> {
                 }
             });
             let tip = format!("{} ({})", tr!("present-tip"), ui.ctx().format_shortcut(&PRESENT));
-            if tool(ui, Icon::Present, &tr!("present"), &tip, true, false) {
+            if quiet_tool(ui, Icon::Present, &tr!("present"), &tip, true) {
                 action = Some(Action::Present);
             }
             let tip = format!("{} (F9)", tr!("schedule-tip"));
-            if tool(ui, Icon::Run, &tr!("schedule"), &tip, true, false) {
+            if quiet_tool(ui, Icon::Run, &tr!("schedule"), &tip, true) {
                 action = Some(Action::Schedule);
             }
             // The hidden toolbar comes back from here.
             if state.toolbar_hidden {
                 let tip = format!("{} ({})", tr!("toolbar-show"), ui.ctx().format_shortcut(&TOGGLE_TOOLBAR));
-                if tool(ui, Icon::ChevronDown, &tr!("toolbar-show"), &tip, true, false) {
+                if quiet_tool(ui, Icon::ChevronDown, &tr!("toolbar-show"), &tip, true) {
                     action = Some(Action::ToggleToolbar);
                 }
             }
@@ -556,6 +565,35 @@ fn font_sizes(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoi
     chosen
 }
 
+/// A text field in the toolbar, as tall as its drop-downs: the input's colour in a hairline
+/// frame with soft corners.
+fn field<R>(ui: &mut egui::Ui, t: &Tokens, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    // A place of the drop-downs' height: in a row centred on its height, a frame would stretch to it.
+    let place = egui::vec2(ui.available_width(), 22.0);
+    ui.allocate_ui_with_layout(place, egui::Layout::left_to_right(egui::Align::Center), |ui| field_frame(ui, t, add)).inner
+}
+
+fn field_frame<R>(ui: &mut egui::Ui, t: &Tokens, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    egui::Frame::new()
+        .fill(t.input_bg)
+        .stroke(egui::Stroke::new(1.0, t.header_line))
+        .corner_radius(ROUND)
+        .inner_margin(egui::Margin::symmetric(4, 1))
+        .show(ui, |ui| {
+            ui.spacing_mut().interact_size.y = 20.0;
+            let visuals = &mut ui.visuals_mut().widgets;
+            for w in [&mut visuals.inactive, &mut visuals.hovered, &mut visuals.active] {
+                w.bg_stroke = egui::Stroke::NONE;
+                w.bg_fill = egui::Color32::TRANSPARENT;
+                w.weak_bg_fill = egui::Color32::TRANSPARENT;
+            }
+            ui.visuals_mut().extreme_bg_color = egui::Color32::TRANSPARENT;
+            ui.spacing_mut().button_padding = egui::vec2(0.0, 0.0);
+            add(ui)
+        })
+        .inner
+}
+
 /// A field with a drop-down in the toolbar, as Pearl's: its value on the input's colour in a
 /// hairline frame, a small chevron; a click opens `contents` under it.
 pub(crate) fn drop_down<R>(
@@ -583,7 +621,7 @@ pub(crate) fn drop_down<R>(
     let galley = painter.layout_job(job);
     painter.galley(egui::pos2(rect.left() + 7.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
     let chevron = egui::Rect::from_center_size(egui::pos2(rect.right() - 10.0, rect.center().y), egui::vec2(9.0, 9.0));
-    icons::paint_mono(ui.painter(), chevron, Icon::ChevronDown, &t, t.text_dim);
+    icons::paint_mono(ui.painter(), chevron, Icon::ChevronDown, t.text_dim);
     let response = response.on_hover_text(tip);
     egui::Popup::menu(&response).show(contents).and_then(|r| r.inner)
 }
@@ -605,13 +643,9 @@ fn font_tools(ui: &mut egui::Ui, state: &State) -> Option<crate::fonts::FontChoi
     let key = egui::Id::unique("toolbar-font-size");
     let mut text = ui.data(|d| d.get_temp::<(u8, String)>(key)).filter(|(was, _)| *was == now.size).map_or(now.size.to_string(), |(_, t)| t);
     let label = tr!("font-size");
-    let field = egui::Frame::new()
-        .fill(t.input_bg)
-        .stroke(egui::Stroke::new(1.0, t.header_line))
-        .corner_radius(ROUND)
-        .inner_margin(egui::Margin::symmetric(2, 1))
-        .show(ui, |ui| ui.add(egui::TextEdit::singleline(&mut text).desired_width(24.0).align(egui::Align2::CENTER_CENTER).frame(egui::Frame::NONE)));
-    let response = field.inner;
+    let response = field(ui, &t, |ui| {
+        ui.add(egui::TextEdit::singleline(&mut text).desired_width(24.0).align(egui::Align2::CENTER_CENTER).frame(egui::Frame::NONE))
+    });
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, &label));
     if response.lost_focus() {
         if let Ok(n) = text.trim().parse::<u8>() {
@@ -731,7 +765,7 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     let font = font_tools(&mut row, state);
     divider(&mut row);
     go(&mut row, Icon::InsertCase, &tr!("add-activity"), &tr!("add-activity-tip"), true, false, Action::AddActivity);
-    go(&mut row, Icon::Close, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
+    go(&mut row, Icon::Delete, &tr!("delete-activity"), &tr!("delete-activity-tip"), state.selected, false, Action::DeleteActivity);
     go(&mut row, Icon::Link, &tr!("link-activities"), &tr!("link-activities-tip"), state.chosen >= 2, false, Action::Link);
     go(&mut row, Icon::Unlink, &tr!("unlink-activities"), &tr!("unlink-activities-tip"), state.chosen >= 2, false, Action::Unlink);
     go(&mut row, Icon::Outdent, &tr!("outdent"), &tr!("outdent-tip"), state.nested, false, Action::Outdent);
@@ -745,7 +779,7 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     go(&mut row, Icon::Stripes, &tr!("stripes"), &tr!("stripes-tip"), true, state.striped, Action::Stripes);
     divider(&mut row);
     go(&mut row, Icon::Minus, &tr!("time-narrower"), &tr!("time-narrower-tip"), true, false, Action::TimeScale(-1));
-    go(&mut row, Icon::Grid, &tr!("time-fit"), &tr!("time-fit-tip"), true, state.fitted, Action::TimeScale(0));
+    go(&mut row, Icon::Fit, &tr!("time-fit"), &tr!("time-fit-tip"), true, state.fitted, Action::TimeScale(0));
     go(&mut row, Icon::Plus, &tr!("time-wider"), &tr!("time-wider-tip"), true, false, Action::TimeScale(1));
     go(&mut row, Icon::Today, &tr!("go-today"), &tr!("go-today-tip"), state.today, false, Action::Today);
     go(&mut row, Icon::Locate, &tr!("go-selected"), &tr!("go-selected-tip"), state.selected, false, Action::Locate);
@@ -758,7 +792,7 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, state: &State) -> Option<Action> {
     row.add_space(4.0);
     let label = row.label(egui::RichText::new(tr!("option-data-date")).size(12.5).color(t.text_dim));
     row.add_space(6.0);
-    if let Some(d) = crate::date_field(&mut row, egui::Id::unique("data-date"), label.id, state.data_date, 96.0) {
+    if let Some(d) = field(&mut row, &t, |ui| crate::date_field(ui, egui::Id::unique("data-date"), label.id, state.data_date, 96.0)) {
         action = Some(Action::Options(serde_json::json!({ "data_date": d.map(|d| d.to_string()) })));
     }
     row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

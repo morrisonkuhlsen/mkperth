@@ -29,7 +29,7 @@ fn kind_name(k: FieldKind) -> String {
 
 impl PerthApp {
     pub(crate) fn codes_pane(&mut self, ui: &mut egui::Ui) {
-        if theme::pane_header(ui, Icon::Labels, &tr!("pane-codes"), &tr!("pane-codes-tip"), |ui| {
+        if theme::pane_header(ui, Icon::Codes, &tr!("pane-codes"), &tr!("pane-codes-tip"), |ui| {
             icon_button(ui, Icon::ChevronRight, &tr!("pane-close"))
         }) {
             self.side = None;

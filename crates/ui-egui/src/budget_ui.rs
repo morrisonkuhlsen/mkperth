@@ -51,7 +51,7 @@ fn read_month(text: &str) -> Option<String> {
 impl PerthApp {
     pub(crate) fn budget_pane(&mut self, ui: &mut egui::Ui) {
         let t = Tokens::get(ui.ctx());
-        if theme::pane_header(ui, Icon::Bars, &tr!("pane-budget"), &tr!("pane-budget-tip"), |ui| {
+        if theme::pane_header(ui, Icon::Budget, &tr!("pane-budget"), &tr!("pane-budget-tip"), |ui| {
             icon_button(ui, Icon::ChevronRight, &tr!("pane-close"))
         }) {
             self.side = None;

@@ -24,6 +24,12 @@ Read it before re-scheduling a plan with a new version.
   summaries lightly tinted; the selected row marked at its left edge. Bars flat with soft
   corners, slimmer diamonds and summary brackets, quieter relationship lines; a faint line each
   week; days off, bands, markers, today and the data date down the chart's whole height.
+- Sharper icons and finer details: every icon redrawn in the house's system, as MK Matrix has
+  it (one-pixel lines on a 16-point grid, the action part in a quiet ink of its family); the
+  title bar's and the rails' icons in one quiet colour. The default typeface is the system's
+  own interface face (Segoe UI on Windows; Noto Sans, Cantarell, Ubuntu or DejaVu Sans on
+  Linux), found in Arch's and Fedora's font folders too. The toolbar's fields as tall as its
+  drop-downs; the zoom a fine rail with a slim handle and a mark at 100%; thin scroll bars.
 
 ## [0.1.0] - 2026-10-26
 

@@ -191,7 +191,7 @@ impl PerthApp {
     /// cost accounts.
     pub(crate) fn costs_pane(&mut self, ui: &mut egui::Ui) {
         let t = Tokens::get(ui.ctx());
-        if theme::pane_header(ui, Icon::Dictionary, &tr!("pane-costs"), &tr!("pane-costs-tip"), |ui| {
+        if theme::pane_header(ui, Icon::Costs, &tr!("pane-costs"), &tr!("pane-costs-tip"), |ui| {
             icon_button(ui, Icon::ChevronRight, &tr!("pane-close"))
         }) {
             self.side = None;

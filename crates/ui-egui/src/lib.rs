@@ -52,7 +52,8 @@ pub type PickOpen = Box<dyn Fn() -> Option<PathBuf>>;
 pub type PickSave = Box<dyn Fn(&str) -> Option<PathBuf>>;
 pub type Today = Box<dyn Fn() -> Option<Date>>;
 /// The typeface families the system has; the bytes of one's face, bold and italic as asked
-/// (the regular one when it has none such); keeping the choice for the next run.
+/// (the regular one when it has none such), the system's own interface face for an empty
+/// family; keeping the choice for the next run.
 pub type ListFonts = Box<dyn Fn() -> Vec<String>>;
 pub type LoadFont = Box<dyn Fn(&str, bool, bool) -> Option<Vec<u8>>>;
 pub type SaveFont = Box<dyn Fn(&fonts::FontChoice)>;
@@ -918,8 +919,12 @@ impl PerthApp {
             self.themed = true;
         }
         if self.font_set.as_ref() != Some(&self.font) {
-            let family = self.font.family.clone();
-            let bytes = family.and_then(|f| self.services.load_font.as_ref().and_then(|load| load(&f, self.font.bold, self.font.italic)));
+            // The default is the system's interface face, where the system has one to give.
+            let (family, bold, italic) = match &self.font.family {
+                Some(f) => (f.as_str(), self.font.bold, self.font.italic),
+                None => ("", false, false),
+            };
+            let bytes = self.services.load_font.as_ref().and_then(|load| load(family, bold, italic));
             ui.ctx().set_fonts(fonts::definitions(&self.font, bytes));
             self.font_set = Some(self.font.clone());
         }
@@ -1178,7 +1183,6 @@ impl PerthApp {
                     ui.painter(),
                     egui::Rect::from_center_size(egui::pos2(rect.left() + 18.0, rect.center().y), egui::vec2(13.0, 13.0)),
                     icon,
-                    &t,
                     ink,
                 );
                 ui.painter().galley(egui::pos2(rect.left() + 30.0, rect.center().y - galley.size().y / 2.0), galley, ink);
@@ -1264,7 +1268,7 @@ impl PerthApp {
                 painter.rect_filled(slot, 0.0, t.hover);
             }
             let ink = if on { t.text } else { t.text_dim };
-            icons::paint_mono(painter, egui::Rect::from_center_size(slot.center(), egui::vec2(18.0, 18.0)), icon, &t, ink);
+            icons::paint_mono(painter, egui::Rect::from_center_size(slot.center(), egui::vec2(18.0, 18.0)), icon, ink);
             if response.on_hover_text(tip).clicked() {
                 self.open_view(view);
             }
@@ -1285,7 +1289,7 @@ impl PerthApp {
             ui.painter().rect_filled(tile, theme::RADIUS, t.hover);
         }
         let ink = if shown { t.accent } else { t.text_dim };
-        icons::paint_mono(ui.painter(), egui::Rect::from_center_size(slot.center(), egui::vec2(16.0, 16.0)), Icon::Table, &t, ink);
+        icons::paint_mono(ui.painter(), egui::Rect::from_center_size(slot.center(), egui::vec2(16.0, 16.0)), Icon::Table, ink);
         let tip = if shown { tr!("activity-table-hide-tip") } else { tr!("activity-table-show-tip") };
         if response.on_hover_text(tip).clicked() {
             self.options.table_hidden = shown;
@@ -1835,7 +1839,7 @@ impl PerthApp {
                 painter.rect_filled(tile, theme::RADIUS, t.hover);
             }
             let ink = if on { t.accent } else { t.text_dim };
-            icons::paint_mono(painter, egui::Rect::from_center_size(slot.center(), egui::vec2(15.0, 15.0)), icon, &t, ink);
+            icons::paint_mono(painter, egui::Rect::from_center_size(slot.center(), egui::vec2(15.0, 15.0)), icon, ink);
             if badge > 0 {
                 painter.circle_filled(tile.right_top() + egui::vec2(-6.0, 6.0), 3.0, t.accent);
             }
@@ -2116,8 +2120,7 @@ impl PerthApp {
             if icon_button(ui, Icon::Plus, &tr!("zoom-in")) {
                 zoom = (zoom / 10 * 10 + 10).min(200);
             }
-            ui.spacing_mut().slider_width = 110.0;
-            ui.add(egui::Slider::new(&mut zoom, 50..=200).show_value(false)).on_hover_text(tr!("zoom"));
+            zoom_slider(ui, &mut zoom, 110.0).on_hover_text(tr!("zoom"));
             if icon_button(ui, Icon::Minus, &tr!("zoom-out")) {
                 zoom = (zoom.div_ceil(10) * 10).saturating_sub(10).max(50);
             }
@@ -2131,6 +2134,36 @@ impl PerthApp {
     }
 }
 
+/// The status bar's zoom: a fine rail, the part up to the zoom a shade darker, a mark at 100%,
+/// and a slim handle; dragged or clicked anywhere on it. Accessible as a slider named Zoom.
+fn zoom_slider(ui: &mut egui::Ui, zoom: &mut u32, width: f32) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 18.0), egui::Sense::click_and_drag());
+    let (lo, hi) = (50.0, 200.0);
+    let inner = rect.shrink2(egui::vec2(3.0, 0.0));
+    if let Some(p) = response.interact_pointer_pos().filter(|_| response.dragged() || response.clicked()) {
+        let f = ((p.x - inner.left()) / inner.width()).clamp(0.0, 1.0);
+        // Snapped to fives, and to 100% when near it.
+        let z = (lo + f * (hi - lo)) / 5.0;
+        let z = (z.round() * 5.0) as u32;
+        *zoom = if z.abs_diff(100) <= 4 { 100 } else { z };
+    }
+    let x_of = |z: f32| inner.left() + (z - lo) / (hi - lo) * inner.width();
+    let y = rect.center().y;
+    let painter = ui.painter();
+    painter.line_segment([egui::pos2(inner.left(), y), egui::pos2(inner.right(), y)], egui::Stroke::new(2.0, t.header_line));
+    let x = x_of(*zoom as f32);
+    painter.line_segment([egui::pos2(inner.left(), y), egui::pos2(x, y)], egui::Stroke::new(2.0, t.text_dim.gamma_multiply(0.6)));
+    let hundred = x_of(100.0).round() + 0.5;
+    painter.line_segment([egui::pos2(hundred, y - 4.0), egui::pos2(hundred, y + 4.0)], egui::Stroke::new(1.0, t.text_dim.gamma_multiply(0.6)));
+    let handle = egui::Rect::from_center_size(egui::pos2(x, y), egui::vec2(4.0, 12.0));
+    let ink = if response.hovered() || response.dragged() { t.text } else { t.text_dim };
+    painter.rect_filled(handle, 1.0, ink);
+    let value = f64::from(*zoom);
+    response.widget_info(|| egui::WidgetInfo::slider(true, value, tr!("zoom")));
+    response
+}
+
 /// A small icon button, for the status bar and the panes' headers.
 pub(crate) fn icon_button(ui: &mut egui::Ui, icon: Icon, name: &str) -> bool {
     let t = Tokens::get(ui.ctx());
@@ -2140,7 +2173,7 @@ pub(crate) fn icon_button(ui: &mut egui::Ui, icon: Icon, name: &str) -> bool {
         ui.painter().rect_filled(rect, theme::RADIUS, t.hover);
     }
     let ink = if response.hovered() { t.text } else { t.text_dim };
-    icons::paint_mono(ui.painter(), rect.shrink(4.0), icon, &t, ink);
+    icons::paint_mono(ui.painter(), rect.shrink(4.0), icon, ink);
     response.on_hover_text(name).clicked()
 }
 

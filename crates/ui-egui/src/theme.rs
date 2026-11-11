@@ -155,6 +155,9 @@ pub fn apply(ctx: &egui::Context) {
             egui::epaint::Shadow { offset: [0, 8], blur: 28, spread: 0, color: Color32::from_black_alpha(if t.dark { 110 } else { 28 }) };
         v.window_shadow = v.popup_shadow;
         v.striped = true;
+        // A slider's handle a slim upright bar on a fine rail, as the house's status bars have it.
+        v.handle_shape = egui::style::HandleShape::Rect { aspect_ratio: 0.45 };
+        v.slider_trailing_fill = true;
         ctx.set_visuals_of(theme, v);
     }
     ctx.options_mut(|o| {
@@ -167,6 +170,9 @@ pub fn apply(ctx: &egui::Context) {
         s.spacing.interact_size.y = 24.0;
         s.spacing.window_margin = egui::Margin::same(14);
         s.spacing.menu_margin = egui::Margin::same(6);
+        s.spacing.slider_rail_height = 3.0;
+        // Scroll bars thin and floating over what they scroll, widening under the pointer.
+        s.spacing.scroll = egui::style::ScrollStyle::thin();
         s.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(13.0));
         s.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(13.0));
         s.text_styles.insert(egui::TextStyle::Small, egui::FontId::proportional(11.0));
@@ -204,7 +210,7 @@ pub fn pane_header<R>(ui: &mut egui::Ui, icon: crate::icons::Icon, title: &str, 
             ui.set_min_height(HEADER_HEIGHT);
             ui.spacing_mut().item_spacing.x = 6.0;
             let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-            crate::icons::paint_mono(ui.painter(), rect, icon, &t, t.text_dim);
+            crate::icons::paint_mono(ui.painter(), rect, icon, t.text_dim);
             let label = ui.label(egui::RichText::new(title).size(13.5).color(t.text).strong());
             if !tip.is_empty() {
                 label.on_hover_text(tip);

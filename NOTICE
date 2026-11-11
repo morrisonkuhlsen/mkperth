@@ -7,6 +7,11 @@ The Morrison Kühlsen name is Morrison Kühlsen's. Its brand assets (the wordmar
 shown on the splash screen) are used with their owner's permission, outside the licences above,
 each listed in ATTRIBUTION.md.
 
+The icons (crates/ui-egui/src/icons.rs) follow MK Matrix's icon system, and the drawings they
+share with it (undo and redo, save, open, search, comment, link, indent, the calendar, the
+table…) are adapted from MK Matrix's, a Morrison Kühlsen project under the same licences
+(MIT OR Apache-2.0).
+
 Third-party material
 
 Every asset in this repository, the splash artwork included (drawn in code), is original to

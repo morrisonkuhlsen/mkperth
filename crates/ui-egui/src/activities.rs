@@ -578,12 +578,13 @@ pub(crate) fn show(
         };
         // The column the rows are sorted by: a small triangle at its right, up or down.
         let sorted = options.sort.as_ref().filter(|(by, _)| options.sort_key(k).as_ref() == Some(by)).map(|(_, down)| *down);
-        let room = if sorted.is_some() { 22.0 } else { 12.0 };
+        // Room at the right for the sort's triangle, or for a figure's margin.
+        let room = if sorted.is_some() { 20.0 } else { 9.0 };
         // A title wider than its column wraps onto a second line rather than being cut; titles
         // stand on one line at the foot of the header, with the chart's days, and figures'
         // titles at the right, over their figures.
-        let title = painter.layout(name, FontId::proportional(12.0), t.header_text, (w - room).max(1.0));
-        let x_title = if numeric(k) { x + w - room + 4.0 - title.size().x } else { x + 8.0 };
+        let title = painter.layout(name, FontId::proportional(11.5), t.header_text, (w - room - 3.0).max(1.0));
+        let x_title = if numeric(k) { x + w - room - title.size().x } else { x + 8.0 };
         let at = pos2(x_title, header.bottom() - 7.0 - title.size().y);
         painter.with_clip_rect(cell.shrink(2.0)).galley(at, title, t.header_text);
         if let Some(down) = sorted {
@@ -1050,7 +1051,7 @@ pub(crate) fn show(
                 let painter = painter.with_clip_rect(cell.shrink(1.0));
                 // Figures at the right, as columns of figures line up; text at the left.
                 let (at, align) = if numeric(k) {
-                    (pos2(x + w - 12.0, rect.center().y), Align2::RIGHT_CENTER)
+                    (pos2(x + w - 9.0, rect.center().y), Align2::RIGHT_CENTER)
                 } else {
                     (pos2(x + 8.0 + indent, rect.center().y), Align2::LEFT_CENTER)
                 };

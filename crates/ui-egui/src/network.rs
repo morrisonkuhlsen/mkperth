@@ -259,7 +259,7 @@ pub fn show(ui: &mut egui::Ui, session: &Session, view: &mut NetworkView, select
             };
             zoom_by(ui, crate::icons::Icon::Minus, tr!("network-zoom-out"), 0.8);
             zoom_by(ui, crate::icons::Icon::Plus, tr!("network-zoom-in"), 1.25);
-            if crate::icon_button(ui, crate::icons::Icon::Scale, &tr!("network-fit")) {
+            if crate::icon_button(ui, crate::icons::Icon::Fit, &tr!("network-fit")) {
                 let whole = vec2(columns as f32 * (BOX.x + GAP.x), rows as f32 * (BOX.y + GAP.y)) + vec2(32.0, 32.0);
                 view.zoom = (rect.width() / whole.x).min(rect.height() / whole.y).clamp(0.2, 1.0);
                 view.offset = vec2(16.0, 16.0);

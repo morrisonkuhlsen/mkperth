@@ -51,7 +51,7 @@ fn load_recent() -> Vec<std::path::PathBuf> {
 
 /// Typeface families the systems have, with their faces' files (regular, bold, italic, bold
 /// italic), looked for where each system keeps its fonts.
-const FAMILIES: [(&str, [&str; 4]); 14] = [
+const FAMILIES: [(&str, [&str; 4]); 15] = [
     ("Segoe UI", ["segoeui.ttf", "segoeuib.ttf", "segoeuii.ttf", "segoeuiz.ttf"]),
     ("Arial", ["arial.ttf", "arialbd.ttf", "ariali.ttf", "arialbi.ttf"]),
     ("Calibri", ["calibri.ttf", "calibrib.ttf", "calibrii.ttf", "calibriz.ttf"]),
@@ -66,6 +66,7 @@ const FAMILIES: [(&str, [&str; 4]); 14] = [
     ("Liberation Sans", ["LiberationSans-Regular.ttf", "LiberationSans-Bold.ttf", "LiberationSans-Italic.ttf", "LiberationSans-BoldItalic.ttf"]),
     ("Noto Sans", ["NotoSans-Regular.ttf", "NotoSans-Bold.ttf", "NotoSans-Italic.ttf", "NotoSans-BoldItalic.ttf"]),
     ("Ubuntu", ["Ubuntu-R.ttf", "Ubuntu-B.ttf", "Ubuntu-RI.ttf", "Ubuntu-BI.ttf"]),
+    ("Cantarell", ["Cantarell-Regular.otf", "Cantarell-Bold.otf", "Cantarell-Regular.otf", "Cantarell-Bold.otf"]),
 ];
 
 /// The folders the system keeps fonts in.
@@ -82,14 +83,34 @@ fn font_folders() -> Vec<std::path::PathBuf> {
         "/usr/share/fonts/truetype/liberation",
         "/usr/share/fonts/truetype/noto",
         "/usr/share/fonts/truetype/ubuntu",
+        // Arch's and Fedora's layouts.
+        "/usr/share/fonts/noto",
+        "/usr/share/fonts/google-noto",
+        "/usr/share/fonts/cantarell",
+        "/usr/share/fonts/abattis-cantarell-fonts",
+        "/usr/share/fonts/ubuntu",
+        "/usr/share/fonts/TTF",
+        "/usr/share/fonts/dejavu",
+        "/usr/share/fonts/dejavu-sans-fonts",
+        "/usr/share/fonts/liberation",
+        "/usr/share/fonts/liberation-sans",
     ] {
         folders.push(std::path::PathBuf::from(f));
     }
     folders
 }
 
-/// Where a family's face is, if the system has it.
+/// The system's interface faces, the platform's own first: what the default typeface is, the
+/// first the system has.
+const INTERFACE: [&str; 6] = ["Segoe UI", "Noto Sans", "Cantarell", "Ubuntu", "DejaVu Sans", "Liberation Sans"];
+
+/// Where a family's face is, if the system has it; an empty family is the system's interface face.
 fn font_file(family: &str, bold: bool, italic: bool) -> Option<std::path::PathBuf> {
+    if family.is_empty() { INTERFACE.iter().find_map(|f| face_file(f, bold, italic)) } else { face_file(family, bold, italic) }
+}
+
+/// Where a named family's face is, if the system has it.
+fn face_file(family: &str, bold: bool, italic: bool) -> Option<std::path::PathBuf> {
     let (_, files) = FAMILIES.iter().find(|(name, _)| *name == family)?;
     let wanted = files.get(usize::from(bold) + 2 * usize::from(italic)).copied().unwrap_or(files[0]);
     let folders = font_folders();

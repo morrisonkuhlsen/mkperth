@@ -210,7 +210,7 @@ fn measures(ui: &mut egui::Ui, t: &Tokens, p: &mkperth_engine::core::Project, s:
 impl PerthApp {
     pub(crate) fn earned_pane(&mut self, ui: &mut egui::Ui) {
         let t = Tokens::get(ui.ctx());
-        if theme::pane_header(ui, Icon::Frequencies, &tr!("pane-earned"), &tr!("pane-earned-tip"), |ui| {
+        if theme::pane_header(ui, Icon::EarnedValue, &tr!("pane-earned"), &tr!("pane-earned-tip"), |ui| {
             icon_button(ui, Icon::ChevronRight, &tr!("pane-close"))
         }) {
             self.side = None;
