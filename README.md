@@ -138,6 +138,9 @@ Offscreen screenshots, with no window and nothing captured from the desktop:
 cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--dark] [--lang pt-BR] out.png
 ```
 
+The commands that render this README's screenshots are in
+[`docs/screenshots.md`](docs/screenshots.md).
+
 The wasm gate needs the target once: `rustup target add wasm32-unknown-unknown`.
 
 The whole app in a browser, in `target/web` (serve the folder, e.g. `python3 -m http.server`):
