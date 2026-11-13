@@ -10,6 +10,14 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- The Calculation pane reads as a calculation: each pass's title in bold, the dates in bold, the
+  bound that set the date marked with an arrowhead and "sets the date", the others quieter. The
+  pointer on a relationship's bound lights that relationship and the activity at its other end on
+  the chart. A button folds the pane down to its header, giving the table its room.
+- Bold text is set in the system's bold face (summaries' rows, band titles, the calculation),
+  instead of drawn twice half a point apart; without a bold face it is drawn twice as before.
+- The critical path is a red dot before each critical activity's name; the total float is in red
+  only when it is negative, instead of every zero in red.
 - The activity table's titles are icons, each over a short name in small letters ("early start",
   "total float"): dates a bar with a tick at the end they name, solid when early and outlined when
   late, the baseline's thin; floats a bar and the room after it; variances a delta; costs a coin.

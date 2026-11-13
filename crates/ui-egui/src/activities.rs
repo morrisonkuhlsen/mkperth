@@ -172,6 +172,9 @@ pub struct Options {
     pub sort: Option<(SortBy, bool)>,
     /// The table's width, dragged at its edge with the chart; `None` is the columns' own.
     pub table_width: Option<f32>,
+    /// A relationship pointed at in the calculation: (the activity, the one at its other end),
+    /// lit on the chart with the other's bar.
+    pub focus: Option<(usize, usize)>,
     /// Only the activities with this value of this code, or a value under it: (code, value).
     pub code_filter: Option<(String, String)>,
 }
@@ -845,9 +848,7 @@ pub(crate) fn show(
                 let painter = ui.painter_at(rect);
                 painter.rect_filled(rect, 0.0, t.header_bg);
                 painter.hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, t.header_line));
-                for dx in [0.0, 0.5] {
-                    painter.text(pos2(rect.left() + 8.0 + dx, rect.center().y), Align2::LEFT_CENTER, title, FontId::proportional(12.5), t.text);
-                }
+                crate::fonts::strong(&painter, pos2(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, title, 12.5, t.text);
                 continue;
             }
             // A press on a bar drags the bar; anywhere else, a rectangle to choose rows. Both
@@ -1017,8 +1018,15 @@ pub(crate) fn show(
                 let x1 = if to_start { qe.0 } else { qe.1 };
                 let (y0, y1) = (y_of(np), y_of(nq));
                 let critical = schedule.activities.get(p).is_some_and(|s| s.critical) && schedule.activities.get(q).is_some_and(|s| s.critical);
-                let color = if critical { t.red.gamma_multiply(0.55) } else { t.text_dim.gamma_multiply(0.55) };
-                link(&painter, (x0, y0), (x1, y1), from_finish, to_start, color);
+                let lit = options.focus.is_some_and(|f| f == (p, q) || f == (q, p));
+                let (color, width) = if lit {
+                    (t.accent, 2.2)
+                } else if critical {
+                    (t.red.gamma_multiply(0.55), 1.3)
+                } else {
+                    (t.text_dim.gamma_multiply(0.55), 1.3)
+                };
+                link(&painter, (x0, y0), (x1, y1), from_finish, to_start, color, width);
             }
         }
         for (i, depth, rect) in placed {
@@ -1033,7 +1041,9 @@ pub(crate) fn show(
                 .and_then(|n| session.project.calendars.iter().find(|c| c.name == n))
                 .map_or(session.project.calendar.day_minutes(), |c| c.day_minutes());
             let duration = if summary { String::new() } else { crate::days_text(a.working_minutes(day), day) };
-            let float_color = if s.critical && !summary { t.red } else { t.cell_text };
+            // The float in red only when it is negative: behind its finish. The critical path is
+            // the dot by the name.
+            let float_color = if s.total_float_minutes < 0 { t.red } else { t.cell_text };
             let b = baseline.get(a.id.as_str()).copied();
             let v = variances.get(i).copied().flatten();
             let c = costs.get(i).copied();
@@ -1088,10 +1098,14 @@ pub(crate) fn show(
                 } else {
                     (pos2(x + 8.0 + indent, rect.center().y), Align2::LEFT_CENTER)
                 };
-                painter.text(at, align, &text, FontId::proportional(12.5), color);
                 if summary {
-                    // Bold by drawing twice: the built-in fonts have no bold face.
-                    painter.text(at + vec2(0.5, 0.0), align, &text, FontId::proportional(12.5), color);
+                    crate::fonts::strong(&painter, at, align, &text, 12.5, color);
+                } else {
+                    painter.text(at, align, &text, FontId::proportional(12.5), color);
+                }
+                // An activity on the critical path: a red dot before its name.
+                if k == 1 && !summary && s.critical {
+                    painter.circle_filled(pos2(x + 8.0 + indent - 6.0, rect.center().y), 2.5, t.red);
                 }
                 if k == 0 && acts.get(i).is_some_and(|a| commented.contains(a.id.as_str())) {
                     let corner = pos2(x + w - 1.0, rect.top() + 1.0);
@@ -1178,7 +1192,10 @@ pub(crate) fn show(
             // A hairline under the row, across the table and the chart, as ruled paper.
             painter.hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0, t.gridline.gamma_multiply(0.8)));
             let chosen = selected == Some(i) || marked.contains(&i) || banded.contains(&i);
-            let look = Look { summary, selected: chosen, float: options.late_bars, data_date };
+            // The activity at the other end of a relationship pointed at in the calculation is
+            // ringed as the chosen one is.
+            let pointed = options.focus.is_some_and(|(_, o)| o == i);
+            let look = Look { summary, selected: chosen || pointed, float: options.late_bars, data_date };
             // The baseline's bar, thin, under the schedule's.
             if options.baseline_bars
                 && let Some(b) = b
@@ -1422,7 +1439,7 @@ fn bar(
 /// A relationship line: out of the predecessor (rightwards from a finish, leftwards from a
 /// start), down or up to the successor's row, into it (from the left to a start, from the right
 /// to a finish), an arrowhead at the end.
-fn link(painter: &egui::Painter, from: (f32, f32), to: (f32, f32), from_finish: bool, to_start: bool, color: egui::Color32) {
+fn link(painter: &egui::Painter, from: (f32, f32), to: (f32, f32), from_finish: bool, to_start: bool, color: egui::Color32, width: f32) {
     let (x0, y0) = from;
     let (x1, y1) = to;
     let stub = 6.0;
@@ -1440,7 +1457,7 @@ fn link(painter: &egui::Painter, from: (f32, f32), to: (f32, f32), from_finish: 
         let mid = y0 + down * (ROW / 2.0);
         points.extend([pos2(out, y0), pos2(out, mid), pos2(into, mid), pos2(into, y1), pos2(x1, y1)]);
     }
-    painter.add(egui::Shape::line(points, Stroke::new(1.3, color)));
+    painter.add(egui::Shape::line(points, Stroke::new(width, color)));
     let head = if to_start { -1.0 } else { 1.0 };
     painter.add(egui::Shape::convex_polygon(
         vec![pos2(x1, y1), pos2(x1 + head * 5.0, y1 - 3.5), pos2(x1 + head * 5.0, y1 + 3.5)],

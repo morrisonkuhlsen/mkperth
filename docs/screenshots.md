@@ -8,9 +8,10 @@ repository's root, and look at each before committing.
 ## The sample, as is
 
 ```sh
-# The desktop app writes in the system's interface face; the screenshots stand Noto Sans for it.
-FACE=/usr/share/fonts/noto/NotoSans-Regular.ttf
-snap() { cargo run -q -p mkperth-ui-egui --example snapshot -- --face "$FACE" "$@"; }
+# The desktop app writes in the system's interface face, its bold for emphasis; the screenshots
+# stand Noto Sans for them.
+FACES=(/usr/share/fonts/noto/NotoSans-Regular.ttf /usr/share/fonts/noto/NotoSans-Bold.ttf)
+snap() { cargo run -q -p mkperth-ui-egui --example snapshot -- --faces "${FACES[@]}" "$@"; }
 
 snap --select 9 docs/images/activities.png                        # B20's calculation
 snap --dark --select 4 --side calendars docs/images/calendars-dark.png

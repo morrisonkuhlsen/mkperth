@@ -1,7 +1,7 @@
 //! Renders the MK Perth window offscreen (wgpu, no window) to a PNG, to look at the UI without
 //! touching the screen.
 //!
-//! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--face FONT_FILE] [--dark] [--lang CODE]
+//! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--face FONT_FILE | --faces REGULAR BOLD] [--dark] [--lang CODE]
 //!  [--select N] [--resource N] [--group code:NAME|field:NAME] [--column code:NAME|field:NAME]… [--side details|filters|notes|calendars|levelling|pert|baselines|costs|budget|earned|codes|organisation] [--details general|status|relationships|notes|resources|comments] [--scale PT_PER_DAY] [--offset DAYS] [--table-width PT] [--toolbar-hidden] [--present] [--splash] [--backstage home|new|open|info|export|about] [--view activities|resources|network] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1, `--resource` the resource;
 //!  `--click` clicks what has that accessible name, in order: `--click View --click Theme` opens a submenu)
 
@@ -29,6 +29,14 @@ fn main() -> Result<(), String> {
                 i += 1;
                 let bytes = std::fs::read(args.get(i).ok_or("--face needs a font file")?).map_err(|e| e.to_string())?;
                 app.services.load_font = Some(Box::new(move |_: &str, _: bool, _: bool| Some(bytes.clone())));
+            }
+            "--faces" => {
+                // The regular and the bold faces' files, as the desktop app loads them.
+                i += 1;
+                let regular = std::fs::read(args.get(i).ok_or("--faces needs two font files")?).map_err(|e| e.to_string())?;
+                i += 1;
+                let bold = std::fs::read(args.get(i).ok_or("--faces needs two font files")?).map_err(|e| e.to_string())?;
+                app.services.load_font = Some(Box::new(move |_: &str, b: bool, _: bool| Some(if b { bold.clone() } else { regular.clone() })));
             }
             "--toolbar-hidden" => app.toolbar_hidden = true,
             "--present" => app.presenting = true,

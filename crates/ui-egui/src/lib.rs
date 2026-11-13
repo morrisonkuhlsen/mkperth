@@ -187,6 +187,8 @@ const VIEW_TABS: f32 = 30.0;
 const SIDE_WIDTH: f32 = 320.0;
 const SIDE_STRIP: f32 = 38.0;
 const CALCULATION_HEIGHT: f32 = 230.0;
+/// The calculation folded: its header alone.
+const CALCULATION_FOLDED: f32 = 44.0;
 
 pub struct PerthApp {
     pub session: Session,
@@ -261,7 +263,9 @@ pub struct PerthApp {
     /// What the Comments tab is typing.
     pub comment_form: CommentForm,
     /// The selected activity's calculation, in words: (its index, the lines).
-    calculation: Option<(usize, Vec<String>)>,
+    calculation: Option<(usize, Calculation)>,
+    /// The calculation folded down to its header, the table taking its room.
+    pub calculation_folded: bool,
     themed: bool,
     title: String,
 }
@@ -373,6 +377,7 @@ impl PerthApp {
             resource_form: ResourceForm::default(),
             comment_form: CommentForm::default(),
             calculation: None,
+            calculation_folded: false,
             themed: false,
             title: String::new(),
         }
@@ -928,7 +933,9 @@ impl PerthApp {
                 None => ("", false, false),
             };
             let bytes = self.services.load_font.as_ref().and_then(|load| load(family, bold, italic));
-            ui.ctx().set_fonts(fonts::definitions(&self.font, bytes));
+            // The bold face for emphasis, unless it is the face already in use.
+            let strong = self.services.load_font.as_ref().and_then(|load| load(family, true, italic)).filter(|b| Some(b) != bytes.as_ref());
+            fonts::install(ui.ctx(), &self.font, bytes, strong);
             self.font_set = Some(self.font.clone());
         }
         if self.font_families.is_none() {
@@ -1302,7 +1309,8 @@ impl PerthApp {
     /// The Activities view over the selected activity's calculation.
     fn left_pane(&mut self, ui: &mut egui::Ui, height: f32) {
         let t = Tokens::get(ui.ctx());
-        let table_height = (height - CALCULATION_HEIGHT).max(140.0);
+        let calculation_height = if self.calculation_folded { CALCULATION_FOLDED } else { CALCULATION_HEIGHT };
+        let table_height = (height - calculation_height).max(140.0);
         let grid = egui::Frame::new().fill(t.grid_bg).inner_margin(egui::Margin::same(1));
         let mut events = activities::Events::default();
         grid.show(ui, |ui| {
@@ -1389,7 +1397,12 @@ impl PerthApp {
         let mut export = false;
         theme::sheet(&t).show(ui, |ui| {
             ui.set_min_size(egui::vec2(ui.available_width(), ui.available_height()));
+            let mut fold = false;
+            let folded = self.calculation_folded;
             schedule = theme::pane_header(ui, Icon::List, &tr!("pane-calculation"), &tr!("pane-calculation-tip"), |ui| {
+                let (icon, name) = if folded { (Icon::ChevronUp, tr!("calc-unfold")) } else { (Icon::ChevronDown, tr!("calc-fold")) };
+                fold = icon_button(ui, icon, &name);
+                ui.add_space(6.0);
                 let run = chrome::accent_button(ui, Icon::Run, &tr!("schedule")).on_hover_text(tr!("schedule-tip")).clicked();
                 if self.selected.is_some() {
                     ui.add_space(6.0);
@@ -1397,32 +1410,87 @@ impl PerthApp {
                 }
                 run
             });
+            if fold {
+                self.calculation_folded = !folded;
+            }
+            if folded {
+                self.options.focus = None;
+                return;
+            }
             let Some(i) = self.selected else {
                 ui.label(egui::RichText::new(tr!("pane-calculation-empty")).color(t.text_dim));
+                self.options.focus = None;
                 return;
             };
             if self.calculation.as_ref().is_none_or(|(k, _)| *k != i) {
                 let id = self.session.project.activities.get(i).map(|a| a.id.clone()).unwrap_or_default();
-                let lines = match self.session.explain(&id) {
-                    Ok(e) => e.lines(&show_date),
-                    Err(e) => vec![e.to_string()],
+                let calculation = match self.session.explain(&id) {
+                    Ok(e) => Calculation::of(&self.session, &e),
+                    Err(e) => Calculation { lines: vec![(e.to_string(), CalcKind::Result)], dates: Vec::new() },
                 };
-                self.calculation = Some((i, lines));
+                self.calculation = Some((i, calculation));
             }
-            if let Some((_, lines)) = &self.calculation {
+            // The bound under the pointer: its relationship and the activity at its other end
+            // light up on the chart.
+            let mut pointed = None;
+            if let Some((_, calculation)) = &self.calculation {
                 egui::ScrollArea::vertical().id_salt("calculation").auto_shrink(false).show(ui, |ui| {
-                    // Headings and results flush; each bound indented under its pass.
-                    for (k, line) in lines.iter().enumerate() {
-                        if let Some(bound) = line.strip_prefix("  ") {
-                            ui.indent(("bound", k), |ui| {
-                                ui.label(egui::RichText::new(format!("•  {bound}")).size(12.5).color(t.text));
-                            });
-                        } else {
-                            ui.label(egui::RichText::new(line).size(12.5).color(t.text_dim));
+                    ui.spacing_mut().item_spacing.y = 3.0;
+                    for (k, (line, kind)) in calculation.lines.iter().enumerate() {
+                        match *kind {
+                            CalcKind::Heading => {
+                                if k > 0 {
+                                    ui.add_space(6.0);
+                                }
+                                let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 18.0), egui::Sense::hover());
+                                fonts::strong(ui.painter(), rect.left_center(), egui::Align2::LEFT_CENTER, line, 12.5, t.text);
+                            }
+                            CalcKind::Result => {
+                                ui.label(calc_job(ui.ctx(), line, &calculation.dates, t.text, t.text));
+                            }
+                            CalcKind::Bound { driving, other } => {
+                                let size = egui::vec2(ui.available_width(), 18.0);
+                                let row = ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                    ui.set_min_size(size);
+                                    ui.add_space(10.0);
+                                    let (mark, _) = ui.allocate_exact_size(egui::vec2(12.0, 16.0), egui::Sense::hover());
+                                    let c = mark.center();
+                                    if driving {
+                                        // The bound that set the date: an arrowhead in the accent.
+                                        ui.painter().add(egui::Shape::convex_polygon(
+                                            vec![egui::pos2(c.x - 3.0, c.y - 4.0), egui::pos2(c.x + 3.5, c.y), egui::pos2(c.x - 3.0, c.y + 4.0)],
+                                            t.accent,
+                                            egui::Stroke::NONE,
+                                        ));
+                                    } else {
+                                        ui.painter().circle_filled(c, 2.0, t.text_dim.gamma_multiply(0.7));
+                                    }
+                                    let (color, strong) = if driving { (t.text, t.text) } else { (t.text_dim, t.text_dim) };
+                                    ui.label(calc_job(ui.ctx(), line, &calculation.dates, color, strong));
+                                    if driving {
+                                        ui.add_space(4.0);
+                                        ui.label(egui::RichText::new(tr!("calc-driving")).size(11.0).color(t.accent));
+                                    }
+                                });
+                                if row.response.contains_pointer() {
+                                    if other.is_some() {
+                                        ui.painter().rect_filled(
+                                            row.response.rect.expand2(egui::vec2(4.0, 1.0)),
+                                            theme::RADIUS,
+                                            t.hover.gamma_multiply(0.6),
+                                        );
+                                    }
+                                    pointed = other;
+                                }
+                            }
                         }
-                        ui.add_space(3.0);
                     }
                 });
+            }
+            let focus = pointed.map(|o| (i, o));
+            if focus != self.options.focus {
+                self.options.focus = focus;
+                ui.ctx().request_repaint();
             }
         });
         // The hairline over the calculation, drawn over its sheet.
@@ -2172,6 +2240,107 @@ fn zoom_slider(ui: &mut egui::Ui, zoom: &mut u32, width: f32) -> egui::Response 
     let value = f64::from(*zoom);
     response.widget_info(|| egui::WidgetInfo::slider(true, value, tr!("zoom")));
     response
+}
+
+/// What a line of the calculation is, for how the panel sets it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CalcKind {
+    /// A pass's title: forward, backward.
+    Heading,
+    /// A bound under its pass; `driving` when it is the one that set the date, `other` the
+    /// activity at the relationship's other end.
+    Bound { driving: bool, other: Option<usize> },
+    /// A result: the date the pass reached, the calendar's placing, the floats.
+    Result,
+}
+
+/// The selected activity's calculation as the panel shows it: its lines, and the dates in them
+/// to set in bold.
+#[derive(Debug, Clone, Default)]
+struct Calculation {
+    lines: Vec<(String, CalcKind)>,
+    dates: Vec<String>,
+}
+
+impl Calculation {
+    /// Reads the explanation's lines into passes, bounds and results.
+    fn of(session: &Session, e: &mkperth_engine::sched::Explanation) -> Calculation {
+        use mkperth_engine::sched::{Moment, Source};
+        let (forward, backward) = (tr!("ex-forward"), tr!("ex-backward"));
+        let index_of = |id: &str| session.project.activities.iter().position(|a| a.id == id);
+        let mut pass: Option<(&[mkperth_engine::sched::Bound], Moment)> = None;
+        let mut k = 0;
+        let mut lines = Vec::new();
+        for line in e.lines(&show_date) {
+            let kind = if line == forward {
+                pass = Some((&e.early, e.earliest));
+                k = 0;
+                CalcKind::Heading
+            } else if line == backward {
+                pass = Some((&e.late, e.latest));
+                k = 0;
+                CalcKind::Heading
+            } else if let Some(bound) = line.strip_prefix("  ") {
+                let b = pass.and_then(|(bounds, won)| bounds.get(k).map(|b| (b, won)));
+                k += 1;
+                let driving = b.is_some_and(|(b, won)| b.overrides || b.moment == won);
+                let other = b.and_then(|(b, _)| match &b.source {
+                    Source::Relationship { other, .. } => index_of(other),
+                    _ => None,
+                });
+                lines.push((bound.to_string(), CalcKind::Bound { driving, other }));
+                continue;
+            } else {
+                CalcKind::Result
+            };
+            lines.push((line, kind));
+        }
+        // Every date the calculation names, longest first so none is found inside another.
+        let s = &e.scheduled;
+        let mut dates: Vec<String> = [s.early_start, s.early_finish, s.late_start, s.late_finish]
+            .into_iter()
+            .chain(e.early.iter().chain(&e.late).flat_map(|b| std::iter::once(b.moment.date).chain(b.via.map(|v| v.date))))
+            .chain([e.earliest.date, e.latest.date, e.early_start.date, e.early_finish.date, e.late_start.date, e.late_finish.date])
+            .chain(e.expected)
+            .map(show_date)
+            .collect();
+        dates.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
+        dates.dedup();
+        Calculation { lines, dates }
+    }
+}
+
+/// A line of the calculation laid out: in `color`, its dates in bold (or in the text's colour
+/// without a bold face).
+fn calc_job(ctx: &egui::Context, text: &str, dates: &[String], color: egui::Color32, strong: egui::Color32) -> egui::text::LayoutJob {
+    let size = 12.5;
+    let plain = egui::TextFormat { font_id: egui::FontId::proportional(size), color, ..Default::default() };
+    let bold = egui::TextFormat { font_id: fonts::bold(ctx, size).unwrap_or(egui::FontId::proportional(size)), color: strong, ..Default::default() };
+    let mut job = egui::text::LayoutJob::default();
+    let mut rest = text;
+    while !rest.is_empty() {
+        // The next date in what is left, the longest where two start together.
+        let next = dates
+            .iter()
+            .filter(|d| !d.is_empty())
+            .filter_map(|d| rest.find(d.as_str()).map(|at| (at, d.len())))
+            .min_by_key(|(at, len)| (*at, usize::MAX - len));
+        match next {
+            Some((at, len)) => {
+                let (before, after) = rest.split_at(at);
+                let (date, after) = after.split_at(len);
+                job.append(before, 0.0, plain.clone());
+                job.append(date, 0.0, bold.clone());
+                rest = after;
+            }
+            None => {
+                job.append(rest, 0.0, plain.clone());
+                rest = "";
+            }
+        }
+    }
+    job.wrap.max_width = f32::INFINITY;
+    job
 }
 
 /// A small icon button, for the status bar and the panes' headers.

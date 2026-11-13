@@ -1056,3 +1056,29 @@ fn the_table_edge_moves_with_the_arrows_is_kept_and_stays_put_presenting() {
     h.run_steps(2);
     assert!(h.query_by_label("Edge between the table and the chart").is_none());
 }
+
+/// The calculation: the bound that set the date is marked; the pointer on a relationship's bound
+/// lights it and the activity at its other end on the chart; folded, only its header is left.
+#[test]
+fn the_calculation_points_at_the_chart_and_folds() {
+    let mut h = harness(PerthApp::default());
+    let index = |h: &Harness<'static, PerthApp>, id: &str| h.state().session.project.activities.iter().position(|a| a.id == id).unwrap();
+    let (b20, a40) = (index(&h, "B20"), index(&h, "A40"));
+    h.state_mut().selected = Some(b20);
+    h.run_steps(2);
+    assert_eq!(h.query_all_by_label("sets the date").count(), 2, "the bound that set each pass's date is marked");
+    let line = h.get_by_label_contains("Finish-to-start with A40").rect().center();
+    h.event(egui::Event::PointerMoved(line));
+    h.run_steps(2);
+    assert_eq!(h.state().options.focus, Some((b20, a40)));
+    h.event(egui::Event::PointerMoved(egui::pos2(5.0, 5.0)));
+    h.run_steps(2);
+    assert_eq!(h.state().options.focus, None);
+    h.get_by_label("Fold the calculation").click();
+    h.run_steps(2);
+    assert!(h.state().calculation_folded);
+    assert!(h.query_by_label_contains("Finish-to-start with A40").is_none());
+    h.get_by_label("Unfold the calculation").click();
+    h.run_steps(2);
+    assert!(!h.state().calculation_folded);
+}
