@@ -985,3 +985,37 @@ fn the_network_view() {
     h.run_steps(2);
     assert!(h.state().network.zoom < 1.0);
 }
+
+/// The line between the table and the chart, found by the cursor it shows: dragged left, the
+/// table narrows and the chart widens; a double click gives the table its columns' own width.
+#[test]
+fn the_table_is_resized_at_its_edge_with_the_chart() {
+    let mut h = quick(PerthApp::default());
+    let y = 400.0;
+    let edge = (600..1200)
+        .map(|x| x as f32)
+        .find(|&x| {
+            h.event(egui::Event::PointerMoved(egui::pos2(x, y)));
+            h.run_steps(1);
+            h.output().platform_output.cursor_icon == egui::CursorIcon::ResizeHorizontal
+        })
+        .expect("the edge shows a resize cursor");
+    assert_eq!(h.state().options.table_width, None);
+    drag(&mut h, egui::pos2(edge + 1.0, y), egui::pos2(edge - 150.0, y));
+    let narrower = h.state().options.table_width.expect("a width dragged");
+    assert!(narrower < edge - 100.0, "{narrower} from an edge at {edge}");
+    // No row was chosen and no bar moved by the drag.
+    assert_eq!(h.state().session.undo_label(), None);
+    // Its new place, and a double click there.
+    let moved = (300..900)
+        .map(|x| x as f32)
+        .find(|&x| {
+            h.event(egui::Event::PointerMoved(egui::pos2(x, y)));
+            h.run_steps(1);
+            h.output().platform_output.cursor_icon == egui::CursorIcon::ResizeHorizontal
+        })
+        .expect("the edge followed");
+    assert!(moved < edge - 100.0);
+    double_click(&mut h, egui::pos2(moved, y));
+    assert_eq!(h.state().options.table_width, None);
+}

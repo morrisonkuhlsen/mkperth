@@ -10,6 +10,9 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- The line between the activity table and the Gantt chart is dragged to make the table wider or
+  narrower: wider, the name column takes the room; narrower, the columns at the right are cut.
+  A double click on the line gives the table its columns' own width back.
 - A quieter window, as Pearl's: a slim title bar (AutoSave, undo and redo on the left; the mark
   and the project's name in the middle; Schedule, presenting, theme and search on the right), a
   row of menus with File in the accent, and one toolbar of small single-colour icons without

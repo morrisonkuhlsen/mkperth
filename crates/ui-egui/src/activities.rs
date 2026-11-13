@@ -168,6 +168,8 @@ pub struct Options {
     pub group_by: Option<Custom>,
     /// What the rows are sorted by, among their siblings (or in their band), and whether downwards.
     pub sort: Option<(SortBy, bool)>,
+    /// The table's width, dragged at its edge with the chart; `None` is the columns' own.
+    pub table_width: Option<f32>,
     /// Only the activities with this value of this code, or a value under it: (code, value).
     pub code_filter: Option<(String, String)>,
 }
@@ -316,6 +318,10 @@ pub(crate) fn note_color(hex: &str, fallback: egui::Color32) -> egui::Color32 {
 /// The narrowest and the widest a day may be drawn, in points.
 pub const MIN_SCALE: f32 = 0.5;
 pub const MAX_SCALE: f32 = 80.0;
+
+/// The narrowest the table may be dragged (its ID column), and the chart beside it.
+const MIN_TABLE: f32 = 84.0;
+const MIN_CHART: f32 = 120.0;
 
 /// Which activities are summaries (have children), in one pass.
 pub(crate) fn summaries(acts: &[mkperth_engine::core::Activity]) -> Vec<bool> {
@@ -514,11 +520,18 @@ pub(crate) fn show(
     } else {
         Vec::new()
     };
-    let columns = if options.table_hidden { Vec::new() } else { options.columns() };
-    let table_width: f32 = columns.iter().map(|(_, _, w)| w).sum();
+    let full = ui.available_rect_before_wrap();
+    let mut columns = if options.table_hidden { Vec::new() } else { options.columns() };
+    let natural: f32 = columns.iter().map(|(_, _, w)| w).sum();
+    // The table as wide as it was dragged, never so wide the chart has no room: wider, the name
+    // column takes the room gained; narrower, the columns at the right are cut where it ends.
+    let widest = (full.width() - MIN_CHART).max(MIN_TABLE);
+    let table_width = if columns.is_empty() { 0.0 } else { options.table_width.unwrap_or(natural).clamp(MIN_TABLE, widest) };
+    if let Some(name) = columns.iter_mut().find(|(k, _, _)| *k == 1) {
+        name.2 += (table_width - natural).max(0.0);
+    }
     // Where a column starts, if shown.
     let left_of = |k: usize| columns.iter().position(|(c, _, _)| *c == k).map(|n| columns.iter().take(n).map(|(_, _, w)| w).sum::<f32>());
-    let full = ui.available_rect_before_wrap();
     let chart_left = full.left() + table_width + 1.0;
     let chart_width = (full.right() - chart_left).max(60.0);
     let mut first = session.project.start;
@@ -586,7 +599,8 @@ pub(crate) fn show(
         let title = painter.layout(name, FontId::proportional(11.5), t.header_text, (w - room - 3.0).max(1.0));
         let x_title = if numeric(k) { x + w - room - title.size().x } else { x + 8.0 };
         let at = pos2(x_title, header.bottom() - 7.0 - title.size().y);
-        painter.with_clip_rect(cell.shrink(2.0)).galley(at, title, t.header_text);
+        let clip = cell.shrink(2.0).intersect(Rect::from_min_max(header.min, pos2(chart_left - 1.0, header.bottom())));
+        painter.with_clip_rect(clip).galley(at, title, t.header_text);
         if let Some(down) = sorted {
             let c = pos2(x + w - 9.0, header.center().y);
             let (tip, base) = if down { (c.y + 3.0, c.y - 2.0) } else { (c.y - 3.0, c.y + 2.0) };
@@ -877,7 +891,7 @@ pub(crate) fn show(
                 let x = pos.x - rect.left();
                 let (mut at, mut hit) = (0.0, None);
                 for &(k, _, w) in &columns {
-                    if x >= at && x < at + w {
+                    if x >= at && x < at + w && pos.x < chart_left {
                         hit = Some(k);
                     }
                     at += w;
@@ -1048,7 +1062,7 @@ pub(crate) fn show(
             for (k, (text, color, indent)) in cells.into_iter().enumerate() {
                 let Some(&(_, _, w)) = columns.iter().find(|(c, _, _)| *c == k) else { continue };
                 let cell = Rect::from_min_size(pos2(x, rect.top()), vec2(w, ROW));
-                let painter = painter.with_clip_rect(cell.shrink(1.0));
+                let painter = painter.with_clip_rect(cell.shrink(1.0).intersect(Rect::from_min_max(rect.min, pos2(chart_left - 1.0, rect.bottom()))));
                 // Figures at the right, as columns of figures line up; text at the left.
                 let (at, align) = if numeric(k) {
                     (pos2(x + w - 9.0, rect.center().y), Align2::RIGHT_CENTER)
@@ -1080,10 +1094,16 @@ pub(crate) fn show(
                     Column::Finish => 4,
                 };
                 // A hidden column isn't edited.
-                let (Some(left), Some(width)) = (left_of(k), COLUMNS.get(k).map(|c| c.1)) else {
+                let (Some(left), Some(width)) = (left_of(k), columns.iter().find(|c| c.0 == k).map(|c| c.2)) else {
                     *editing = None;
                     continue;
                 };
+                // A column cut at the chart's edge is edited in what shows of it.
+                let width = width.min(chart_left - 1.0 - rect.left() - left);
+                if width < 20.0 {
+                    *editing = None;
+                    continue;
+                }
                 let cell = Rect::from_min_size(pos2(rect.left() + left, rect.top() + 1.0), vec2(width, ROW - 2.0));
                 if matches!(e.column, Column::Start | Column::Finish) {
                     let start = e.column == Column::Start;
@@ -1182,9 +1202,20 @@ pub(crate) fn show(
             }
         }
     }
-    // The table parted from the chart, down the whole height.
+    // The table parted from the chart, down the whole height; the line dragged sideways makes
+    // the table wider or narrower, a double click gives it back its columns' own width.
     if !columns.is_empty() {
-        ui.painter().with_clip_rect(full).vline(chart_left - 0.5, full.y_range(), Stroke::new(1.0, t.header_line));
+        let grip = Rect::from_min_max(pos2(chart_left - 4.0, full.top()), pos2(chart_left + 3.0, full.bottom()));
+        let edge =
+            ui.interact(grip, ui.scope_id().with("table-chart-edge"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        if edge.dragged() {
+            options.table_width = Some((table_width + edge.drag_delta().x).clamp(MIN_TABLE, widest));
+        }
+        if edge.double_clicked() {
+            options.table_width = None;
+        }
+        let (width, color) = if edge.hovered() || edge.dragged() { (2.0, t.accent) } else { (1.0, t.header_line) };
+        ui.painter().with_clip_rect(full).vline(chart_left - 0.5, full.y_range(), Stroke::new(width, color));
     }
     // A thin scroll bar under the chart when part of it is out of view.
     if options.scale.is_some() && visible_days < days as f32 {
