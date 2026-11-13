@@ -10,7 +10,7 @@ use mkperth_engine::sched::{Scheduled, Status};
 use crate::show_date;
 use crate::theme::Tokens;
 
-const ROW: f32 = 24.0;
+const ROW: f32 = 32.0;
 const HEADER: f32 = 44.0;
 
 /// The table's columns: a message id and a width. The ID and the name are always shown.
@@ -815,14 +815,9 @@ pub(crate) fn show(
         let mut placed = Vec::with_capacity(range.len());
         // A row's own background: every other one tinted when striped.
         // A summary's a little tinted, so the WBS reads at a glance.
-        let plain = |n: usize, summary: bool| {
-            if summary {
-                t.grid_bg.lerp_to_gamma(t.header_bg, 0.7)
-            } else if options.striped && n % 2 == 1 {
-                t.grid_bg.lerp_to_gamma(t.header_bg, 0.5)
-            } else {
-                t.grid_bg
-            }
+        // Summaries stand out by their bold names alone, as the rows around them are plain.
+        let plain = |n: usize, _summary: bool| {
+            if options.striped && n % 2 == 1 { t.grid_bg.lerp_to_gamma(t.header_bg, 0.5) } else { t.grid_bg }
         };
         for (k, &(i, depth)) in rows.iter().skip(range.start).take(range.len()).enumerate() {
             let n = range.start + k;
@@ -944,7 +939,7 @@ pub(crate) fn show(
             let chart_part = Rect::from_min_max(pos2(chart_left, rect.top()), rect.max);
             let fill = if chosen { t.accent_soft } else { plain(n, is_summary(i)) };
             painter.rect_filled(table_part, 0.0, fill);
-            if fill != t.grid_bg {
+            if chosen || (options.striped && n % 2 == 1) {
                 painter.rect_filled(chart_part, 0.0, fill.gamma_multiply(if chosen { 0.75 } else { 0.6 }));
             }
             if chosen && selected == Some(i) {
@@ -1005,7 +1000,7 @@ pub(crate) fn show(
                 let x1 = if to_start { qe.0 } else { qe.1 };
                 let (y0, y1) = (y_of(np), y_of(nq));
                 let critical = schedule.activities.get(p).is_some_and(|s| s.critical) && schedule.activities.get(q).is_some_and(|s| s.critical);
-                let color = if critical { t.red.gamma_multiply(0.6) } else { t.text_dim.gamma_multiply(0.5) };
+                let color = if critical { t.red.gamma_multiply(0.55) } else { t.text_dim.gamma_multiply(0.55) };
                 link(&painter, (x0, y0), (x1, y1), from_finish, to_start, color);
             }
         }
@@ -1163,7 +1158,8 @@ pub(crate) fn show(
                 }
             }
             let chart = painter.with_clip_rect(Rect::from_min_max(pos2(chart_left, rect.top()), rect.max));
-            painter.hline(rect.left()..=chart_left, rect.bottom(), Stroke::new(1.0, t.gridline));
+            // A hairline under the row, across the table and the chart, as ruled paper.
+            painter.hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0, t.gridline.gamma_multiply(0.8)));
             let chosen = selected == Some(i) || marked.contains(&i) || banded.contains(&i);
             let look = Look { summary, selected: chosen, float: options.late_bars, data_date };
             // The baseline's bar, thin, under the schedule's.
@@ -1171,8 +1167,8 @@ pub(crate) fn show(
                 && let Some(b) = b
             {
                 let (l, r) = (x_of(b.start.days(), chart_left), x_of(b.finish.days(), chart_left) + scale);
-                let y = rect.center().y + 7.0;
-                chart.rect_filled(Rect::from_min_max(pos2(l, y), pos2(r.max(l + 3.0), y + 3.0)), 1.0, t.orange.gamma_multiply(0.85));
+                let y = rect.center().y + BAR_HALF + 1.0;
+                chart.rect_filled(Rect::from_min_max(pos2(l, y), pos2(r.max(l + 3.0), y + 3.0)), 1.5, t.orange.gamma_multiply(0.85));
             }
             bar(&chart, a.kind, &a.name, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, look, &t);
         }
@@ -1310,9 +1306,13 @@ struct Look {
     data_date: Option<Date>,
 }
 
-/// An activity's bar: flat with soft corners, red on the critical path, its float a light band
-/// to the late finish, its name beside it in a quiet grey; a summary as a slim bracket over its
-/// span; a milestone as a diamond.
+/// Half a bar's height: a bar fills its row but for a margin above and below.
+const BAR_HALF: f32 = 10.0;
+
+/// An activity's bar: soft corners, its colour light inside and full at its edge (red on the
+/// critical path, blue with float, green for what is done), its float a light band to the late
+/// finish, its name beside it; a summary as a slim rounded bracket over its span, caps at its
+/// ends; a milestone as a diamond.
 #[allow(clippy::too_many_arguments)]
 fn bar(
     painter: &egui::Painter,
@@ -1328,29 +1328,30 @@ fn bar(
     let mid = row.center().y;
     let span = |a: Date, b: Date| (x_of(a), x_of(b) + scale);
     let label = |x: f32| {
-        let galley = painter.layout_no_wrap(name.to_string(), FontId::proportional(11.5), t.text_dim);
+        let galley = painter.layout_no_wrap(name.to_string(), FontId::proportional(12.0), t.text);
         // Clear of the relationship line that leaves the bar's end and turns down.
-        painter.galley(pos2(x + 10.0, mid - galley.size().y / 2.0), galley, t.text_dim);
+        painter.galley(pos2(x + 8.0, mid - galley.size().y / 2.0), galley, t.text);
     };
     let ring = |rect: Rect, radius: f32| {
         if look.selected {
-            painter.rect_stroke(rect.expand(1.5), radius + 1.5, Stroke::new(1.5, t.accent), StrokeKind::Outside);
+            painter.rect_stroke(rect.expand(2.5), radius + 2.0, Stroke::new(1.5, t.accent), StrokeKind::Outside);
         }
     };
     if look.summary {
         let (l, r) = span(s.early_start, s.early_finish);
-        let color = t.text.gamma_multiply(0.75);
-        let body = Rect::from_min_max(pos2(l, mid - 2.5), pos2(r, mid + 1.5));
-        painter.rect_filled(body, 1.0, color);
+        let ink = t.text;
+        let body = Rect::from_min_max(pos2(l, mid - 5.0), pos2(r.max(l + 6.0), mid + 1.0));
+        painter.rect_filled(body, 3.0, ink.gamma_multiply(0.2));
         for x in [l, r] {
             let dx = if x == l { 1.0 } else { -1.0 };
             painter.add(egui::Shape::convex_polygon(
-                vec![pos2(x, mid + 1.5), pos2(x + dx * 5.0, mid + 1.5), pos2(x, mid + 6.0)],
-                color,
+                vec![pos2(x, mid - 5.0), pos2(x + dx * 7.0, mid - 5.0), pos2(x, mid + 6.0)],
+                ink.gamma_multiply(0.55),
                 Stroke::NONE,
             ));
         }
-        ring(body, 1.0);
+        ring(body, 3.0);
+        label(r);
         return;
     }
     // What happened in green: a completed activity whole, an activity under way up to the data date.
@@ -1361,28 +1362,30 @@ fn bar(
     } else {
         t.blue
     };
+    let light = color.gamma_multiply(if t.dark { 0.45 } else { 0.5 });
     if kind.is_milestone() || s.early_start > s.early_finish {
         // A start milestone at the morning of its day, a finish milestone at the evening.
         let x = if kind == ActivityKind::FinishMilestone { x_of(s.early_finish) + scale } else { x_of(s.early_start) };
-        let r = 5.5;
+        let r = 8.0;
         let diamond = vec![pos2(x, mid - r), pos2(x + r, mid), pos2(x, mid + r), pos2(x - r, mid)];
-        let edge = if look.selected { Stroke::new(1.5, t.accent) } else { Stroke::NONE };
-        painter.add(egui::Shape::convex_polygon(diamond, color, edge));
+        painter.add(egui::Shape::convex_polygon(diamond.clone(), light, Stroke::NONE));
+        painter
+            .add(egui::Shape::closed_line(diamond, Stroke::new(if look.selected { 2.0 } else { 1.2 }, if look.selected { t.accent } else { color })));
         label(x + r);
         return;
     }
     let (l, r) = span(s.early_start, s.early_finish);
     let r = r.max(l + 3.0);
-    let radius = 3.0_f32.min((r - l) / 2.0);
+    let radius = 4.0_f32.min((r - l) / 2.0);
     // The float first, after the bar's end: a light band to the late finish, a tick there.
     if look.float && s.total_float > 0 {
         let (_, lr) = span(s.late_start, s.late_finish);
         let band = Rect::from_min_max(pos2(r - 2.0, mid - 1.5), pos2(lr, mid + 1.5));
         painter.rect_filled(band, 1.0, color.gamma_multiply(0.3));
-        painter.vline(lr, (mid - 4.0)..=(mid + 4.0), Stroke::new(1.0, color.gamma_multiply(0.6)));
+        painter.vline(lr, (mid - 5.0)..=(mid + 5.0), Stroke::new(1.0, color.gamma_multiply(0.6)));
     }
-    let body = Rect::from_min_max(pos2(l, mid - 5.5), pos2(r, mid + 5.5));
-    painter.rect_filled(body, radius, color);
+    let body = Rect::from_min_max(pos2(l, mid - BAR_HALF), pos2(r, mid + BAR_HALF));
+    painter.rect_filled(body, radius, light);
     if s.status == Status::InProgress
         && let Some(d) = look.data_date
     {
@@ -1390,9 +1393,10 @@ fn bar(
         if done > l {
             let part = Rect::from_min_max(body.min, pos2(done, body.bottom()));
             let corners = egui::CornerRadius { nw: radius as u8, sw: radius as u8, ne: 0, se: 0 };
-            painter.rect_filled(part, corners, t.green);
+            painter.rect_filled(part, corners, t.green.gamma_multiply(0.85));
         }
     }
+    painter.rect_stroke(body, radius, Stroke::new(1.2, color), StrokeKind::Inside);
     ring(body, radius);
     let end = if look.float && s.total_float > 0 { span(s.late_start, s.late_finish).1 } else { r };
     label(end);
@@ -1419,10 +1423,10 @@ fn link(painter: &egui::Painter, from: (f32, f32), to: (f32, f32), from_finish: 
         let mid = y0 + down * (ROW / 2.0);
         points.extend([pos2(out, y0), pos2(out, mid), pos2(into, mid), pos2(into, y1), pos2(x1, y1)]);
     }
-    painter.add(egui::Shape::line(points, Stroke::new(1.0, color)));
+    painter.add(egui::Shape::line(points, Stroke::new(1.3, color)));
     let head = if to_start { -1.0 } else { 1.0 };
     painter.add(egui::Shape::convex_polygon(
-        vec![pos2(x1, y1), pos2(x1 + head * 4.5, y1 - 3.0), pos2(x1 + head * 4.5, y1 + 3.0)],
+        vec![pos2(x1, y1), pos2(x1 + head * 5.0, y1 - 3.5), pos2(x1 + head * 5.0, y1 + 3.5)],
         color,
         Stroke::NONE,
     ));

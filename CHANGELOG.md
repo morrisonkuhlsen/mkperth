@@ -10,6 +10,12 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- A Gantt chart with room to breathe, after Perth.jl's: taller rows (32 points) ruled by a
+  hairline across the table and the chart; bars twice as tall, light inside and full-coloured at
+  their edge (still red on the critical path, blue with float, green for what is done), with
+  their names in the text's colour; milestones as outlined diamonds; summaries as slim rounded
+  brackets named at their end, their rows plain with bold names; relationship lines a little
+  stronger, with larger arrowheads.
 - The line between the activity table and the Gantt chart is dragged to make the table wider or
   narrower: wider, the name column takes the room; narrower, the columns at the right are cut.
   A double click on the line gives the table its columns' own width back. With the keyboard, Tab

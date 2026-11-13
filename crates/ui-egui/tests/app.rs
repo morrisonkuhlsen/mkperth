@@ -492,9 +492,9 @@ fn quick(app: PerthApp) -> Harness<'static, PerthApp> {
 // Where the sample's rows and ruler are in the 1360 × 820 window: W1, M0, A10, A20, A30 down
 // the table; the ruler's months over its days; the chart past the table.
 const TABLE_X: f32 = 200.0;
-const ROW_A10: f32 = 214.0;
-const ROW_A20: f32 = 238.0;
-const ROW_A30: f32 = 262.0;
+const ROW_A10: f32 = 234.0;
+const ROW_A20: f32 = 266.0;
+const ROW_A30: f32 = 298.0;
 
 /// Dragging over rows of the table chooses them all; Ctrl and a click adds one; Delete takes
 /// every one chosen, in one change.
@@ -646,7 +646,7 @@ fn drag(h: &mut Harness<'static, PerthApp>, from: egui::Pos2, to: egui::Pos2) {
 }
 
 // B10, Earthworks, has 19 days of float: its bar is the blue one on its row, from 25 November.
-const ROW_B10: f32 = 334.0;
+const ROW_B10: f32 = 394.0;
 const B10_MIDDLE: f32 = 970.0;
 const B10_FINISH_EDGE: f32 = 978.0;
 
@@ -960,7 +960,7 @@ fn codes_added_and_a_column_sorts() {
     assert!(h.state().session.project.classification.code("Phase").is_some());
     // The title "Total float": the table's eighth column (ID 84, name 230, duration 60, four
     // dates of 84 from x 44), in the header over the first row.
-    let (x, header_y) = (44.0 + 84.0 + 230.0 + 60.0 + 4.0 * 84.0 + 30.0, ROW_A10 - 2.0 * 24.0 - 22.0);
+    let (x, header_y) = (44.0 + 84.0 + 230.0 + 60.0 + 4.0 * 84.0 + 30.0, ROW_A10 - 2.0 * 32.0 - 26.0);
     click(&mut h, egui::pos2(x, header_y), egui::Modifiers::NONE);
     assert_eq!(h.state().options.sort, Some((mkperth_ui_egui::activities::SortBy::Column(7), false)));
     click(&mut h, egui::pos2(x, header_y), egui::Modifiers::NONE);
