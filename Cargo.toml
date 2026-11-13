@@ -29,12 +29,12 @@ quick-xml = "0.42"
 
 # ui
 # A system font checked before egui takes it (the reader egui itself uses). MIT/Apache.
-skrifa = "0.44"
+skrifa = "0.50"
 # The splash screen's Morrison Kühlsen wordmark (PNG). MIT/Apache.
 png = "0.18"
 egui = "0.37"
 eframe = { version = "0.37", default-features = false }
-rfd = "0.17"
+rfd = "0.18"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 egui_kittest = "0.37"
 
