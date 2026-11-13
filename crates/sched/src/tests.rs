@@ -640,6 +640,41 @@ fn a_started_activity_ignores_its_start_constraint() {
     assert_eq!(dates(&s, "C"), (day(2026, 10, 6), day(2026, 10, 7)));
 }
 
+/// #63: once started, a start constraint bounds neither pass. A (10 days) started Monday 5
+/// October and met its start on or before that day; the data date is Monday the 12th. Five days
+/// worked (5th to 9th), five left: the 12th to Friday the 16th. B (2) after it: 19th to 20th,
+/// the project's finish. Backward: B's late finish the 20th, its late start the 19th; A's late
+/// finish the evening of the 16th, so its float is 0 — not the start constraint's 9th (the
+/// 5th plus the five days left), which gave -5 days. The same for a start on, and for a
+/// mandatory start, which would also have overridden B's bound.
+#[test]
+fn a_started_activity_ignores_its_start_constraint_backward_too() {
+    for c in [Constraint::StartOnOrBefore(day(2026, 10, 5)), Constraint::StartOn(day(2026, 10, 5)), Constraint::MandatoryStart(day(2026, 10, 5))] {
+        let mut p = project(&[("A", 10), ("B", 2)], &[("A", "B", FS, 0)]);
+        p.data_date = Some(day(2026, 10, 12));
+        p.activities[0].actual_start = Some(day(2026, 10, 5));
+        p.activities[0].constraint = Some(c);
+        let s = schedule(&p).unwrap();
+        let a = get(&s, "A");
+        assert_eq!((a.early_finish, a.late_finish), (day(2026, 10, 16), day(2026, 10, 16)), "{c:?}");
+        assert_eq!(a.total_float_minutes, 0, "{c:?}");
+        let b = get(&s, "B");
+        assert_eq!((b.late_start, b.late_finish), (day(2026, 10, 19), day(2026, 10, 20)), "{c:?}");
+        // The explanation agrees: no start constraint among A's backward bounds.
+        let e = explain(&p, "A").unwrap();
+        assert!(e.late.iter().all(|b| !matches!(b.source, Source::Constraint(_))), "{c:?}: {:?}", e.late);
+    }
+    // A finish constraint still bounds a started activity: finish on or before Wednesday the 14th
+    // leaves A two days late, -2 days of float.
+    let mut p = project(&[("A", 10), ("B", 2)], &[("A", "B", FS, 0)]);
+    p.data_date = Some(day(2026, 10, 12));
+    p.activities[0].actual_start = Some(day(2026, 10, 5));
+    p.activities[0].constraint = Some(Constraint::FinishOnOrBefore(day(2026, 10, 14)));
+    let s = schedule(&p).unwrap();
+    assert_eq!(get(&s, "A").late_finish, day(2026, 10, 14));
+    assert_eq!(get(&s, "A").total_float_minutes, -2 * 480);
+}
+
 #[test]
 fn a_start_to_start_successor_counts_from_the_actual_start() {
     // A started Monday, two days left from the data date (to Thursday); C SS+3 from A: Monday + 3

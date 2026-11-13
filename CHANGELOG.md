@@ -61,6 +61,12 @@ Read it before re-scheduling a plan with a new version.
   drop-downs; the zoom a fine rail with a slim handle and a mark at 100%; thin scroll bars.
 
 ### Changed results
+- A started activity's start constraint (start on or before, start on, mandatory start) no
+  longer bounds its late dates, as it already didn't bound its early ones (#63). Before, an
+  activity started on Monday 5 October with ten days of work, a data date of the 12th and a
+  start on or before the 5th it had met got a late finish on the 9th and -5 days of float, and
+  a mandatory start overrode its successors' bounds too; now its late finish is the 16th and its
+  float 0. Finish constraints still bound a started activity.
 - A project saved as Perth.jl's JSON and opened again schedules as it did before saving (#55).
   The file now keeps, in MK Perth's own fields (`mkperth_schedule` on the project,
   `mkperth_task` on a task), what Perth.jl has no field for: actual starts and finishes, the

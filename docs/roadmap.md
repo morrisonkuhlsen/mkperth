@@ -30,7 +30,7 @@ and the scheduling literature; see [`scheduling-parity.md`](scheduling-parity.md
   start and finish dates (a completed activity keeps them, with no float, never critical); the
   work left of an activity under way (told, or its duration less the work to the data date),
   after its predecessors with retained logic or from the data date with progress override; its
-  start-to-start successors count from its actual start; start constraints drop once it starts.
+  start-to-start successors count from its actual start; start constraints drop once it starts, from both passes (#63).
   Read and written as P6 XML's `DataDate`, `ActualStartDate`, `ActualFinishDate` and
   `RemainingDuration`; told in Details and on the Project tab; drawn green on the Gantt chart.
   Constraint pairs: a secondary needs a dated primary and bounds the other end, neither
