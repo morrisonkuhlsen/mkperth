@@ -628,6 +628,7 @@ links = Relationships
 links-tip = Show the relationship lines between the bars
 stripes = Striped rows
 stripes-tip = Tint every other row, as spreadsheets band a table
+compact-rows = Compact rows
 time-wider = Zoom in time
 time-wider-tip = Widen the time scale (Ctrl and the wheel over the chart)
 time-narrower = Zoom out time

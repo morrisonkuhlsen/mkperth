@@ -10,7 +10,9 @@ use mkperth_engine::sched::{Scheduled, Status};
 use crate::show_date;
 use crate::theme::Tokens;
 
+/// A row's height, comfortable; compact rows are shorter.
 const ROW: f32 = 32.0;
+const ROW_COMPACT: f32 = 26.0;
 const HEADER: f32 = 44.0;
 
 /// The table's columns: a message id and a width. The ID and the name are always shown.
@@ -172,6 +174,8 @@ pub struct Options {
     pub sort: Option<(SortBy, bool)>,
     /// The table's width, dragged at its edge with the chart; `None` is the columns' own.
     pub table_width: Option<f32>,
+    /// Shorter rows, more of them in view.
+    pub compact: bool,
     /// A relationship pointed at in the calculation: (the activity, the one at its other end),
     /// lit on the chart with the other's bar.
     pub focus: Option<(usize, usize)>,
@@ -287,6 +291,11 @@ fn has_code(project: &mkperth_engine::core::Project, a: &mkperth_engine::core::A
 }
 
 impl Options {
+    /// A row's height in points.
+    pub fn row_height(&self) -> f32 {
+        if self.compact { ROW_COMPACT } else { ROW }
+    }
+
     /// The columns shown: their place in `COLUMNS`, message id and width.
     /// A code's or a field's column comes after them, at `COLUMNS.len()` and on, its title its
     /// own name (the message id is empty).
@@ -530,6 +539,7 @@ pub(crate) fn show(
         Vec::new()
     };
     let full = ui.available_rect_before_wrap();
+    let row_h = options.row_height();
     let mut columns = if options.table_hidden { Vec::new() } else { options.columns() };
     let natural: f32 = columns.iter().map(|(_, _, w)| w).sum();
     // The table as wide as it was dragged, never so wide the chart has no room: wider, the name
@@ -685,11 +695,8 @@ pub(crate) fn show(
         let xd = x_of(d.days(), chart_left);
         chart_header.vline(xd, header.y_range(), Stroke::new(1.5, t.green.gamma_multiply(0.7)));
     }
-    // Today, at the middle of its day.
-    if let Some(d) = options.today {
-        let xd = x_of(d.days(), chart_left) + scale / 2.0;
-        chart_header.vline(xd, header.y_range(), Stroke::new(1.5, t.orange.gamma_multiply(0.8)));
-    }
+    // Today, at the middle of its day: on the ruler's days, its number on a red tag.
+    let today_x = options.today.map(|d| (d, x_of(d.days(), chart_left) + scale / 2.0));
     let mut month_end = f32::NEG_INFINITY;
     for k in first_day.max(0)..=last_day.min(days) {
         let Some(d) = Date::from_days(from + k) else { continue };
@@ -731,6 +738,13 @@ pub(crate) fn show(
             chart_header.vline(xd, header.center().y..=header.bottom(), Stroke::new(1.0, t.gridline));
             chart_header.text(pos2(xd + 3.0, header.bottom() - 10.0), Align2::LEFT_CENTER, day.to_string(), FontId::proportional(11.0), t.text_dim);
         }
+    }
+    if let Some((d, xd)) = today_x {
+        let galley = chart_header.layout_no_wrap(d.ymd().2.to_string(), FontId::proportional(10.5), crate::theme::on_accent(&t));
+        let tag = Rect::from_center_size(pos2(xd, header.bottom() - 10.0), galley.size() + vec2(8.0, 2.0));
+        chart_header.vline(xd, header.center().y..=tag.top(), Stroke::new(1.0, t.red.gamma_multiply(0.8)));
+        chart_header.rect_filled(tag, 4.0, t.red);
+        chart_header.galley(tag.center() - galley.size() / 2.0, galley, crate::theme::on_accent(&t));
     }
 
     let calendar = &session.project.calendar;
@@ -813,9 +827,9 @@ pub(crate) fn show(
                 3.0,
             ));
         }
-        if let Some(d) = options.today {
-            let xd = x_of(d.days(), chart_left) + scale / 2.0;
-            painter.vline(xd, body.y_range(), Stroke::new(1.0, t.orange.gamma_multiply(0.6)));
+        if let Some((_, xd)) = today_x {
+            // Today a red dotted line, apart from the markers' dashes.
+            painter.extend(egui::Shape::dotted_line(&[pos2(xd, body.top()), pos2(xd, body.bottom())], t.red.gamma_multiply(0.7), 5.0, 1.0));
         }
         if let Some(d) = data_date {
             painter.vline(x_of(d.days(), chart_left), body.y_range(), Stroke::new(1.5, t.green.gamma_multiply(0.7)));
@@ -826,9 +840,9 @@ pub(crate) fn show(
     if let Some(i) = options.goto_row.take()
         && let Some(at) = rows.iter().position(|(r, _)| *r == i)
     {
-        area = area.vertical_scroll_offset((at as f32 - 3.0).max(0.0) * ROW);
+        area = area.vertical_scroll_offset((at as f32 - 3.0).max(0.0) * row_h);
     }
-    area.show_rows(ui, ROW, rows.len(), |ui, range| {
+    area.show_rows(ui, row_h, rows.len(), |ui, range| {
         // In layers: the rows' backgrounds, then the relationship lines, then the cells, bars and
         // names over them.
         let mut first_top = None;
@@ -841,7 +855,7 @@ pub(crate) fn show(
         };
         for (k, &(i, depth)) in rows.iter().skip(range.start).take(range.len()).enumerate() {
             let n = range.start + k;
-            let (rect, response) = ui.allocate_exact_size(vec2(full.width(), ROW), Sense::click_and_drag());
+            let (rect, response) = ui.allocate_exact_size(vec2(full.width(), row_h), Sense::click_and_drag());
             first_top.get_or_insert(rect.top());
             // A band's title, in its own row across the table and the chart: nothing to choose.
             if let Some(title) = i.checked_sub(BAND).and_then(|b| bands.get(b)) {
@@ -955,15 +969,23 @@ pub(crate) fn show(
             // The table's part of the row opaque; the chart's lets the backdrop through.
             let table_part = Rect::from_min_max(rect.min, pos2(chart_left, rect.bottom()));
             let chart_part = Rect::from_min_max(pos2(chart_left, rect.top()), rect.max);
-            let fill = if chosen { t.accent_soft } else { plain(n, is_summary(i)) };
+            // The row under the pointer tinted across the table and the chart, as a ruler laid on it.
+            let hovered = !chosen && response.hovered() && dragging.is_none() && band.is_none();
+            let fill = if chosen {
+                t.accent_soft
+            } else if hovered {
+                plain(n, is_summary(i)).lerp_to_gamma(t.hover, 0.5)
+            } else {
+                plain(n, is_summary(i))
+            };
             painter.rect_filled(table_part, 0.0, fill);
-            if chosen || (options.striped && n % 2 == 1) {
+            if chosen || hovered || (options.striped && n % 2 == 1) {
                 painter.rect_filled(chart_part, 0.0, fill.gamma_multiply(if chosen { 0.75 } else { 0.6 }));
             }
             if chosen && selected == Some(i) {
                 painter.rect_filled(Rect::from_min_size(rect.min, vec2(2.0, rect.height())), 0.0, t.accent);
             }
-            placed.push((i, depth, rect));
+            placed.push((i, depth, rect, n, hovered));
         }
         // The names of bands and markers, turned along their lines, over the rows in view.
         let view = ui.clip_rect().intersect(Rect::from_min_max(pos2(chart_left, ui.clip_rect().top()), full.max));
@@ -987,7 +1009,7 @@ pub(crate) fn show(
         {
             let clip = Rect::from_min_max(pos2(chart_left, ui.clip_rect().top()), pos2(full.right(), ui.clip_rect().bottom()));
             let painter = ui.painter().with_clip_rect(clip);
-            let y_of = |n: usize| top + (n as f32 - range.start as f32) * ROW + ROW / 2.0;
+            let y_of = |n: usize| top + (n as f32 - range.start as f32) * row_h + row_h / 2.0;
             // Where an activity's work begins and ends on the chart.
             let ends = |i: usize| -> Option<(f32, f32)> {
                 let (a, s) = (acts.get(i)?, schedule.activities.get(i)?);
@@ -1026,10 +1048,10 @@ pub(crate) fn show(
                 } else {
                     (t.text_dim.gamma_multiply(0.55), 1.3)
                 };
-                link(&painter, (x0, y0), (x1, y1), from_finish, to_start, color, width);
+                link(&painter, (x0, y0), (x1, y1), from_finish, to_start, color, width, row_h / 2.0);
             }
         }
-        for (i, depth, rect) in placed {
+        for (i, depth, rect, n, hovered) in placed {
             let (Some(a), Some(s)) = (acts.get(i), schedule.activities.get(i)) else { continue };
             let painter = ui.painter_at(rect);
             let summary = is_summary(i);
@@ -1090,7 +1112,7 @@ pub(crate) fn show(
             let mut x = rect.left();
             for (k, (text, color, indent)) in cells.into_iter().enumerate() {
                 let Some(&(_, _, w)) = columns.iter().find(|(c, _, _)| *c == k) else { continue };
-                let cell = Rect::from_min_size(pos2(x, rect.top()), vec2(w, ROW));
+                let cell = Rect::from_min_size(pos2(x, rect.top()), vec2(w, row_h));
                 let painter = painter.with_clip_rect(cell.shrink(1.0).intersect(Rect::from_min_max(rect.min, pos2(chart_left - 1.0, rect.bottom()))));
                 // Figures at the right, as columns of figures line up; text at the left.
                 let (at, align) = if numeric(k) {
@@ -1137,7 +1159,7 @@ pub(crate) fn show(
                     *editing = None;
                     continue;
                 }
-                let cell = Rect::from_min_size(pos2(rect.left() + left, rect.top() + 1.0), vec2(width, ROW - 2.0));
+                let cell = Rect::from_min_size(pos2(rect.left() + left, rect.top() + 1.0), vec2(width, row_h - 2.0));
                 if matches!(e.column, Column::Start | Column::Finish) {
                     let start = e.column == Column::Start;
                     ui.painter().rect_stroke(cell, 0.0, Stroke::new(1.5, t.accent), StrokeKind::Inside);
@@ -1195,13 +1217,22 @@ pub(crate) fn show(
             // The activity at the other end of a relationship pointed at in the calculation is
             // ringed as the chosen one is.
             let pointed = options.focus.is_some_and(|(_, o)| o == i);
-            let look = Look { summary, selected: chosen || pointed, float: options.late_bars, data_date };
+            let backdrop = if chosen {
+                t.grid_bg.lerp_to_gamma(t.accent_soft, 0.75)
+            } else if hovered {
+                t.grid_bg.lerp_to_gamma(t.hover, 0.3)
+            } else if options.striped && n % 2 == 1 {
+                t.grid_bg.lerp_to_gamma(t.header_bg, 0.3)
+            } else {
+                t.grid_bg
+            };
+            let look = Look { summary, selected: chosen || pointed, float: options.late_bars, data_date, half: (row_h - 12.0) / 2.0, backdrop };
             // The baseline's bar, thin, under the schedule's.
             if options.baseline_bars
                 && let Some(b) = b
             {
                 let (l, r) = (x_of(b.start.days(), chart_left), x_of(b.finish.days(), chart_left) + scale);
-                let y = rect.center().y + BAR_HALF + 1.0;
+                let y = rect.center().y + (row_h - 12.0) / 2.0 + 1.0;
                 chart.rect_filled(Rect::from_min_max(pos2(l, y), pos2(r.max(l + 3.0), y + 3.0)), 1.5, t.orange.gamma_multiply(0.85));
             }
             bar(&chart, a.kind, &a.name, s, rect, &|d: Date| x_of(d.days(), chart_left), scale, look, &t);
@@ -1338,10 +1369,11 @@ struct Look {
     float: bool,
     /// Where the work done ends on an activity under way.
     data_date: Option<Date>,
+    /// Half the bar's height.
+    half: f32,
+    /// The row's colour behind the bar's name, so lines under it don't cross it.
+    backdrop: egui::Color32,
 }
-
-/// Half a bar's height: a bar fills its row but for a margin above and below.
-const BAR_HALF: f32 = 10.0;
 
 /// An activity's bar: soft corners, its colour light inside and full at its edge (red on the
 /// critical path, blue with float, green for what is done), its float a light band to the late
@@ -1363,12 +1395,19 @@ fn bar(
     let span = |a: Date, b: Date| (x_of(a), x_of(b) + scale);
     let label = |x: f32| {
         let galley = painter.layout_no_wrap(name.to_string(), FontId::proportional(12.0), t.text);
-        // Clear of the relationship line that leaves the bar's end and turns down.
-        painter.galley(pos2(x + 8.0, mid - galley.size().y / 2.0), galley, t.text);
+        // Clear of the relationship line that leaves the bar's end and turns down; on the row's
+        // own colour, so the lines, bands and markers it lies over pass under it.
+        let at = pos2(x + 8.0, mid - galley.size().y / 2.0);
+        painter.rect_filled(Rect::from_min_size(at, galley.size()).expand2(vec2(3.0, 0.0)), 3.0, look.backdrop.gamma_multiply(0.9));
+        painter.galley(at, galley, t.text);
     };
     let ring = |rect: Rect, radius: f32| {
         if look.selected {
-            painter.rect_stroke(rect.expand(2.5), radius + 2.0, Stroke::new(1.5, t.accent), StrokeKind::Outside);
+            // A fine dashed outline around it, as a selection on a drawing.
+            let r = rect.expand(3.0);
+            let path = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
+            painter.extend(egui::Shape::dashed_line(&path, Stroke::new(1.2, t.accent), 4.0, 3.0));
+            let _ = radius;
         }
     };
     if look.summary {
@@ -1400,7 +1439,7 @@ fn bar(
     if kind.is_milestone() || s.early_start > s.early_finish {
         // A start milestone at the morning of its day, a finish milestone at the evening.
         let x = if kind == ActivityKind::FinishMilestone { x_of(s.early_finish) + scale } else { x_of(s.early_start) };
-        let r = 8.0;
+        let r = look.half - 2.0;
         let diamond = vec![pos2(x, mid - r), pos2(x + r, mid), pos2(x, mid + r), pos2(x - r, mid)];
         painter.add(egui::Shape::convex_polygon(diamond.clone(), light, Stroke::NONE));
         painter
@@ -1418,7 +1457,7 @@ fn bar(
         painter.rect_filled(band, 1.0, color.gamma_multiply(0.3));
         painter.vline(lr, (mid - 5.0)..=(mid + 5.0), Stroke::new(1.0, color.gamma_multiply(0.6)));
     }
-    let body = Rect::from_min_max(pos2(l, mid - BAR_HALF), pos2(r, mid + BAR_HALF));
+    let body = Rect::from_min_max(pos2(l, mid - look.half), pos2(r, mid + look.half));
     painter.rect_filled(body, radius, light);
     if s.status == Status::InProgress
         && let Some(d) = look.data_date
@@ -1439,7 +1478,17 @@ fn bar(
 /// A relationship line: out of the predecessor (rightwards from a finish, leftwards from a
 /// start), down or up to the successor's row, into it (from the left to a start, from the right
 /// to a finish), an arrowhead at the end.
-fn link(painter: &egui::Painter, from: (f32, f32), to: (f32, f32), from_finish: bool, to_start: bool, color: egui::Color32, width: f32) {
+#[allow(clippy::too_many_arguments)]
+fn link(
+    painter: &egui::Painter,
+    from: (f32, f32),
+    to: (f32, f32),
+    from_finish: bool,
+    to_start: bool,
+    color: egui::Color32,
+    width: f32,
+    half_row: f32,
+) {
     let (x0, y0) = from;
     let (x1, y1) = to;
     let stub = 6.0;
@@ -1454,7 +1503,7 @@ fn link(painter: &egui::Painter, from: (f32, f32), to: (f32, f32), from_finish: 
         points.extend([pos2(x, y0), pos2(x, y1), pos2(x1, y1)]);
     } else {
         // Around: out, half a row towards the target, across, then down and in.
-        let mid = y0 + down * (ROW / 2.0);
+        let mid = y0 + down * half_row;
         points.extend([pos2(out, y0), pos2(out, mid), pos2(into, mid), pos2(into, y1), pos2(x1, y1)]);
     }
     painter.add(egui::Shape::line(points, Stroke::new(width, color)));

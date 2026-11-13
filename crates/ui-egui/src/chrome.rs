@@ -66,6 +66,8 @@ pub(crate) enum Action {
     BaselineBars,
     /// Every other row of the table tinted.
     Stripes,
+    /// Shorter rows, more in view.
+    Compact,
     /// The selected activity's comments.
     Comment,
     /// The schedule alone, full screen.
@@ -94,6 +96,7 @@ pub(crate) struct State<'a> {
     pub late_bars: bool,
     pub baseline_bars: bool,
     pub striped: bool,
+    pub compact: bool,
     pub links: bool,
     pub table_hidden: bool,
     pub float_kind: FloatKind,
@@ -469,6 +472,9 @@ fn menus(ui: &mut egui::Ui, state: &State) -> Option<Action> {
         }
         if check(ui, state.striped, &tr!("stripes")) {
             set(Action::Stripes);
+        }
+        if check(ui, state.compact, &tr!("compact-rows")) {
+            set(Action::Compact);
         }
         ui.separator();
         if item(ui, &tr!("time-wider"), None, true) {

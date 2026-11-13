@@ -2,7 +2,7 @@
 //! touching the screen.
 //!
 //! `cargo run -p mkperth-ui-egui --example snapshot -- [--in project.json] [--face FONT_FILE | --faces REGULAR BOLD] [--dark] [--lang CODE]
-//!  [--select N] [--resource N] [--group code:NAME|field:NAME] [--column code:NAME|field:NAME]… [--side details|filters|notes|calendars|levelling|pert|baselines|costs|budget|earned|codes|organisation] [--details general|status|relationships|notes|resources|comments] [--scale PT_PER_DAY] [--offset DAYS] [--table-width PT] [--toolbar-hidden] [--present] [--splash] [--backstage home|new|open|info|export|about] [--view activities|resources|network] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1, `--resource` the resource;
+//!  [--select N] [--resource N] [--group code:NAME|field:NAME] [--column code:NAME|field:NAME]… [--side details|filters|notes|calendars|levelling|pert|baselines|costs|budget|earned|codes|organisation] [--details general|status|relationships|notes|resources|comments] [--scale PT_PER_DAY] [--offset DAYS] [--table-width PT] [--today YYYY-MM-DD] [--compact] [--toolbar-hidden] [--present] [--splash] [--backstage home|new|open|info|export|about] [--view activities|resources|network] [--cmd id=JSON]… [--click LABEL]… [--size 1360x820] out.png` (`--select` selects the activity at row N, from 1, `--resource` the resource;
 //!  `--click` clicks what has that accessible name, in order: `--click View --click Theme` opens a submenu)
 
 use egui_kittest::kittest::Queryable as _;
@@ -73,6 +73,13 @@ fn main() -> Result<(), String> {
                 i += 1;
                 app.options.scale = Some(args.get(i).and_then(|n| n.parse().ok()).ok_or("--scale needs points per day")?);
             }
+            "--today" => {
+                // The day the chart's today line stands on, as the system's clock would give it.
+                i += 1;
+                let day = args.get(i).and_then(|d| mkperth_ui_egui::Date::parse(d)).ok_or("--today YYYY-MM-DD")?;
+                app.services.today = Some(Box::new(move || Some(day)));
+            }
+            "--compact" => app.options.compact = true,
             "--table-width" => {
                 i += 1;
                 app.options.table_width = Some(args.get(i).and_then(|n| n.parse().ok()).ok_or("--table-width needs points")?);

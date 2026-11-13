@@ -628,6 +628,7 @@ links = Vínculos
 links-tip = Mostrar as linhas de vínculo entre as barras
 stripes = Linhas zebradas
 stripes-tip = Colorir uma linha sim, outra não, como as planilhas fazem
+compact-rows = Linhas compactas
 time-wider = Ampliar tempo
 time-wider-tip = Alargar a escala de tempo (Ctrl e a roda sobre o gráfico)
 time-narrower = Reduzir tempo

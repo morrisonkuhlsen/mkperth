@@ -10,6 +10,12 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- The Gantt chart, finer still: the row under the pointer is tinted across the table and the
+  chart; bars' names sit on their row's colour, so relationship lines, bands and markers pass
+  under them instead of through them; today is a red dotted line with its day on a red tag in the
+  ruler (the markers keep their orange dashes); the chosen bar has a fine dashed outline instead
+  of a thick ring.
+- View → Compact rows: rows of 26 points instead of 32, more of them in view.
 - The Calculation pane reads as a calculation: each pass's title in bold, the dates in bold, the
   bound that set the date marked with an arrowhead and "sets the date", the others quieter. The
   pointer on a relationship's bound lights that relationship and the activity at its other end on

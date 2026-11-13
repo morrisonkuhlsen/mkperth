@@ -1082,3 +1082,16 @@ fn the_calculation_points_at_the_chart_and_folds() {
     h.run_steps(2);
     assert!(!h.state().calculation_folded);
 }
+
+/// View → Compact rows: shorter rows, and back.
+#[test]
+fn compact_rows_from_the_view_menu() {
+    let mut h = harness(PerthApp::default());
+    assert_eq!(h.state().options.row_height(), 32.0);
+    h.get_by_label("View").click();
+    h.run_steps(2);
+    h.get_by_label("Compact rows").click();
+    h.run_steps(2);
+    assert!(h.state().options.compact);
+    assert_eq!(h.state().options.row_height(), 26.0);
+}
