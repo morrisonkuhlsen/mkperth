@@ -591,32 +591,49 @@ pub(crate) fn show(
     let mut x = header.left();
     for &(k, id, w) in &columns {
         let cell = Rect::from_min_size(pos2(x, header.top()), vec2(w, HEADER));
-        // A code's or a field's column is titled with its name.
-        let name = match k.checked_sub(COLUMNS.len()).and_then(|n| options.custom_columns.get(n)) {
-            Some(c) => c.name().to_string(),
-            None => tr!(id),
+        // A column's title is an icon over a short name in small letters, the whole name in its
+        // hint and for screen readers; a code's or a field's column is named with its own name.
+        let custom = k.checked_sub(COLUMNS.len()).and_then(|n| options.custom_columns.get(n));
+        let (name, short, glyph) = match custom {
+            Some(c @ Custom::Code(_)) => (c.name().to_string(), c.name().to_string(), crate::icons::ColumnGlyph::Code),
+            Some(c @ Custom::Field(_)) => (c.name().to_string(), c.name().to_string(), crate::icons::ColumnGlyph::Field),
+            None => (tr!(id), tr!(&format!("{id}-short")), crate::icons::ColumnGlyph::Own(k)),
         };
         // The column the rows are sorted by: a small triangle at its right, up or down.
         let sorted = options.sort.as_ref().filter(|(by, _)| options.sort_key(k).as_ref() == Some(by)).map(|(_, down)| *down);
         // Room at the right for the sort's triangle, or for a figure's margin.
         let room = if sorted.is_some() { 20.0 } else { 9.0 };
-        // A title wider than its column wraps onto a second line rather than being cut; titles
-        // stand on one line at the foot of the header, with the chart's days, and figures'
-        // titles at the right, over their figures.
-        let title = painter.layout(name, FontId::proportional(11.5), t.header_text, (w - room - 3.0).max(1.0));
-        let x_title = if numeric(k) { x + w - room - title.size().x } else { x + 8.0 };
-        let at = pos2(x_title, header.bottom() - 7.0 - title.size().y);
-        let clip = cell.shrink(2.0).intersect(Rect::from_min_max(header.min, pos2(chart_left - 1.0, header.bottom())));
-        painter.with_clip_rect(clip).galley(at, title, t.header_text);
+        let clip = cell.shrink(1.0).intersect(Rect::from_min_max(header.min, pos2(chart_left - 1.0, header.bottom())));
+        let clipped = painter.with_clip_rect(clip);
+        // Figures' titles at the right, over their figures; the others at the left. The names
+        // stand at the foot of the header, with the chart's days.
+        let mut job = egui::text::LayoutJob::single_section(
+            short,
+            egui::TextFormat { font_id: FontId::proportional(10.5), color: t.header_text, extra_letter_spacing: 0.4, ..Default::default() },
+        );
+        job.wrap = egui::text::TextWrapping::truncate_at_width((w - room - 6.0).max(1.0));
+        let title = painter.layout_job(job);
+        let right = x + w - room;
+        let x_title = if numeric(k) { right - title.size().x } else { x + 8.0 };
+        clipped.galley(pos2(x_title, header.bottom() - 10.0 - title.size().y / 2.0), title, t.header_text);
+        let icon_size = 15.0;
+        let x_icon = if numeric(k) { right - icon_size } else { x + 8.0 };
+        let icon = Rect::from_min_size(pos2(x_icon, header.top() + 7.0), vec2(icon_size, icon_size));
+        if clip.contains_rect(icon) {
+            crate::icons::column(&clipped, icon, glyph, &t);
+        }
         if let Some(down) = sorted {
-            let c = pos2(x + w - 9.0, header.center().y);
+            let c = pos2(x + w - 9.0, icon.center().y);
             let (tip, base) = if down { (c.y + 3.0, c.y - 2.0) } else { (c.y - 3.0, c.y + 2.0) };
-            painter.add(egui::Shape::convex_polygon(vec![pos2(c.x - 4.0, base), pos2(c.x + 4.0, base), pos2(c.x, tip)], t.accent, Stroke::NONE));
+            clipped.add(egui::Shape::convex_polygon(vec![pos2(c.x - 4.0, base), pos2(c.x + 4.0, base), pos2(c.x, tip)], t.accent, Stroke::NONE));
+        }
+        // The whole name: a hint under the pointer, and the title screen readers say.
+        if clip.width() > 4.0 {
+            let title = ui.interact(clip, ui.scope_id().with(("column-title", k)), Sense::hover());
+            title.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColumnHeader, true, &name));
+            title.on_hover_text(name);
         }
         x += w;
-        if x < chart_left - 2.0 {
-            painter.vline(x, (header.top() + 10.0)..=(header.bottom() - 8.0), Stroke::new(1.0, t.header_line));
-        }
     }
     // The ruler's two tiers, parted by a hairline; the table parted from the chart by another.
     painter.hline(chart_left..=header.right(), header.center().y, Stroke::new(1.0, t.gridline));

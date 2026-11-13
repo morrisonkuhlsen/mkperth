@@ -10,6 +10,10 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- The activity table's titles are icons, each over a short name in small letters ("early start",
+  "total float"): dates a bar with a tick at the end they name, solid when early and outlined when
+  late, the baseline's thin; floats a bar and the room after it; variances a delta; costs a coin.
+  The whole name shows under the pointer and is what screen readers say.
 - A Gantt chart with room to breathe, after Perth.jl's: taller rows (32 points) ruled by a
   hairline across the table and the chart; bars twice as tall, light inside and full-coloured at
   their edge (still red on the critical path, blue with float, green for what is done), with

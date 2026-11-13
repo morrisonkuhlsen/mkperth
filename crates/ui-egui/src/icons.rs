@@ -219,6 +219,138 @@ pub fn show(ui: &mut egui::Ui, icon: Icon, size: f32) -> egui::Response {
     response
 }
 
+/// What a column of the activity table holds, as its title's icon shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColumnGlyph {
+    /// One of the table's own columns, by its place in `activities::COLUMNS`.
+    Own(usize),
+    /// An activity code's column.
+    Code,
+    /// A user-defined field's column.
+    Field,
+}
+
+/// Draws a column's title icon in `rect`: lines in `c`, the part that tells columns apart in its
+/// family's ink. Dates are a bar with a tick at the end they name, the early ones solid and the
+/// late ones outlined, the baseline's thin; the floats a bar and the room after it; variances a
+/// delta; costs a coin.
+pub fn column(painter: &Painter, rect: Rect, glyph: ColumnGlyph, t: &Tokens) {
+    let side = rect.width().min(rect.height());
+    let r = Rect::from_center_size(rect.center(), vec2(side, side));
+    let g = G { p: painter, r, s: side / 16.0 };
+    let c = t.header_text;
+    let ink = |pair: (Color32, Color32)| if t.dark { pair.1 } else { pair.0 };
+    let (time, base, delta, money, act) = (ink(ink::SLATE), ink(ink::TERRACOTTA), ink(ink::OXBLOOD), ink(ink::MUSTARD), ink(ink::OLIVE));
+    let tick = |x: f32, a: Color32| g.stroke(&[(x, 3.5), (x, 12.5)], a);
+    let delta_at = |x: f32, a: Color32| g.closed(&[(x, 12.5), (x + 3.5, 4.0), (x + 7.0, 12.5)], a);
+    let k = match glyph {
+        ColumnGlyph::Own(k) => k,
+        ColumnGlyph::Code => {
+            draw(painter, rect, Icon::Codes, c, act);
+            return;
+        }
+        ColumnGlyph::Field => {
+            draw(painter, rect, Icon::List, c, act);
+            return;
+        }
+    };
+    match k {
+        // The ID: a number sign.
+        0 => {
+            g.stroke(&[(6.5, 3.0), (5.5, 13.0)], c);
+            g.stroke(&[(11.0, 3.0), (10.0, 13.0)], c);
+            g.stroke(&[(3.0, 6.5), (13.5, 6.5)], act);
+            g.stroke(&[(2.5, 10.0), (13.0, 10.0)], act);
+        }
+        // The name: lines of text, the first in ink.
+        1 => {
+            g.stroke(&[(2.5, 4.5), (13.5, 4.5)], act);
+            g.stroke(&[(2.5, 8.0), (13.5, 8.0)], c);
+            g.stroke(&[(2.5, 11.5), (9.5, 11.5)], c);
+        }
+        // The duration: a span between two ends.
+        2 => {
+            tick(2.5, c);
+            tick(13.5, c);
+            g.stroke(&[(4.0, 8.0), (12.0, 8.0)], time);
+            g.head(12.5, 8.0, 0.0, time);
+            g.head(3.5, 8.0, PI, time);
+        }
+        // Early start and finish: a solid bar, the tick at its start or its finish.
+        3 => {
+            tick(2.5, time);
+            g.block(4.5, 6.0, 14.0, 10.0, c);
+        }
+        4 => {
+            g.block(2.0, 6.0, 11.5, 10.0, c);
+            tick(13.5, time);
+        }
+        // Late start and finish: the bar outlined.
+        5 => {
+            tick(2.5, time);
+            g.frame(5.0, 6.0, 13.5, 10.0, c);
+        }
+        6 => {
+            g.frame(2.5, 6.0, 11.0, 10.0, c);
+            tick(13.5, time);
+        }
+        // Total float: a bar, a light band after it to a tick.
+        7 => {
+            g.block(1.5, 6.0, 7.0, 10.0, c);
+            g.stroke(&[(7.0, 8.0), (13.5, 8.0)], time);
+            g.stroke(&[(13.5, 5.0), (13.5, 11.0)], time);
+        }
+        // Free float: a bar, the band, the next bar outlined.
+        8 => {
+            g.block(1.0, 6.0, 5.5, 10.0, c);
+            g.stroke(&[(5.5, 8.0), (10.0, 8.0)], time);
+            g.frame(10.5, 6.0, 15.0, 10.0, c);
+        }
+        // The baseline's start and finish: a thin bar, the tick at its end.
+        9 => {
+            tick(2.5, c);
+            g.block(4.5, 7.0, 14.0, 9.5, base);
+        }
+        10 => {
+            g.block(2.0, 7.0, 11.5, 9.5, base);
+            tick(13.5, c);
+        }
+        // The variances: a delta by the start, by the finish, between both ends.
+        11 => {
+            tick(2.5, c);
+            delta_at(6.5, delta);
+        }
+        12 => {
+            delta_at(2.5, delta);
+            tick(13.5, c);
+        }
+        13 => {
+            tick(1.5, c);
+            delta_at(4.5, delta);
+            tick(14.5, c);
+        }
+        // Costs: the budget a coin, what was spent a coin filled, at completion a coin ahead,
+        // the variance a delta beside a coin.
+        14 => {
+            g.ring(8.0, 8.0, 5.5, c);
+            g.stroke(&[(8.0, 5.0), (8.0, 11.0)], money);
+        }
+        15 => {
+            g.ring(8.0, 8.0, 5.5, c);
+            g.dot(8.0, 8.0, 3.5, money);
+        }
+        16 => {
+            g.ring(5.5, 8.0, 4.0, c);
+            g.stroke(&[(10.5, 8.0), (14.5, 8.0)], money);
+            g.head(15.0, 8.0, 0.0, money);
+        }
+        _ => {
+            delta_at(1.0, delta);
+            g.ring(12.0, 8.0, 3.5, money);
+        }
+    }
+}
+
 fn draw(p: &Painter, rect: Rect, icon: Icon, c: Color32, a: Color32) {
     let side = rect.width().min(rect.height());
     let r = Rect::from_center_size(rect.center(), vec2(side, side));

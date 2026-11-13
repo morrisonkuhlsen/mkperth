@@ -216,9 +216,12 @@ fn columns_are_chosen_in_filters() {
     let mut h = harness(PerthApp::default());
     h.get_by_label("Filters").click();
     h.run_steps(2);
+    // The table's titles are icons with short names; screen readers say the whole name.
+    use egui::accesskit::Role;
+    assert!(h.query_by_role_and_label(Role::ColumnHeader, "Late start").is_some());
     // Late start and late finish hidden; the ID and the name can't be.
-    h.get_by_label("Late start").click();
-    h.get_by_label("Late finish").click();
+    h.get_by_role_and_label(Role::CheckBox, "Late start").click();
+    h.get_by_role_and_label(Role::CheckBox, "Late finish").click();
     h.run_steps(2);
     let shown: Vec<&str> = h.state().options.columns().iter().map(|(_, id, _)| *id).collect();
     assert_eq!(shown, ["col-id", "col-name", "col-duration", "col-early-start", "col-early-finish", "col-total-float", "col-free-float"]);
