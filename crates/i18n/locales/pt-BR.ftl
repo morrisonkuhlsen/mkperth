@@ -22,9 +22,10 @@ err-perth-field = Tarefa { $task }: o campo { $field } não é o que o Perth gra
 err-perth-too-many = O arquivo tem mais do que o MK Perth lê (no máximo { $max } tarefas, e outras tantas dependências por tarefa).
 warn-perth-duration = A tarefa { $task } tinha duração menor que um dia; o Perth conta como um.
 warn-perth-dangling = A tarefa { $task } depende de { $dependency }, que não está no projeto; ficou de fora, como o Perth faz.
-warn-perth-constraint = A tarefa { $task } tem uma restrição que o Perth não tem como guardar; ela não é gravada.
+warn-perth-constraint = A tarefa { $task } tem uma restrição que o Perth.jl não tem como guardar; o MK Perth a mantém num campo próprio, mas o Perth.jl agenda sem ela.
 warn-perth-assignees = A tarefa { $task } tem mais de um recurso; o Perth tem um só responsável, então eles são gravados juntos.
-warn-perth-sf = A tarefa { $task } segue { $predecessor } de início a fim, vínculo que o Perth não tem; ele não é gravado.
+warn-perth-sf = A tarefa { $task } segue { $predecessor } de início a fim, vínculo que o Perth.jl não tem; o MK Perth o mantém num campo próprio, mas o Perth.jl agenda sem ele.
+warn-perth-lags = { $n } defasagens em minutos, em tempo corrido ou em parte da duração do antecessor são mantidas inteiras pelo MK Perth num campo próprio; o Perth.jl as lê como dias úteis inteiros.
 warn-perth-calendar = O MK Perth não conhece os feriados do calendário { $name }: segunda a sexta, sem feriados.
 err-unknown-command = Não existe o comando { $id }.
 err-command-param = O comando { $command } precisa do parâmetro { $param }.
@@ -865,7 +866,7 @@ notes-month-of = Mês de
 notes-color = Cor
 notes-color-default = A cor padrão
 notes-add = Adicionar
-warn-perth-calendar-near = O calendário { $name } é gravado como { $perth } do Perth.jl, o mais próximo que ele tem: seus próprios dias úteis, feriados ou horários não são mantidos.
+warn-perth-calendar-near = O calendário { $name } é gravado como { $perth } do Perth.jl, o mais próximo que ele tem; o MK Perth o mantém inteiro num campo próprio, mas o Perth.jl agenda em { $perth }.
 
 # The splash screen.
 splash-tagline = Planejamento de projetos, aberto e auditável: cada data com o seu cálculo.

@@ -572,3 +572,133 @@ fn organisation_in_its_own_field() {
     let back = read(&text).unwrap().project;
     assert_eq!((back.organisation, back.activities[1].responsible.clone()), (p.organisation, Some("PM".into())));
 }
+
+/// #55: a progressed project on two calendars, with a lag in hours, a finish milestone, a data
+/// date and a must-finish-by, saved as Perth's JSON and read again, schedules the same: what
+/// Perth.jl has no field for is kept in MK Perth's own.
+#[test]
+fn what_mk_perth_schedules_with_survives_a_save() {
+    use mkperth_core::{ActivityKind, Calendar, CriticalBy, DurationType, FloatKind, LagCalendar, LagKind, ProgressMode};
+    let six = Calendar { name: "SixDay".into(), week: [true, true, true, true, true, true, false], ..Calendar::default() };
+    let mut std = Calendar { name: "Std".into(), ..Calendar::default() };
+    std.holidays.insert(day(2026, 11, 20));
+    std.exceptions.insert(day(2026, 12, 24), vec![(8 * 60, 12 * 60)]);
+    let task = |id: &str| Activity { id: id.into(), name: id.into(), duration: 1, ..Activity::default() };
+    let a = Activity {
+        duration: 2,
+        duration_minutes: Some(12 * 60),
+        actual_start: Some(day(2026, 11, 2)),
+        actual_finish: Some(day(2026, 11, 3)),
+        ..task("A")
+    };
+    let b = Activity {
+        duration: 5,
+        duration_minutes: Some(40 * 60),
+        actual_start: Some(day(2026, 11, 4)),
+        remaining_minutes: Some(16 * 60),
+        calendar: Some("SixDay".into()),
+        duration_type: DurationType::FixedUnits,
+        ..task("B")
+    };
+    let c = Activity { kind: ActivityKind::FinishMilestone, duration: 0, ..task("C") };
+    let d = Activity {
+        constraint: Some(Constraint::MandatoryStart(day(2026, 11, 16))),
+        secondary_constraint: Some(Constraint::FinishOnOrAfter(day(2026, 11, 18))),
+        expected_finish: Some(day(2026, 11, 19)),
+        ..task("D")
+    };
+    let tie = |p: &str, s: &str, kind: RelationshipType| Relationship {
+        predecessor: p.into(),
+        successor: s.into(),
+        kind,
+        lag: 0,
+        lag_minutes: None,
+        lag_kind: LagKind::Working,
+    };
+    let p = Project {
+        name: "Progressed".into(),
+        start: day(2026, 11, 2),
+        calendar: std,
+        calendars: vec![six],
+        data_date: Some(day(2026, 11, 9)),
+        must_finish_by: Some(day(2026, 12, 31)),
+        lag_calendar: LagCalendar::TwentyFourHour,
+        float_kind: FloatKind::Smallest,
+        critical_by: CriticalBy::TotalFloat(480),
+        progress_mode: ProgressMode::ProgressOverride,
+        activities: vec![a, b, c, d],
+        relationships: vec![
+            Relationship { lag_minutes: Some(4 * 60), ..tie("A", "B", RelationshipType::FinishToStart) },
+            tie("B", "C", RelationshipType::FinishToStart),
+            tie("A", "D", RelationshipType::StartToFinish),
+            Relationship { lag: 2, lag_kind: LagKind::Elapsed, ..tie("B", "D", RelationshipType::StartToStart) },
+        ],
+        bands: Vec::new(),
+        markers: Vec::new(),
+        month_marks: Vec::new(),
+        extra: Extra::new(),
+        ..read(&older().to_string()).unwrap().project
+    };
+    let (text, warnings) = write(&p);
+    // Perth.jl reads what it can; what it can't is said.
+    assert!(!warnings.is_empty());
+    let back = read(&text).unwrap().project;
+    let strip = |acts: &[Activity]| acts.iter().map(|a| Activity { extra: Extra::new(), ..a.clone() }).collect::<Vec<_>>();
+    assert_eq!(strip(&back.activities), strip(&p.activities));
+    let mut ties = back.relationships.clone();
+    let mut want = p.relationships.clone();
+    let key = |r: &Relationship| (r.predecessor.clone(), r.successor.clone(), r.kind.code());
+    ties.sort_by_key(key);
+    want.sort_by_key(key);
+    assert_eq!(ties, want);
+    assert_eq!((&back.calendar, &back.calendars), (&p.calendar, &p.calendars));
+    assert_eq!(
+        (back.data_date, back.must_finish_by, back.lag_calendar, back.float_kind, back.critical_by, back.progress_mode),
+        (p.data_date, p.must_finish_by, p.lag_calendar, p.float_kind, p.critical_by, p.progress_mode)
+    );
+    // The same dates and floats, and written again, the same file.
+    let (before, after) = (mkperth_sched::schedule(&p).unwrap(), mkperth_sched::schedule(&back).unwrap());
+    assert_eq!(before.activities, after.activities);
+    assert_eq!(before.finish, after.finish);
+    assert_eq!(write(&back).0, text);
+    // Perth.jl still finds its own fields: the lag in whole days, the milestone, the calendar.
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["calendar"], json!("WeekendsOnly"));
+    assert_eq!(v["tasks"][2]["milestone"], json!(true));
+}
+
+/// What MK Perth keeps in its own fields is checked as the rest of the file is: a bad value is
+/// an error, never a crash or a guess.
+#[test]
+fn mk_perths_own_scheduling_fields_are_checked() {
+    let with_task = |value: Value| {
+        let mut v = older();
+        v["tasks"][0]["mkperth_task"] = value;
+        read(&v.to_string())
+    };
+    assert!(with_task(json!({"kind": "summary"})).is_err());
+    assert!(with_task(json!({"actual_start": "2026-02-30"})).is_err());
+    assert!(with_task(json!({"duration_minutes": -5})).is_err());
+    assert!(with_task(json!({"remaining_minutes": 1e300})).is_err());
+    assert!(with_task(json!({"constraint": {"type": "start-on"}})).is_err());
+    assert!(with_task(json!({"relationships": [{"predecessor": "x", "type": "XX"}]})).is_err());
+    assert!(with_task(json!({"relationships": [{"predecessor": "x", "type": "SF", "lag_kind": "percent", "lag_percent": -1}]})).is_err());
+    assert!(with_task(json!({"duration_type": "fixed-everything"})).is_err());
+    let with_project = |value: Value| {
+        let mut v = older();
+        v["mkperth_schedule"] = value;
+        read(&v.to_string())
+    };
+    assert!(with_project(json!({"data_date": 7})).is_err());
+    assert!(with_project(json!({"float": "largest"})).is_err());
+    assert!(with_project(json!({"calendars": [{"week": [true, true]}]})).is_err());
+    assert!(
+        with_project(json!({"calendars": [{"week": [true, true, true, true, true, true, true], "periods": [[[600, 480]], [], [], [], [], [], []]}]}))
+            .is_err()
+    );
+    assert!(
+        with_project(json!({"calendar": {"week": [true, true, true, true, true, true, true], "exceptions": {"2026-12-24": [[0, 2000]]}}})).is_err()
+    );
+    assert!(with_project(json!({"critical": {"total_float_minutes": "zero"}})).is_err());
+    assert!(with_project(json!({"data_date": "2026-11-09", "calendars": []})).is_ok());
+}

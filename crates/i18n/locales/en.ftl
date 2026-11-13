@@ -22,9 +22,10 @@ err-perth-field = Task { $task }: the field { $field } isn't what Perth writes t
 err-perth-too-many = The file holds more than MK Perth reads (at most { $max } tasks, and as many dependencies per task).
 warn-perth-duration = Task { $task } had a duration under a day; Perth counts it as one.
 warn-perth-dangling = Task { $task } depends on { $dependency }, which isn't in the project; left out, as Perth does.
-warn-perth-constraint = Task { $task } has a constraint Perth has no field for; it isn't written.
+warn-perth-constraint = Task { $task } has a constraint Perth.jl has no field for; MK Perth keeps it in its own field, but Perth.jl schedules without it.
 warn-perth-assignees = Task { $task } has more than one resource; Perth names one assignee, so they are written together.
-warn-perth-sf = Task { $task } follows { $predecessor } start-to-finish, which Perth doesn't have; that relationship isn't written.
+warn-perth-sf = Task { $task } follows { $predecessor } start-to-finish, which Perth.jl doesn't have; MK Perth keeps it in its own field, but Perth.jl schedules without it.
+warn-perth-lags = { $n } lags in minutes, in elapsed time or as a share of the predecessor's duration are kept whole by MK Perth in its own field; Perth.jl reads them as whole working days.
 warn-perth-calendar = The calendar { $name } isn't one MK Perth knows the holidays of: Monday to Friday, with no holidays.
 err-unknown-command = There is no command { $id }.
 err-command-param = The command { $command } needs the parameter { $param }.
@@ -865,7 +866,7 @@ notes-month-of = Month of
 notes-color = Colour
 notes-color-default = The default colour
 notes-add = Add
-warn-perth-calendar-near = The calendar { $name } is written as Perth.jl's { $perth }, the nearest it has: its own working days, holidays or hours aren't kept.
+warn-perth-calendar-near = The calendar { $name } is written as Perth.jl's { $perth }, the nearest it has; MK Perth keeps it whole in its own field, but Perth.jl schedules on { $perth }.
 
 # The splash screen.
 splash-tagline = Project scheduling, open and auditable: every date with its calculation.

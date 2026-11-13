@@ -8,7 +8,9 @@
 //! relationships; its `parent` as its place in the WBS; the project's `name` and `calendar` (empty for calendar days, a business-day
 //! calendar's name otherwise). Everything else, the task's and the project's, travels in
 //! `extra` under `perth.<field>` as the JSON it was, and is written back in Perth's order, so a
-//! file read and written is the same JSON. Source: Perth.jl's `types.jl` and `schedule.jl`
+//! file read and written is the same JSON. What MK Perth schedules with and Perth has no field
+//! for (progress, calendars, minutes, constraints, the options) goes in fields of its own, see
+//! `schedule`. Source: Perth.jl's `types.jl` and `schedule.jl`
 //! (the user's own package, MIT).
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -99,7 +101,8 @@ const TASK_MAPPED: [&str; 14] = [
 ];
 /// The longest a PERT estimate may be, in days.
 const MAX_ESTIMATE: f64 = 1e6;
-const PROJECT_MAPPED: [&str; 16] = [
+const PROJECT_MAPPED: [&str; 17] = [
+    schedule::SCHEDULE,
     "name",
     "tasks",
     "calendar",
@@ -262,20 +265,18 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         }
         Some(_) => return Err(PerthError::Field(String::new(), "calendar".into())),
     };
-    // Empty: calendar days. A name: business days, with the region's holidays when MK Perth
-    // knows them (Perth.jl takes the name to BusinessDays.jl).
-    let calendar = if calendar_name.is_empty() {
-        Calendar { name: String::new(), ..Calendar::every_day() }
-    } else {
-        let region = Region::named(&calendar_name);
-        if region.is_none() && calendar_name != "WeekendsOnly" {
-            warnings.push(tr!("warn-perth-calendar", name = calendar_name.as_str()));
-        }
-        Calendar { name: calendar_name, region, ..Calendar::default() }
-    };
+    if !calendar_name.is_empty()
+        && Region::named(&calendar_name).is_none()
+        && calendar_name != "WeekendsOnly"
+        && !root.contains_key(schedule::SCHEDULE)
+    {
+        warnings.push(tr!("warn-perth-calendar", name = calendar_name.as_str()));
+    }
+    let calendar = read_back_calendar(&calendar_name);
 
     let mut activities = Vec::with_capacity(tasks.len());
-    let mut dependencies: Vec<(String, Vec<String>)> = Vec::with_capacity(tasks.len());
+    // Each task's dependency strings, and the relationships MK Perth kept whole for it.
+    let mut dependencies: Vec<(String, Vec<String>, Vec<Relationship>)> = Vec::with_capacity(tasks.len());
     // Each task's assignee: a person or resource by name, the same one wherever it is named.
     let mut assignees: Vec<(String, String, Option<f64>)> = Vec::new();
     for (k, task) in tasks.iter().enumerate() {
@@ -381,7 +382,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         };
         let mut extra = Extra::new();
         for (key, value) in t {
-            if !TASK_MAPPED.contains(&key.as_str()) && ![PRIORITY, LEVELLED, CODES, FIELDS, RESPONSIBLE].contains(&key.as_str()) {
+            if !TASK_MAPPED.contains(&key.as_str()) && ![PRIORITY, LEVELLED, CODES, FIELDS, RESPONSIBLE, schedule::TASK].contains(&key.as_str()) {
                 extra.insert(format!("{PREFIX}{key}"), value.to_string());
             }
         }
@@ -400,7 +401,7 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             let effort = t.get("effort").and_then(Value::as_f64).filter(|e| e.is_finite() && *e > 0.0 && *e <= 1e9);
             assignees.push((label.clone(), assignee, effort));
         }
-        activities.push(Activity {
+        let mut activity = Activity {
             id: label.clone(),
             name: text_of("name")?,
             parent: (!parent.is_empty()).then_some(parent),
@@ -425,16 +426,27 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
             fields,
             responsible: t.get(RESPONSIBLE).and_then(Value::as_str).map(str::to_string),
             extra,
-        });
-        dependencies.push((label, deps));
+        };
+        // What MK Perth schedules with and Perth has no field for.
+        let exact = match t.get(schedule::TASK) {
+            None | Some(Value::Null) => Vec::new(),
+            Some(v) => schedule::read_task(v, &mut activity)?,
+        };
+        activities.push(activity);
+        dependencies.push((label, deps, exact));
     }
     // Relationships, in the order the tasks list them; one to a task that isn't there is left
     // out, as Perth's own scheduler ignores it.
     let ids: std::collections::HashSet<&str> = activities.iter().map(|a| a.id.as_str()).collect();
     let mut relationships = Vec::new();
-    for (successor, deps) in &dependencies {
+    for (successor, deps, exact) in &dependencies {
+        // A relationship kept whole takes the place of its string, which says it only nearly.
+        let said = |predecessor: &str, kind: RelationshipType| exact.iter().any(|r| r.predecessor == predecessor && r.kind == kind);
         for d in deps {
             let (predecessor, kind, lag) = parse_dependency(d);
+            if said(&predecessor, kind) {
+                continue;
+            }
             if !ids.contains(predecessor.as_str()) {
                 warnings.push(tr!("warn-perth-dangling", task = successor.as_str(), dependency = d.as_str()));
                 continue;
@@ -447,6 +459,13 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
                 lag_minutes: None,
                 lag_kind: Default::default(),
             });
+        }
+        for r in exact {
+            if !ids.contains(r.predecessor.as_str()) {
+                warnings.push(tr!("warn-perth-dangling", task = successor.as_str(), dependency = r.predecessor.as_str()));
+                continue;
+            }
+            relationships.push(r.clone());
         }
     }
     let start = activities.iter().filter_map(|a| match a.constraint {
@@ -623,42 +642,44 @@ pub fn read(text: &str) -> Result<Read, PerthError> {
         Some(Value::Null) | None => Budgeting::default(),
         Some(_) => return Err(PerthError::Field(String::new(), BUDGET.into())),
     };
-    Ok(Read {
-        project: Project {
-            name,
-            start,
-            calendar,
-            calendars: Vec::new(),
-            lag_calendar: Default::default(),
-            float_kind: Default::default(),
-            critical_by: Default::default(),
-            data_date: None,
-            progress_mode: Default::default(),
-            must_finish_by: None,
-            bands,
-            markers,
-            month_marks,
-            resources,
-            roles: Vec::new(),
-            assignments,
-            comments,
-            levelling,
-            baselines,
-            baseline_in_use,
-            expenses,
-            cost_accounts,
-            currency,
-            budget,
-            earned_value,
-            classification,
-            external,
-            organisation,
-            activities,
-            relationships,
-            extra,
-        },
-        warnings,
-    })
+    let mut project = Project {
+        name,
+        start,
+        calendar,
+        calendars: Vec::new(),
+        lag_calendar: Default::default(),
+        float_kind: Default::default(),
+        critical_by: Default::default(),
+        data_date: None,
+        progress_mode: Default::default(),
+        must_finish_by: None,
+        bands,
+        markers,
+        month_marks,
+        resources,
+        roles: Vec::new(),
+        assignments,
+        comments,
+        levelling,
+        baselines,
+        baseline_in_use,
+        expenses,
+        cost_accounts,
+        currency,
+        budget,
+        earned_value,
+        classification,
+        external,
+        organisation,
+        activities,
+        relationships,
+        extra,
+    };
+    match root.get(schedule::SCHEDULE) {
+        None | Some(Value::Null) => {}
+        Some(v) => schedule::read_project(v, &mut project)?,
+    }
+    Ok(Read { project, warnings })
 }
 
 /// The expenses Perth.jl's task `cost` (kept in `extra`) says: one for each task with a cost,
@@ -1018,6 +1039,16 @@ fn calendar_name(c: &Calendar, warnings: &mut Vec<String>) -> String {
     name
 }
 
+/// The calendar Perth's name for one reads as: empty, calendar days; a name, business days, with
+/// the region's holidays when MK Perth knows them (Perth.jl takes the name to BusinessDays.jl).
+fn read_back_calendar(name: &str) -> Calendar {
+    if name.is_empty() {
+        Calendar { name: String::new(), ..Calendar::every_day() }
+    } else {
+        Calendar { name: name.to_string(), region: Region::named(name), ..Calendar::default() }
+    }
+}
+
 /// A field kept as JSON text, back as a value (`null` if it no longer parses).
 fn kept(text: &str) -> Value {
     serde_json::from_str(text).unwrap_or(Value::Null)
@@ -1027,29 +1058,34 @@ fn kept(text: &str) -> Value {
 /// written (start-to-finish relationships, constraints Perth has no field for).
 pub fn write(project: &Project) -> (String, Vec<String>) {
     let mut warnings = Vec::new();
-    let odd_lags = project.relationships.iter().filter(|r| r.lag_kind != mkperth_core::LagKind::Working).count();
+    // Lags Perth's strings say only nearly: MK Perth keeps them whole, Perth.jl reads days.
+    let odd_lags = project.relationships.iter().filter(|r| r.kind != RelationshipType::StartToFinish && !schedule::perth_says(r)).count();
     if odd_lags > 0 {
-        warnings.push(tr!("warn-lag-kinds", n = odd_lags));
+        warnings.push(tr!("warn-perth-lags", n = odd_lags));
     }
     let mut tasks = Vec::with_capacity(project.activities.len());
     for a in &project.activities {
         let mut known = Map::new();
         known.insert("id".into(), Value::String(a.id.clone()));
         known.insert("name".into(), Value::String(a.name.clone()));
+        // Constraints Perth's `start` and `deadline` can't say are kept in MK Perth's field.
+        let mut kept_primary = None;
         match a.constraint {
             Some(Constraint::StartOnOrAfter(d)) => {
                 known.insert("start".into(), Value::String(d.to_string()));
             }
             None => {}
-            Some(_) => warnings.push(tr!("warn-perth-constraint", task = a.id.as_str())),
+            Some(c) => {
+                warnings.push(tr!("warn-perth-constraint", task = a.id.as_str()));
+                kept_primary = Some(c);
+            }
         }
         known.insert("duration".into(), Value::from(a.duration));
         let percent = a.percent_complete.unwrap_or(0);
         known.insert("progress".into(), if percent % 100 == 0 { Value::from(percent / 100) } else { Value::from(percent as f64 / 100.0) });
-        let deps: Vec<Value> = project
-            .relationships
+        let into: Vec<&Relationship> = project.relationships.iter().filter(|r| r.successor == a.id).collect();
+        let deps: Vec<Value> = into
             .iter()
-            .filter(|r| r.successor == a.id)
             .filter_map(|r| {
                 let written = write_dependency(r);
                 if written.is_none() {
@@ -1058,6 +1094,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
                 written.map(Value::String)
             })
             .collect();
+        let exact: Vec<&Relationship> = into.iter().copied().filter(|r| !schedule::perth_says(r)).collect();
         known.insert("dependencies".into(), Value::Array(deps));
         known.insert("milestone".into(), Value::Bool(a.kind.is_milestone()));
         known.insert("parent".into(), Value::String(a.parent.clone().unwrap_or_default()));
@@ -1080,6 +1117,7 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         for (field, h) in [("optimistic", p.optimistic), ("most_likely", p.most_likely), ("pessimistic", p.pessimistic)] {
             known.insert(field.into(), days(h));
         }
+        let mut kept_secondary = None;
         match a.secondary_constraint {
             Some(Constraint::FinishOnOrBefore(d)) => {
                 known.insert("deadline".into(), Value::String(d.to_string()));
@@ -1087,7 +1125,11 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
             None => {
                 known.insert("deadline".into(), Value::Null);
             }
-            Some(_) => warnings.push(tr!("warn-perth-constraint", task = a.id.as_str())),
+            Some(c) => {
+                warnings.push(tr!("warn-perth-constraint", task = a.id.as_str()));
+                known.insert("deadline".into(), Value::Null);
+                kept_secondary = Some(c);
+            }
         }
         // A mapped field is written when the file had it, when it says something, or always for
         // a task made here; so a file read and written keeps the fields it had and no others.
@@ -1115,6 +1157,9 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         if let Some(r) = &a.responsible {
             fields.push((RESPONSIBLE.into(), Value::String(r.clone())));
         }
+        if let Some(v) = schedule::task_value(a, kept_primary, kept_secondary, &exact) {
+            fields.push((schedule::TASK.into(), v));
+        }
         if !a.codes.is_empty() {
             fields.push((CODES.into(), Value::Object(a.codes.iter().map(|(k, v)| (k.clone(), Value::String(v.clone()))).collect())));
         }
@@ -1133,8 +1178,17 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         tasks.push(Value::Object(ordered(fields, &order, &TASK_FIELDS)));
     }
     let mut fields: Vec<(String, Value)> = vec![("name".into(), Value::String(project.name.clone())), ("tasks".into(), Value::Array(tasks))];
+    // The project's calendar by Perth's name for it; whole in MK Perth's field when that name
+    // doesn't give it back (its own name, holidays or hours).
+    let perth_name = calendar_name(&project.calendar, &mut warnings);
+    let whole = project.calendar.name == perth_name
+        && project.calendar.periods.iter().all(|p| p.is_empty() || p.as_slice() == mkperth_core::DEFAULT_PERIODS.as_slice())
+        && read_back_calendar(&perth_name) == project.calendar;
     if !project.extra.contains_key("perth.~no-calendar") {
-        fields.push(("calendar".into(), Value::String(calendar_name(&project.calendar, &mut warnings))));
+        fields.push(("calendar".into(), Value::String(perth_name)));
+    }
+    if let Some(v) = schedule::project_value(project, whole) {
+        fields.push((schedule::SCHEDULE.into(), v));
     }
     // The chart's notes, in Perth's order of keys: when there are some, or the file had the field.
     let had = |field: &str| project.extra.get(ORDER).is_some_and(|o| o.split('\u{1f}').any(|k| k == field));
@@ -1270,6 +1324,8 @@ fn ordered(mut fields: Vec<(String, Value)>, file: &[String], perth: &[&str]) ->
     }
     out
 }
+
+mod schedule;
 
 #[cfg(test)]
 mod tests;

@@ -60,6 +60,19 @@ Read it before re-scheduling a plan with a new version.
   Linux), found in Arch's and Fedora's font folders too. The toolbar's fields as tall as its
   drop-downs; the zoom a fine rail with a slim handle and a mark at 100%; thin scroll bars.
 
+### Changed results
+- A project saved as Perth.jl's JSON and opened again schedules as it did before saving (#55).
+  The file now keeps, in MK Perth's own fields (`mkperth_schedule` on the project,
+  `mkperth_task` on a task), what Perth.jl has no field for: actual starts and finishes, the
+  remaining work, durations and lags in minutes, finish milestones, expected finishes, each
+  task's calendar and duration type, the project's calendars whole, constraints other than a
+  start on or after and a deadline, start-to-finish relationships and lags in elapsed time or as
+  a share, the data date, must-finish-by and the scheduling options. Before, they were dropped:
+  the issue's progressed project went from finishing on 16 November 2026 with none critical to
+  12 November with three critical once saved and reopened, its finish milestone read back as a
+  start milestone. The save's warnings now say what Perth.jl itself will schedule without. A
+  file saved again by Perth.jl still loses these fields, as it loses MK Perth's others.
+
 ## [0.1.0] - 2026-10-26
 
 - Releases: each version published on GitHub for Linux, Windows and macOS (the desktop app,
