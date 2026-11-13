@@ -42,6 +42,14 @@ mod web {
         let _ = web_sys::Url::revoke_object_url(&url);
     }
 
+    /// Where the activity table's width is kept, in the page's local storage.
+    const TABLE_WIDTH: &str = "mkperth.table-width";
+
+    /// The page's local storage, when the browser allows it.
+    fn storage() -> Option<web_sys::Storage> {
+        web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+    }
+
     /// Runs the app on the page's `mkperth` canvas.
     #[allow(unsafe_code)] // `wasm_bindgen(start)` exports it with `#[unsafe(no_mangle)]`
     #[wasm_bindgen(start)]
@@ -69,13 +77,26 @@ mod web {
             })),
             take_opened: Some(Box::new(move || arrived.borrow_mut().take())),
             download: Some(Box::new(download)),
+            save_table_width: Some(Box::new(|width: Option<f32>| {
+                if let Some(storage) = storage() {
+                    let _ = match width {
+                        Some(w) => storage.set_item(TABLE_WIDTH, &format!("{w:.0}")),
+                        None => storage.remove_item(TABLE_WIDTH),
+                    };
+                }
+            })),
             today: Some(Box::new(|| {
                 let now = js_sys::Date::new_0();
                 Date::from_ymd(now.get_full_year() as i32, now.get_month() + 1, now.get_date())
             })),
             ..Services::default()
         };
-        let app = PerthApp::new(services);
+        let mut app = PerthApp::new(services);
+        // The table's width as it was left in this browser.
+        app.options.table_width = storage()
+            .and_then(|s| s.get_item(TABLE_WIDTH).ok().flatten())
+            .and_then(|text| text.trim().parse::<f32>().ok())
+            .filter(|w| w.is_finite() && *w > 0.0);
         let runner = eframe::WebRunner::new();
         let _ = runner.start(canvas, eframe::WebOptions::default(), Box::new(|_cc| Ok(Box::new(App(app))))).await;
     }

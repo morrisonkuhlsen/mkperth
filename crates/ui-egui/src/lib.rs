@@ -61,6 +61,8 @@ pub type SaveFont = Box<dyn Fn(&fonts::FontChoice)>;
 pub type Who = Box<dyn Fn() -> String>;
 /// Keeps the recent projects, newest first, for the next run.
 pub type SaveRecent = Box<dyn Fn(&[PathBuf])>;
+/// Keeps the activity table's width (`None`, its columns' own) for the next run.
+pub type SaveTableWidth = Box<dyn Fn(Option<f32>)>;
 /// In a browser: shows its file picker; the file chosen arrives later, through `TakeOpened`.
 pub type StartOpen = Box<dyn Fn()>;
 /// In a browser: a file picked, once it has arrived: its name and its text.
@@ -76,6 +78,7 @@ pub struct Services {
     /// Today where the person is, for the chart's line.
     pub today: Option<Today>,
     pub save_recent: Option<SaveRecent>,
+    pub save_table_width: Option<SaveTableWidth>,
     /// The person's name, for the comments they write.
     pub user: Option<Who>,
     /// The time now (`2026-10-23 14:05`), for the comments written.
@@ -1123,7 +1126,7 @@ impl PerthApp {
             ui.allocate_ui(size, |ui| {
                 ui.set_min_size(size);
                 if self.session.schedule.is_ok() {
-                    events = activities::show(ui, &self.session, &mut self.options, self.selected, &self.marked, &mut self.editing);
+                    events = activities::show(ui, &self.session, &mut self.options, self.selected, &self.marked, &mut self.editing, true);
                 }
             });
         });
@@ -1307,7 +1310,9 @@ impl PerthApp {
             ui.allocate_ui(size, |ui| {
                 ui.set_min_size(size);
                 match &self.session.schedule {
-                    Ok(_) => events = activities::show(ui, &self.session, &mut self.options, self.selected, &self.marked, &mut self.editing),
+                    Ok(_) => {
+                        events = activities::show(ui, &self.session, &mut self.options, self.selected, &self.marked, &mut self.editing, false);
+                    }
                     Err(e) => {
                         ui.add_space(20.0);
                         ui.colored_label(t.danger, format!("  {e}"));
@@ -1315,6 +1320,11 @@ impl PerthApp {
                 }
             });
         });
+        if let Some(width) = events.table_width
+            && let Some(save) = &self.services.save_table_width
+        {
+            save(width);
+        }
         if events.clicked.is_some() && events.clicked != self.selected {
             self.selected = events.clicked;
             self.calculation = None;

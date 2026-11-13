@@ -1019,3 +1019,37 @@ fn the_table_is_resized_at_its_edge_with_the_chart() {
     double_click(&mut h, egui::pos2(moved, y));
     assert_eq!(h.state().options.table_width, None);
 }
+
+/// The table's edge by the keyboard: it has a name, takes the focus, and the arrows move it 8
+/// points at a time; each width settled is kept for the next run, the default as none. Presenting,
+/// the edge is not there to drag.
+#[test]
+fn the_table_edge_moves_with_the_arrows_is_kept_and_stays_put_presenting() {
+    let kept: Rc<std::cell::RefCell<Vec<Option<f32>>>> = Rc::default();
+    let log = kept.clone();
+    let services = Services { save_table_width: Some(Box::new(move |w| log.borrow_mut().push(w))), ..Services::default() };
+    let mut h = quick(PerthApp::new(services));
+    h.get_by_label("Edge between the table and the chart").focus();
+    h.run_steps(2);
+    h.key_press(egui::Key::ArrowLeft);
+    h.run_steps(2);
+    let first = h.state().options.table_width.expect("the arrow moved the edge");
+    h.key_press(egui::Key::ArrowLeft);
+    h.run_steps(2);
+    let second = h.state().options.table_width.unwrap();
+    assert_eq!(first - second, 8.0);
+    h.key_press(egui::Key::ArrowRight);
+    h.run_steps(2);
+    assert_eq!(h.state().options.table_width, Some(first));
+    assert_eq!(*kept.borrow(), vec![Some(first), Some(second), Some(first)]);
+    // A double click there: the columns' own width, kept as none.
+    let edge = h.get_by_label("Edge between the table and the chart").rect().center();
+    double_click(&mut h, edge);
+    assert_eq!(h.state().options.table_width, None);
+    assert_eq!(kept.borrow().last(), Some(&None));
+    // Presenting: no edge, and the width stays.
+    h.state_mut().options.table_width = Some(first);
+    h.state_mut().presenting = true;
+    h.run_steps(2);
+    assert!(h.query_by_label("Edge between the table and the chart").is_none());
+}

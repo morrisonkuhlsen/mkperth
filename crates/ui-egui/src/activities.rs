@@ -133,6 +133,8 @@ pub(crate) struct Events {
     pub bar: Option<BarEdit>,
     /// An edit to make: the activity's index, the column, the new text.
     pub commit: Option<(usize, Column, String)>,
+    /// The table's width settled at its edge (`None`, its columns' own), to keep for the next run.
+    pub table_width: Option<Option<f32>>,
 }
 
 /// What the view shows, from the toolbar, the View menu and the Filters pane.
@@ -322,6 +324,8 @@ pub const MAX_SCALE: f32 = 80.0;
 /// The narrowest the table may be dragged (its ID column), and the chart beside it.
 const MIN_TABLE: f32 = 84.0;
 const MIN_CHART: f32 = 120.0;
+/// How far an arrow key moves the table's edge.
+const EDGE_STEP: f32 = 8.0;
 
 /// Which activities are summaries (have children), in one pass.
 pub(crate) fn summaries(acts: &[mkperth_engine::core::Activity]) -> Vec<bool> {
@@ -490,7 +494,8 @@ pub(crate) fn layout(session: &Session, options: &Options) -> (Vec<(usize, usize
 }
 
 /// Paints the view in the space given. A double click on an ID, a name or a duration edits it in
-/// place: Enter or leaving the cell keeps the text, Esc drops it.
+/// place: Enter or leaving the cell keeps the text, Esc drops it. Presenting, the table's edge
+/// with the chart stays where it is.
 pub(crate) fn show(
     ui: &mut egui::Ui,
     session: &Session,
@@ -498,6 +503,7 @@ pub(crate) fn show(
     selected: Option<usize>,
     marked: &std::collections::BTreeSet<usize>,
     editing: &mut Option<Editing>,
+    presenting: bool,
 ) -> Events {
     let t = Tokens::get(ui.ctx());
     let mut events = Events::default();
@@ -526,7 +532,8 @@ pub(crate) fn show(
     // The table as wide as it was dragged, never so wide the chart has no room: wider, the name
     // column takes the room gained; narrower, the columns at the right are cut where it ends.
     let widest = (full.width() - MIN_CHART).max(MIN_TABLE);
-    let table_width = if columns.is_empty() { 0.0 } else { options.table_width.unwrap_or(natural).clamp(MIN_TABLE, widest) };
+    let table_width =
+        if columns.is_empty() { 0.0 } else { options.table_width.filter(|w| w.is_finite()).unwrap_or(natural).clamp(MIN_TABLE, widest) };
     if let Some(name) = columns.iter_mut().find(|(k, _, _)| *k == 1) {
         name.2 += (table_width - natural).max(0.0);
     }
@@ -1203,19 +1210,40 @@ pub(crate) fn show(
         }
     }
     // The table parted from the chart, down the whole height; the line dragged sideways makes
-    // the table wider or narrower, a double click gives it back its columns' own width.
-    if !columns.is_empty() {
+    // the table wider or narrower, a double click gives it back its columns' own width. With the
+    // keyboard's focus on it (Tab), the arrows move it. Presenting, it stays where it is.
+    if !columns.is_empty() && !presenting {
         let grip = Rect::from_min_max(pos2(chart_left - 4.0, full.top()), pos2(chart_left + 3.0, full.bottom()));
-        let edge =
-            ui.interact(grip, ui.scope_id().with("table-chart-edge"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        let edge = ui.interact(grip, ui.scope_id().with("table-chart-edge"), Sense::click_and_drag());
+        edge.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Splitter, true, tr!("table-edge")));
+        let edge = edge.on_hover_cursor(egui::CursorIcon::ResizeHorizontal).on_hover_text(tr!("table-edge-hint"));
         if edge.dragged() {
             options.table_width = Some((table_width + edge.drag_delta().x).clamp(MIN_TABLE, widest));
         }
+        if edge.drag_stopped() {
+            events.table_width = Some(options.table_width);
+        }
         if edge.double_clicked() {
             options.table_width = None;
+            events.table_width = Some(None);
         }
-        let (width, color) = if edge.hovered() || edge.dragged() { (2.0, t.accent) } else { (1.0, t.header_line) };
+        if edge.has_focus() {
+            // The arrows move the edge, not the keyboard's focus.
+            ui.memory_mut(|m| m.set_focus_lock_filter(edge.id, egui::EventFilter { horizontal_arrows: true, ..Default::default() }));
+            let step = ui.input_mut(|i| {
+                f32::from(u8::from(i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowRight)))
+                    - f32::from(u8::from(i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft)))
+            });
+            if step != 0.0 {
+                let width = (table_width + step * EDGE_STEP).clamp(MIN_TABLE, widest);
+                options.table_width = Some(width);
+                events.table_width = Some(Some(width));
+            }
+        }
+        let (width, color) = if edge.hovered() || edge.dragged() || edge.has_focus() { (2.0, t.accent) } else { (1.0, t.header_line) };
         ui.painter().with_clip_rect(full).vline(chart_left - 0.5, full.y_range(), Stroke::new(width, color));
+    } else if !columns.is_empty() {
+        ui.painter().with_clip_rect(full).vline(chart_left - 0.5, full.y_range(), Stroke::new(1.0, t.header_line));
     }
     // A thin scroll bar under the chart when part of it is out of view.
     if options.scale.is_some() && visible_days < days as f32 {

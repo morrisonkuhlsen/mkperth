@@ -192,6 +192,19 @@ fn main() -> eframe::Result {
                 );
             }
         })),
+        save_table_width: Some(Box::new(|width: Option<f32>| {
+            if let Some(file) = settings_file("table-width.txt") {
+                match width {
+                    Some(w) => {
+                        let _ = file.parent().map(std::fs::create_dir_all);
+                        let _ = std::fs::write(file, format!("{w:.0}"));
+                    }
+                    None => {
+                        let _ = std::fs::remove_file(file);
+                    }
+                }
+            }
+        })),
         user: Some(Box::new(|| ["USERNAME", "USER"].iter().find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty())).unwrap_or_default())),
         now: Some(Box::new(|| chrono::Local::now().format("%Y-%m-%d %H:%M").to_string())),
         fonts: Some(Box::new(|| {
@@ -216,6 +229,11 @@ fn main() -> eframe::Result {
     };
     let mut app = PerthApp::new(services);
     app.recent = load_recent();
+    // The table's width as it was left; the view keeps it within the window.
+    app.options.table_width = settings_file("table-width.txt")
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .and_then(|text| text.trim().parse::<f32>().ok())
+        .filter(|w| w.is_finite() && *w > 0.0);
     if let Some(line) = settings_file("font.txt").and_then(|f| std::fs::read_to_string(f).ok()) {
         app.font = mkperth_ui_egui::fonts::FontChoice::from_line(&line);
     }
