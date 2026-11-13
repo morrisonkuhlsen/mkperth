@@ -644,6 +644,7 @@ err-p6-too-big = O arquivo é mais aninhado ou tem mais elementos do que o MK Pe
 err-p6-field = { $what }: o campo { $field } falta ou não é o que o P6 grava ali.
 warn-p6-projects = O arquivo tem { $n } projetos; o primeiro foi lido.
 warn-p6-dangling = { $n } vínculos citam atividades que não estão no projeto; ficaram de fora.
+warn-p6-wbs-renamed = { $n } elementos da EAP têm um código que também é o ID de uma atividade; seus resumos levam o código com um * a mais, e ele é gravado de volta como estava.
 warn-p6-comments = { $n } comentários não são gravados: o P6 XML não tem lugar para eles (salve como Perth JSON para mantê-los).
 warn-p6-assignments = { $n } alocações de recurso citam uma atividade, ou um recurso ou função, que o arquivo não tem: deixadas de fora.
 warn-p6-summary-assignments = { $n } alocações em resumos não são gravadas: no P6 um resumo é um elemento da EAP, que não recebe alocações.

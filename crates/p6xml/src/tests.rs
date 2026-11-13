@@ -562,3 +562,31 @@ fn organisation_read_back() {
     p.activities[leaf].responsible = Some("Engineering".into());
     assert_eq!(write(&p).1.len(), 1);
 }
+
+/// #57: a WBS element whose code is an activity's ID opens; its summary takes the code with a
+/// `*`, a warning says so, and the code is written back as it was. Codes repeated under
+/// different parents, P6's own way, are given a `*` too but no warning.
+#[test]
+fn a_wbs_code_that_is_an_activity_id_opens() {
+    let text = file().replace("<Code>PLANT.1</Code>", "<Code>A100</Code>");
+    let r = read(&text).unwrap();
+    let ids: Vec<&str> = r.project.activities.iter().map(|a| a.id.as_str()).collect();
+    assert!(ids.contains(&"A100*") && ids.contains(&"A100"), "{ids:?}");
+    // The WBS element under it keeps its place, and the activity under that its own.
+    let civil = r.project.activities.iter().find(|a| a.name == "Civil").unwrap();
+    assert_eq!(civil.parent.as_deref(), Some("A100*"));
+    assert_eq!(r.project.activities.iter().find(|a| a.id == "A100").unwrap().parent.as_deref(), Some("PLANT.1.1"));
+    assert_eq!(r.warnings.iter().filter(|w| w.contains("activity's ID")).count(), 1, "{:?}", r.warnings);
+    let (written, _) = write(&r.project);
+    assert!(written.contains("<Code>A100</Code>"), "the code as it was");
+    assert!(!written.contains("A100*"));
+    let back = read(&written).unwrap();
+    assert_eq!(back.project.activities.len(), r.project.activities.len());
+
+    // The same code on two WBS elements: the second takes a `*`, quietly.
+    let text = file().replace("<Code>PLANT.1.1</Code>", "<Code>PLANT.1</Code>");
+    let r = read(&text).unwrap();
+    assert!(r.project.activities.iter().any(|a| a.id == "PLANT.1*"));
+    assert!(!r.warnings.iter().any(|w| w.contains("activity's ID")), "{:?}", r.warnings);
+    assert_eq!(write(&r.project).0.matches("<Code>PLANT.1</Code>").count(), 2);
+}

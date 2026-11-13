@@ -10,6 +10,10 @@ Read it before re-scheduling a plan with a new version.
 
 ## [Unreleased]
 
+- A P6 XML or XER file opens when a WBS element's code is also an activity's ID, as P6 allows
+  (#57): the element's summary takes the code with a `*` added, a warning says so, and the code
+  is written back as it was. Before, the whole file was refused. Codes repeated under different
+  parents are written back as they were too.
 - The Gantt chart, finer still: the row under the pointer is tinted across the table and the
   chart; bars' names sit on their row's colour, so relationship lines, bands and markers pass
   under them instead of through them; today is a red dotted line with its day on a red tag in the

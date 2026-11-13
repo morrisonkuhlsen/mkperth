@@ -375,3 +375,17 @@ fn windows_1252() {
     let file = file();
     assert_eq!(read(&decode(&encode(&file))).unwrap().project.classification.codes[0].values[0].description, "Fundações");
 }
+
+/// #57 in an XER file: a WBS element named as an activity (`wbs_short_name` A1000) opens.
+#[test]
+fn a_wbs_code_that_is_an_activity_id_opens() {
+    let text = file().replace("11\t1\tN\tE\tEstrutura", "11\t1\tN\tA1000\tEstrutura");
+    assert_ne!(text, file());
+    let r = read(&text).unwrap();
+    let ids: Vec<&str> = r.project.activities.iter().map(|a| a.id.as_str()).collect();
+    assert!(ids.contains(&"A1000*") && ids.contains(&"A1000"), "{ids:?}");
+    assert_eq!(r.project.activities.iter().find(|a| a.id == "A1000").unwrap().parent.as_deref(), Some("A1000*"));
+    let (written, _) = write(&r.project);
+    assert!(!written.contains("A1000*"), "the code written back as it was");
+    assert!(read(&written).is_ok());
+}

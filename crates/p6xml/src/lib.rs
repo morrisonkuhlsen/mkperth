@@ -247,20 +247,37 @@ pub fn read(text: &str) -> Result<Read, P6Error> {
         (minutes / day + i64::from(minutes > 0 && minutes % day != 0), Some(minutes))
     };
 
-    // The WBS as summaries, IDs from their codes, kept unique.
+    // The WBS as summaries, IDs from their codes, kept unique among themselves and apart from
+    // the activities' IDs (P6 keeps WBS codes and activity IDs apart, #57): a code taken gets a
+    // `*`, and the code itself is kept to be written back as it was.
     let mut activities: Vec<Activity> = Vec::new();
     let mut wbs_id: HashMap<String, String> = HashMap::new();
     let wbs: Vec<&Element> = p.all("WBS").chain(root.all("WBS")).collect();
+    let activity_ids: std::collections::HashSet<&str> = p.all("Activity").filter_map(|e| e.text_of("Id")).collect();
+    let mut taken: std::collections::HashSet<String> = activity_ids.iter().map(|id| id.to_string()).collect();
+    let mut renamed = 0;
     for w in &wbs {
         let object = w.text_of("ObjectId").unwrap_or_default().to_string();
-        let mut id = w.text_of("Code").or_else(|| w.text_of("Name")).unwrap_or("WBS").to_string();
-        while activities.iter().any(|a| a.id == id) {
+        let code = w.text_of("Code").or_else(|| w.text_of("Name")).unwrap_or("WBS").to_string();
+        let mut id = code.clone();
+        while taken.contains(&id) {
             id.push('*');
         }
+        taken.insert(id.clone());
         let mut a = Activity { id: id.clone(), name: w.text_of("Name").unwrap_or_default().to_string(), ..Activity::default() };
+        if id != code {
+            // Codes repeated under different parents are P6's own way; an activity's ID is said.
+            if activity_ids.contains(code.as_str()) {
+                renamed += 1;
+            }
+            a.extra.insert(format!("{PREFIX}wbs_code"), code);
+        }
         a.extra.insert(format!("{PREFIX}wbs"), object.clone());
         activities.push(a);
         wbs_id.insert(object, id);
+    }
+    if renamed > 0 {
+        warnings.push(tr!("warn-p6-wbs-renamed", n = renamed));
     }
     for (k, w) in wbs.iter().enumerate() {
         let parent = w.text_of("ParentObjectId").and_then(|p| wbs_id.get(p)).cloned();
@@ -1375,7 +1392,8 @@ pub fn write(project: &Project) -> (String, Vec<String>) {
         out.push_str(&format!(
             "    <WBS>\n      <ObjectId>{}</ObjectId>\n      <Code>{}</Code>\n      <Name>{}</Name>\n",
             object(&a.id),
-            esc(&a.id),
+            // Its code as the file had it, when its ID had to differ (#57).
+            esc(a.extra.get(&format!("{PREFIX}wbs_code")).unwrap_or(&a.id)),
             esc(&a.name)
         ));
         if let Some(p) = &a.parent {

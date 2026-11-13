@@ -644,6 +644,7 @@ err-p6-too-big = The file nests deeper or holds more elements than MK Perth read
 err-p6-field = { $what }: the field { $field } is missing or not what P6 writes there.
 warn-p6-projects = The file holds { $n } projects; the first was read.
 warn-p6-dangling = { $n } relationships name activities that aren't in the project; left out.
+warn-p6-wbs-renamed = { $n } WBS elements have a code that is also an activity's ID; their summaries take the code with a * added, and it is written back as it was.
 warn-p6-comments = { $n } comments aren't written: P6 XML has no place for them (save as Perth JSON to keep them).
 warn-p6-assignments = { $n } resource assignments name an activity, or a resource or role, the file doesn't have: left out.
 warn-p6-summary-assignments = { $n } assignments on summaries aren't written: in P6 a summary is a WBS element, which takes none.
