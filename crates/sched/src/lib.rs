@@ -303,8 +303,15 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         drivers.get(i).is_some_and(|d| !d.is_empty())
             && acts.get(i).is_some_and(|a| a.actual_start.is_none() && a.actual_finish.is_none() && a.expected_finish.is_none())
     });
+    // Only within the day, as the table dates it (#62): a finish milestone at Monday's first
+    // working minute is Monday's, not the Friday evening that is the same moment.
     let at = |t: i64, evening: bool| -> Result<Moment, ScheduleError> {
-        let t = if evening && !traced_driven { Clock { calendar: traced_calendar }.previous_finish(t)? } else { t };
+        let t = if evening && !traced_driven {
+            let p = Clock { calendar: traced_calendar }.previous_finish(t)?;
+            if (p - 1).div_euclid(MINUTES_PER_DAY) == (t - 1).div_euclid(MINUTES_PER_DAY) { p } else { t }
+        } else {
+            t
+        };
         explain::moment(t, evening, traced_calendar).ok_or(ScheduleError::TooLong)
     };
     let (mut early_bounds, mut late_bounds, mut slacks) = (Vec::new(), Vec::new(), Vec::new());
@@ -488,6 +495,20 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         }
         Ok(f)
     };
+    // The latest moment the same as `t` on `j`'s calendar (no work of `j`'s between): what `j`'s
+    // late date is to a predecessor on another calendar, whose work may lie in between (#62).
+    // Driven, the earliest of its resources' next work.
+    let latest_same = |j: usize, t: i64| -> Result<i64, ScheduleError> {
+        if let Some(d) = driven(j) {
+            let mut s: Option<i64> = None;
+            for (k, _, _) in d {
+                let n = clock(*k).next_start(t)?;
+                s = Some(s.map_or(n, |x| x.min(n)));
+            }
+            return Ok(s.unwrap_or(t));
+        }
+        clock(cal_of(j)).next_start(t)
+    };
     // The latest start that finishes by `lf`: for drivers, the earliest any of them must start.
     let start_of = |i: usize, lf: i64| -> Result<i64, ScheduleError> {
         if let Some(d) = driven(i) {
@@ -645,15 +666,22 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
             let Some(t) = ties.get(k) else { continue };
             let lag = clock(t.lag_calendar);
             let (s_ls, s_lf) = (ls.get(t.to).copied().unwrap_or(end), lf.get(t.to).copied().unwrap_or(end));
+            let (s_ls, s_lf) = (latest_same(t.to, s_ls)?, latest_same(t.to, s_lf)?);
+            // Back over the lag; a lag counted on its calendar gives the same bound from any moment
+            // with no work of that calendar's between, so the latest of them (#62).
+            let back = |x: i64| -> Result<i64, ScheduleError> {
+                let v = lag.shift(x, -t.lag_minutes)?;
+                if t.lag_minutes == 0 { Ok(v) } else { lag.next_start(v) }
+            };
             let (f, via) = match t.kind {
-                RelationshipType::FinishToStart => (lag.shift(s_ls, -t.lag_minutes)?, None),
+                RelationshipType::FinishToStart => (back(s_ls)?, None),
                 RelationshipType::StartToStart => {
-                    let v = lag.shift(s_ls, -t.lag_minutes)?;
+                    let v = back(s_ls)?;
                     (finish_for_start(i, v)?, Some(v))
                 }
-                RelationshipType::FinishToFinish => (lag.shift(s_lf, -t.lag_minutes)?, None),
+                RelationshipType::FinishToFinish => (back(s_lf)?, None),
                 RelationshipType::StartToFinish => {
-                    let v = lag.shift(s_lf, -t.lag_minutes)?;
+                    let v = back(s_lf)?;
                     (finish_for_start(i, v)?, Some(v))
                 }
             };
@@ -690,7 +718,17 @@ fn run(project: &Project, trace: Option<&str>) -> Result<(Schedule, Option<Expla
         if traced(i) {
             latest_seen = Some(latest);
         }
-        let f = bounded(place_finish(i, latest)?)?;
+        let mut f = bounded(place_finish(i, latest)?)?;
+        // A late finish before the early one but the same moment on its calendar (no work of its
+        // own between, as a milestone at the next working minute) is that early finish: the
+        // same moment, never a late date before an early one (#62).
+        if let Some(&early) = ef.get(i)
+            && f < early
+            && early <= latest
+            && latest_same(i, f)? >= early
+        {
+            f = early;
+        }
         let s = bounded(start_of(i, f)?)?;
         if let (Some(a), Some(b)) = (ls.get_mut(i), lf.get_mut(i)) {
             *a = s;

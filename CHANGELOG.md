@@ -61,6 +61,17 @@ Read it before re-scheduling a plan with a new version.
   drop-downs; the zoom a fine rail with a slim handle and a mark at 100%; thin scroll bars.
 
 ### Changed results
+- Activities on calendars of different hours no longer get negative float without constraints
+  (#62). The backward pass handed a predecessor its successor's late date as the earliest moment
+  the same on the successor's calendar (the end of its last work), which on the predecessor's
+  calendar could fall before work the forward pass had used; it now hands over the latest such
+  moment, on the successor's calendar and, for a lag, on the lag's. Before, A (3 days, 08–17)
+  finish-to-finish B (1 day, 06–14) gave A -180 minutes of float, and A (1 day) finish-to-start
+  a finish milestone on a night shift gave A late dates on Friday 2 October, before the project
+  starts, and -1 day; now both are 0. A late finish the same moment as the early one is that
+  early one, never a day before it, and the calculation dates a finish as the table does (the
+  milestone was "the evening of 3 October" there, 5 October in the table). Networks on one
+  calendar schedule as before; 3 000 random networks on four calendars are a test.
 - A started activity's start constraint (start on or before, start on, mandatory start) no
   longer bounds its late dates, as it already didn't bound its early ones (#63). Before, an
   activity started on Monday 5 October with ten days of work, a data date of the 12th and a
